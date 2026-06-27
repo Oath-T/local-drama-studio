@@ -6,6 +6,25 @@ Local Drama Studio is a locally running AI short-drama production platform. The 
 
 Do not implement Agents, a 3D director stage, infinite canvas, login, multi-user features, or cloud services unless explicitly requested.
 
+The default product language is Simplified Chinese. User-visible UI copy and future generated content or prompts should prefer Chinese by default, while code, database fields, filenames, and API identifiers continue to use English. Keep room for future English expansion without introducing large internationalization frameworks prematurely.
+
+## Product Decision Rules
+
+Stop implementation and ask the product manager for confirmation before making decisions that affect product research direction, roadmap, interaction model, visual style, brand style, major technology direction, or large new capabilities.
+
+Do not decide the following without explicit product-manager approval:
+
+- Overall product style.
+- Major page layout changes.
+- Color palette or brand visuals.
+- Large new dependencies.
+- New core modules.
+- Changes to the agreed sprint roadmap.
+- Imitating or recreating specific features from other platforms.
+- Core structure changes for the character library, scene library, shot system, or generation workflow.
+
+Small implementation details may be handled independently, but any decision that changes user experience, product positioning, or future architecture must be discussed first with options, trade-offs, and impact.
+
 ## Project Structure
 
 - `apps/web`: React frontend.

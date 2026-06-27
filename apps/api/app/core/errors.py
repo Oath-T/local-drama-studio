@@ -1,9 +1,18 @@
 from typing import Any
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+VALIDATION_CODE_MESSAGES: dict[str, str] = {
+    "INVALID_ASPECT_RATIO": "请选择有效的画面比例。",
+    "INVALID_DEFAULT_LANGUAGE": "请选择有效的默认语言。",
+    "INVALID_DEFAULT_FPS": "请选择有效的默认帧率。",
+}
+
+HTTP_422 = 422
 
 
 class ErrorDetail(BaseModel):
@@ -37,7 +46,23 @@ def error_response(
     details: Any | None = None,
 ) -> JSONResponse:
     payload = ErrorResponse(error=ErrorDetail(code=code, message=message, details=details))
-    return JSONResponse(status_code=status_code, content=payload.model_dump())
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload.model_dump()))
+
+
+def get_validation_error_code(exc: RequestValidationError) -> tuple[str, str]:
+    for error in exc.errors():
+        location = error.get("loc", ())
+        if len(location) >= 2 and location[0] == "path" and location[1] == "project_id":
+            return "INVALID_PROJECT_ID", "项目 ID 格式无效。"
+
+        context = error.get("ctx")
+        if isinstance(context, dict):
+            raw_error = context.get("error")
+            error_text = str(raw_error)
+            if error_text in VALIDATION_CODE_MESSAGES:
+                return error_text, VALIDATION_CODE_MESSAGES[error_text]
+
+    return "VALIDATION_ERROR", "请求参数校验失败。"
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -54,10 +79,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        code, message = get_validation_error_code(exc)
         return error_response(
-            code="validation_error",
-            message="Request validation failed.",
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code=code,
+            message=message,
+            status_code=HTTP_422,
             details=exc.errors(),
         )
 

@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 0 establishes the project foundation only: a FastAPI backend, a React workbench frontend, local SQLite configuration, Alembic setup, tests, and development documentation.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 1 adds the project system on top of the Sprint 0 foundation: project CRUD, a SQLite-backed project list, project detail pages, Alembic migrations, and Chinese-first UI copy.
 
-This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, login, cloud services, upload flows, infinite canvas, or a 3D director stage.
+This sprint does not implement characters, scenes, shots, AI Agents, image generation, video generation, ComfyUI calls, login, cloud services, upload flows, infinite canvas, or a 3D director stage.
 
 ## Structure
 
@@ -35,7 +35,7 @@ From the repository root:
 .\scripts\dev.ps1
 ```
 
-The script starts the API and web dev servers in separate PowerShell windows.
+The script runs `alembic upgrade head` before starting the API. If migration fails, startup stops. The API and web dev servers are then launched as local background processes.
 
 ## Backend
 
@@ -44,6 +44,7 @@ cd apps\api
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+alembic upgrade head
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -51,6 +52,16 @@ Health endpoint:
 
 ```text
 GET http://127.0.0.1:8000/api/health
+```
+
+Project endpoints:
+
+```text
+GET    /api/projects
+POST   /api/projects
+GET    /api/projects/{project_id}
+PATCH  /api/projects/{project_id}
+DELETE /api/projects/{project_id}
 ```
 
 Expected response:
@@ -81,7 +92,7 @@ alembic revision --autogenerate -m "describe change"
 alembic upgrade head
 ```
 
-Sprint 0 has no domain tables yet, but Alembic is configured for future schema changes.
+Database structure is managed by Alembic migrations. The API startup path does not create tables automatically.
 
 ## Tests
 

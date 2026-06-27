@@ -1,11 +1,13 @@
 import { FolderOpen } from "lucide-react";
+import type React from "react";
 
 interface EmptyStateProps {
   title: string;
   description: string;
+  action?: React.ReactNode;
 }
 
-export function EmptyState({ title, description }: EmptyStateProps) {
+export function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
     <section className="flex min-h-[280px] items-center justify-center rounded-md border border-dashed border-border bg-panel/60 p-8 text-center">
       <div className="max-w-md">
@@ -14,6 +16,7 @@ export function EmptyState({ title, description }: EmptyStateProps) {
         </div>
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
         <p className="mt-2 text-sm leading-6 text-muted">{description}</p>
+        {action && <div className="mt-5 flex justify-center">{action}</div>}
       </div>
     </section>
   );
