@@ -8,6 +8,7 @@ import type {
   ShotCharacterUpdateInput,
   ShotInput,
   ShotListResponse,
+  ShotRecommendationResponse,
   ShotReference,
   ShotReferenceInput,
   ShotReferenceListResponse,
@@ -23,7 +24,9 @@ export const shotKeys = {
   characters: (projectId: string, shotId: string) =>
     [...shotKeys.detail(projectId, shotId), "characters"] as const,
   references: (projectId: string, shotId: string) =>
-    [...shotKeys.detail(projectId, shotId), "references"] as const
+    [...shotKeys.detail(projectId, shotId), "references"] as const,
+  recommendations: (projectId: string, shotId: string) =>
+    [...shotKeys.detail(projectId, shotId), "recommendations"] as const
 };
 
 export function fetchShots(projectId: string): Promise<ShotListResponse> {
@@ -122,6 +125,16 @@ export function fetchShotReferences(
 ): Promise<ShotReferenceListResponse> {
   return apiGet<ShotReferenceListResponse>(
     `/api/projects/${projectId}/shots/${shotId}/references`
+  );
+}
+
+export function fetchShotRecommendations(
+  projectId: string,
+  shotId: string,
+  limit = 5
+): Promise<ShotRecommendationResponse> {
+  return apiGet<ShotRecommendationResponse>(
+    `/api/projects/${projectId}/shots/${shotId}/recommendations?limit=${limit}`
   );
 }
 

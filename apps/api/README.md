@@ -76,6 +76,16 @@ DELETE /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
 
 Reference image uploads accept JPG, PNG, and WEBP images. Upload size and thumbnail size are configured through environment variables.
 
+Shot recommendation API:
+
+```text
+GET /api/projects/{project_id}/shots/{shot_id}/recommendations?limit=5
+```
+
+Recommendations are real-time, rule-based, and explainable. They do not call AI models,
+do not persist recommendation results, and still require the user to confirm binding through
+the existing ShotReference create endpoint.
+
 ## Test
 
 ```powershell

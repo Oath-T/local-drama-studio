@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 4 adds a project-scoped shot workbench on top of the project, character, and scene systems: ordered shots, shot characters, reference bindings, and readiness checks for future generation workflows.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 5 adds real-time, explainable shot reference recommendations on top of the project, character, scene, and shot systems.
 
-This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, login, cloud services, infinite canvas, drag-and-drop sorting, or a 3D director stage.
+This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, model training, model fine-tuning, local or external vision model calls, login, cloud services, infinite canvas, drag-and-drop sorting, or a 3D director stage.
 
 ## Structure
 
@@ -123,7 +123,11 @@ GET    /api/projects/{project_id}/shots/{shot_id}/references
 POST   /api/projects/{project_id}/shots/{shot_id}/references
 DELETE /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}
 POST   /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}/move
+
+GET    /api/projects/{project_id}/shots/{shot_id}/recommendations
 ```
+
+Shot recommendations are computed from current shot parameters and asset metadata. They are not stored, do not call AI models, and do not automatically bind references.
 
 ## Frontend
 

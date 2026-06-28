@@ -227,3 +227,88 @@ export interface ShotReferenceUpdateInput {
   purpose?: CharacterReferencePurpose | SceneReferencePurpose;
   notes?: string | null;
 }
+
+export type RecommendationReason =
+  | "look_exact_match"
+  | "different_look"
+  | "shot_scale_exact"
+  | "shot_scale_close"
+  | "view_angle_exact"
+  | "view_angle_close"
+  | "identity_anchor"
+  | "primary_reference"
+  | "expression_match"
+  | "pose_match"
+  | "already_bound_other_purpose"
+  | "camera_position_exact"
+  | "camera_position_close"
+  | "view_direction_exact"
+  | "view_direction_close"
+  | "composition_exact"
+  | "spatial_anchor"
+  | "empty_plate"
+  | "keyword_match";
+
+export interface CharacterRecommendationItem {
+  reference_id: string;
+  media_asset_id: string;
+  thumbnail_url: string;
+  content_url: string;
+  source_look_id: string;
+  source_look_name: string;
+  shot_type: string;
+  view_angle: string;
+  expression: string;
+  pose_type: string;
+  is_primary: boolean;
+  is_identity_anchor: boolean;
+  score: number;
+  suggested_purpose: CharacterReferencePurpose;
+  reasons: RecommendationReason[];
+  bound_purposes: CharacterReferencePurpose[];
+  is_already_bound_for_suggested_purpose: boolean;
+}
+
+export interface CharacterRecommendationGroup {
+  shot_character_id: string;
+  character_id: string;
+  character_name: string;
+  look_id: string | null;
+  look_name: string | null;
+  items: CharacterRecommendationItem[];
+}
+
+export type SceneRecommendationStatusCode = "ready" | "scene_state_required" | "no_references";
+
+export interface SceneRecommendationItem {
+  reference_id: string;
+  media_asset_id: string;
+  thumbnail_url: string;
+  content_url: string;
+  source_state_id: string;
+  source_state_name: string;
+  shot_scale: string;
+  camera_position: string;
+  view_direction: string;
+  composition_type: string;
+  is_primary: boolean;
+  is_spatial_anchor: boolean;
+  is_empty_plate: boolean;
+  score: number;
+  suggested_purpose: SceneReferencePurpose;
+  reasons: RecommendationReason[];
+  bound_purposes: SceneReferencePurpose[];
+  is_already_bound_for_suggested_purpose: boolean;
+}
+
+export interface SceneRecommendationGroup {
+  status_code: SceneRecommendationStatusCode;
+  items: SceneRecommendationItem[];
+}
+
+export interface ShotRecommendationResponse {
+  shot_id: string;
+  generated_from_updated_at: string;
+  character_recommendations: CharacterRecommendationGroup[];
+  scene_recommendations: SceneRecommendationGroup;
+}

@@ -151,3 +151,50 @@ export const shotCopy = {
     zoom_out: "变焦拉远"
   }
 };
+
+export const shotRecommendationCopy = {
+  tabs: {
+    smart: "智能推荐",
+    character: "人物参考",
+    scene: "场景参考",
+    selected: "已选资产"
+  },
+  description: "推荐结果根据镜头参数和资产元数据进行规则匹配，不使用训练模型，也不会自动绑定。",
+  loading: "正在计算推荐...",
+  loadFailed: "推荐结果加载失败，手动绑定仍可继续使用。",
+  retry: "重新计算",
+  noShot: "请选择镜头后查看推荐。",
+  noCharacters: "请先添加镜头角色。",
+  noCharacterReferences: "该角色还没有可用参考图。",
+  sceneStateRequired: "请先选择场景状态。",
+  noSceneReferences: "该场景状态暂无可推荐参考图。",
+  bind: "绑定",
+  binding: "正在绑定",
+  bound: "已绑定",
+  boundOtherPurpose: "已绑定其他用途",
+  score: (value: number) => `${value} 分`,
+  groupLook: (value: string | null) => (value ? `造型：${value}` : "未指定造型"),
+  sourceLook: (value: string) => `来源造型：${value}`,
+  sourceState: (value: string) => `来源状态：${value}`,
+  reasons: {
+    look_exact_match: "造型一致",
+    different_look: "不同造型",
+    shot_scale_exact: "景别精确",
+    shot_scale_close: "景别相近",
+    view_angle_exact: "视角精确",
+    view_angle_close: "视角相近",
+    identity_anchor: "身份基准",
+    primary_reference: "主图",
+    expression_match: "表情匹配",
+    pose_match: "姿势匹配",
+    already_bound_other_purpose: "已绑其他用途",
+    camera_position_exact: "机位精确",
+    camera_position_close: "机位相近",
+    view_direction_exact: "视向精确",
+    view_direction_close: "视向相近",
+    composition_exact: "构图匹配",
+    spatial_anchor: "空间基准",
+    empty_plate: "空镜",
+    keyword_match: "关键词匹配"
+  }
+};

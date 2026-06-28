@@ -12,6 +12,8 @@ Future AI vision analysis must stay provider-neutral. Do not hard-code model ven
 
 Scene asset modeling must keep stable place information on `Scene` and time, weather, lighting, season, and crowd changes on `SceneState`. Scene reference images describe the image itself; do not duplicate official environment state fields on `SceneReference`.
 
+Shot reference recommendations are a rule-based, explainable foundation layer. They must not train or call visual models, must not persist recommendation results, and must not automatically bind references unless a future sprint explicitly changes that direction.
+
 ## Product Decision Rules
 
 Stop implementation and ask the product manager for confirmation before making decisions that affect product research direction, roadmap, interaction model, visual style, brand style, major technology direction, or large new capabilities.

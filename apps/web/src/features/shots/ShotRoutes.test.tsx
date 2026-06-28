@@ -6,8 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import App from "@/App";
 import type { Character, CharacterLook, CharacterReference, MediaAsset } from "@/features/characters/types";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
-import { shotCopy } from "./copy";
-import type { Shot } from "./types";
+import { shotCopy, shotRecommendationCopy } from "./copy";
+import type { Shot, ShotRecommendationResponse } from "./types";
 
 const projectId = "11111111-1111-4111-8111-111111111111";
 const shotId = "22222222-2222-4222-8222-222222222222";
@@ -250,6 +250,66 @@ const shot: Shot = {
   updated_at: "2026-06-28T10:00:00+00:00"
 };
 
+const recommendations: ShotRecommendationResponse = {
+  shot_id: shotId,
+  generated_from_updated_at: shot.updated_at,
+  character_recommendations: [
+    {
+      shot_character_id: shot.characters[0].id,
+      character_id: characterId,
+      character_name: character.name,
+      look_id: lookId,
+      look_name: look.name,
+      items: [
+        {
+          reference_id: characterReferenceId,
+          media_asset_id: mediaAsset.id,
+          thumbnail_url: mediaAsset.thumbnail_url,
+          content_url: mediaAsset.content_url,
+          source_look_id: lookId,
+          source_look_name: look.name,
+          shot_type: "closeup",
+          view_angle: "front",
+          expression: "neutral",
+          pose_type: "standing",
+          is_primary: true,
+          is_identity_anchor: true,
+          score: 90,
+          suggested_purpose: "identity",
+          reasons: ["look_exact_match", "identity_anchor"],
+          bound_purposes: [],
+          is_already_bound_for_suggested_purpose: false
+        }
+      ]
+    }
+  ],
+  scene_recommendations: {
+    status_code: "ready",
+    items: [
+      {
+        reference_id: sceneReferenceId,
+        media_asset_id: mediaAsset.id,
+        thumbnail_url: mediaAsset.thumbnail_url,
+        content_url: mediaAsset.content_url,
+        source_state_id: stateId,
+        source_state_name: state.name,
+        shot_scale: "wide",
+        camera_position: "eye_level",
+        view_direction: "front",
+        composition_type: "centered",
+        is_primary: true,
+        is_spatial_anchor: true,
+        is_empty_plate: false,
+        score: 95,
+        suggested_purpose: "spatial",
+        reasons: ["spatial_anchor", "composition_exact"],
+        bound_purposes: [],
+        is_already_bound_for_suggested_purpose: false
+      }
+    ]
+  }
+};
+
 function renderRoute(path: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
@@ -270,6 +330,8 @@ function mockShotApi(
     characters?: Character[];
     statesByScene?: Record<string, SceneState[]>;
     failReference?: boolean;
+    failRecommendations?: boolean;
+    recommendations?: ShotRecommendationResponse;
     failScenes?: boolean;
     failCharacters?: boolean;
     failShotUpdate?: boolean;
@@ -309,7 +371,13 @@ function mockShotApi(
       shots = [created];
       return jsonResponse(created, 201);
     }
-    if (url.startsWith(`/api/projects/${projectId}/shots/`) && method === "GET" && !url.includes("/characters") && !url.includes("/references")) {
+    if (url.includes("/recommendations?limit=5")) {
+      if (options.failRecommendations) {
+        return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      }
+      return jsonResponse(options.recommendations ?? recommendations);
+    }
+    if (url.startsWith(`/api/projects/${projectId}/shots/`) && method === "GET" && !url.includes("/characters") && !url.includes("/references") && !url.includes("/recommendations")) {
       const id = url.split("/shots/")[1];
       return jsonResponse(shots.find((item) => item.id === id) ?? shot);
     }
@@ -393,7 +461,7 @@ describe("shot workbench routes", () => {
     expect(await screen.findByRole("heading", { name: "镜头工作台" })).toBeInTheDocument();
     expect(await screen.findByText("镜头列表")).toBeInTheDocument();
     expect(await screen.findByText("镜头信息")).toBeInTheDocument();
-    expect(await screen.findByText("人物参考")).toBeInTheDocument();
+    expect(await screen.findByText(shotRecommendationCopy.tabs.smart)).toBeInTheDocument();
     await user.clear(screen.getByLabelText("镜头名称"));
     await user.type(screen.getByLabelText("镜头名称"), "雨夜入场");
     await user.click(screen.getByRole("button", { name: "保存镜头" }));
@@ -575,13 +643,73 @@ describe("shot workbench routes", () => {
     mockShotApi({ failReference: true });
     renderRoute(`/projects/${projectId}/shots/${shotId}`);
 
-    expect(await screen.findByText("人物参考")).toBeInTheDocument();
+    expect(await screen.findByText(shotRecommendationCopy.tabs.smart)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: shotRecommendationCopy.tabs.character }));
     const referenceButtons = await screen.findAllByRole("button", { name: /身份/ });
     await user.click(referenceButtons[0]);
 
     expect(await screen.findByText("相同用途的参考图已经绑定。")).toBeInTheDocument();
     expect(screen.getByText("镜头列表")).toBeInTheDocument();
     expect(screen.getByText("镜头信息")).toBeInTheDocument();
+  });
+
+  it("shows smart recommendations and binds a suggested character reference", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi();
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByText(shotRecommendationCopy.description)).toBeInTheDocument();
+    expect(await screen.findByText("90 分")).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: shotRecommendationCopy.bind })[0]);
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/shots/${shotId}/references`) &&
+            request.body?.includes(characterReferenceId) &&
+            request.body?.includes('"purpose":"identity"')
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("keeps manual tabs usable when smart recommendations fail", async () => {
+    const user = userEvent.setup();
+    mockShotApi({ failRecommendations: true });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByText(shotRecommendationCopy.loadFailed)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: shotRecommendationCopy.tabs.character }));
+
+    expect((await screen.findAllByText(shotCopy.sections.characterRefs)).length).toBeGreaterThan(0);
+  });
+
+  it("disables binding when the suggested purpose is already bound", async () => {
+    const boundRecommendations: ShotRecommendationResponse = {
+      ...recommendations,
+      character_recommendations: [
+        {
+          ...recommendations.character_recommendations[0],
+          items: [
+            {
+              ...recommendations.character_recommendations[0].items[0],
+              bound_purposes: ["identity"],
+              is_already_bound_for_suggested_purpose: true
+            }
+          ]
+        }
+      ]
+    };
+    mockShotApi({ recommendations: boundRecommendations });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    const boundButtons = await screen.findAllByRole("button", {
+      name: shotRecommendationCopy.bound
+    });
+
+    expect(boundButtons[0]).toBeDisabled();
   });
 
   it("keeps scene reference warning copy available for clearing incompatible bindings", async () => {

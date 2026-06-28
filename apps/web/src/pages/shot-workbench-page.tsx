@@ -29,6 +29,7 @@ import type { Character, CharacterLook } from "@/features/characters/types";
 import { fetchProject, projectKeys } from "@/features/projects/api";
 import { fetchSceneReferences, fetchScenes, fetchSceneStates, sceneKeys } from "@/features/scenes/api";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
+import { ShotRecommendationPanel } from "@/features/shots/components/shot-recommendation-panel";
 import {
   addShotCharacter,
   addShotReference,
@@ -48,7 +49,7 @@ import {
   updateShot,
   updateShotCharacter
 } from "@/features/shots/api";
-import { shotCopy } from "@/features/shots/copy";
+import { shotCopy, shotRecommendationCopy } from "@/features/shots/copy";
 import { shotFormSchema, type ShotFormValues } from "@/features/shots/schema";
 import type {
   CharacterReferencePurpose,
@@ -188,6 +189,9 @@ export function ShotWorkbenchPage() {
         : Promise.resolve(),
       nextShotId
         ? queryClient.invalidateQueries({ queryKey: shotKeys.references(projectId, nextShotId) })
+        : Promise.resolve(),
+      nextShotId
+        ? queryClient.invalidateQueries({ queryKey: shotKeys.recommendations(projectId, nextShotId) })
         : Promise.resolve()
     ]);
   }
@@ -719,6 +723,7 @@ function ReferencePanel({
   const [selectedShotCharacterId, setSelectedShotCharacterId] = useState("");
   const [characterPurpose, setCharacterPurpose] = useState<CharacterReferencePurpose>("identity");
   const [scenePurpose, setScenePurpose] = useState<SceneReferencePurpose>("environment");
+  const [activeTab, setActiveTab] = useState<"smart" | "character" | "scene" | "selected">("smart");
   const selectedShotCharacter = shot?.characters.find((item) => item.id === selectedShotCharacterId) ?? shot?.characters[0];
   const selectedCharacter = characters.find((item) => item.id === selectedShotCharacter?.character_id);
   const looksQuery = useQuery({
@@ -761,7 +766,31 @@ function ReferencePanel({
 
   return (
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
-      <div className="grid gap-5">
+      <div className="grid gap-4">
+        <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-background p-1 text-xs">
+          {(["smart", "character", "scene", "selected"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={cn(
+                "rounded px-2 py-1.5 text-muted",
+                activeTab === tab && "bg-primarySoft text-foreground"
+              )}
+              onClick={() => setActiveTab(tab)}
+            >
+              {shotRecommendationCopy.tabs[tab]}
+            </button>
+          ))}
+        </div>
+        {activeTab === "smart" && (
+          <ShotRecommendationPanel
+            projectId={projectId}
+            shot={shot}
+            onMessage={onMessage}
+            invalidateShotData={invalidateShotData}
+          />
+        )}
+        {activeTab === "character" && (
         <section className="grid gap-3">
           <SectionTitle>{shotCopy.sections.characterRefs}</SectionTitle>
           {shot.characters.length === 0 ? (
@@ -805,7 +834,9 @@ function ReferencePanel({
             </>
           )}
         </section>
+        )}
 
+        {activeTab === "scene" && (
         <section className="grid gap-3">
           <SectionTitle>{shotCopy.sections.sceneRefs}</SectionTitle>
           {!shot.scene_state_id ? (
@@ -838,7 +869,9 @@ function ReferencePanel({
             </>
           )}
         </section>
+        )}
 
+        {activeTab === "selected" && (
         <section className="grid gap-3">
           <SectionTitle>{shotCopy.sections.selectedRefs}</SectionTitle>
           {shot.references.length === 0 ? (
@@ -865,6 +898,7 @@ function ReferencePanel({
             ))
           )}
         </section>
+        )}
       </div>
     </aside>
   );
