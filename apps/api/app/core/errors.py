@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request, status
@@ -10,6 +11,7 @@ VALIDATION_CODE_MESSAGES: dict[str, str] = {
     "INVALID_ASPECT_RATIO": "请选择有效的画面比例。",
     "INVALID_DEFAULT_LANGUAGE": "请选择有效的默认语言。",
     "INVALID_DEFAULT_FPS": "请选择有效的默认帧率。",
+    "SHOT_DURATION_SECONDS_POSITIVE": "预计时长必须大于 0 秒。",
 }
 
 PATH_ID_ERROR_MESSAGES: dict[str, tuple[str, str]] = {
@@ -20,9 +22,13 @@ PATH_ID_ERROR_MESSAGES: dict[str, tuple[str, str]] = {
     "scene_id": ("INVALID_SCENE_ID", "场景 ID 格式无效。"),
     "state_id": ("INVALID_SCENE_STATE_ID", "场景状态 ID 格式无效。"),
     "media_asset_id": ("INVALID_MEDIA_ASSET_ID", "媒体资产 ID 格式无效。"),
+    "shot_id": ("INVALID_SHOT_ID", "镜头 ID 格式无效。"),
+    "shot_character_id": ("INVALID_SHOT_CHARACTER_ID", "镜头角色 ID 格式无效。"),
+    "shot_reference_id": ("INVALID_SHOT_REFERENCE_ID", "镜头参考图 ID 格式无效。"),
 }
 
 HTTP_422 = 422
+logger = logging.getLogger(__name__)
 
 
 class ErrorDetail(BaseModel):
@@ -101,6 +107,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled application error")
         return error_response(
             code="internal_server_error",
             message="服务端发生未预期错误，请稍后重试。",

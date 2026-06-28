@@ -10,6 +10,11 @@ from app.infrastructure.models.scene import (
     SceneReferenceRecord,
     SceneStateRecord,
 )
+from app.infrastructure.models.shot import (
+    ShotCharacterRecord,
+    ShotRecord,
+    ShotReferenceRecord,
+)
 
 __all__ = [
     "CharacterLookRecord",
@@ -20,4 +25,7 @@ __all__ = [
     "SceneRecord",
     "SceneReferenceRecord",
     "SceneStateRecord",
+    "ShotCharacterRecord",
+    "ShotRecord",
+    "ShotReferenceRecord",
 ]

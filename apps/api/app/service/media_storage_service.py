@@ -63,9 +63,7 @@ class MediaStorageService:
         state_id: str,
         upload: UploadFile,
     ) -> StoredImage:
-        relative_dir = (
-            Path("projects") / project_id / "scenes" / scene_id / "states" / state_id / "references"
-        )
+        relative_dir = Path("projects") / project_id / "media" / "scene-references"
         return await self._store_image(upload, relative_dir)
 
     async def _store_image(self, upload: UploadFile, relative_dir: Path) -> StoredImage:

@@ -6,6 +6,7 @@ import { ProjectDetailPage } from "./pages/project-detail-page";
 import { ProjectsPage } from "./pages/projects-page";
 import { SceneDetailPage } from "./pages/scene-detail-page";
 import { SceneLibraryPage } from "./pages/scene-library-page";
+import { ShotWorkbenchPage } from "./pages/shot-workbench-page";
 import { WorkbenchPage } from "./pages/workbench-page";
 
 export default function App() {
@@ -21,6 +22,8 @@ export default function App() {
       />
       <Route path="/projects/:projectId/scenes" element={<SceneLibraryPage />} />
       <Route path="/projects/:projectId/scenes/:sceneId" element={<SceneDetailPage />} />
+      <Route path="/projects/:projectId/shots" element={<ShotWorkbenchPage />} />
+      <Route path="/projects/:projectId/shots/:shotId" element={<ShotWorkbenchPage />} />
       <Route path="/characters" element={<WorkbenchPage section="characters" />} />
       <Route path="/scenes" element={<WorkbenchPage section="scenes" />} />
       <Route path="/shots" element={<WorkbenchPage section="shots" />} />

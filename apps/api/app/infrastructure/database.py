@@ -1,6 +1,7 @@
 from collections.abc import Generator
+from typing import Any
 
-from sqlalchemy import MetaData, create_engine, text
+from sqlalchemy import MetaData, create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.orm.session import sessionmaker as SessionMaker
@@ -19,7 +20,16 @@ def create_database_engine() -> Engine:
     connect_args = (
         {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
     )
-    return create_engine(settings.database_url, connect_args=connect_args, future=True)
+    engine = create_engine(settings.database_url, connect_args=connect_args, future=True)
+    if settings.database_url.startswith("sqlite"):
+
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection: Any, connection_record: object) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return engine
 
 
 _engine: Engine | None = None

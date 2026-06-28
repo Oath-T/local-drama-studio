@@ -46,6 +46,8 @@ export function AppShell({ children }: AppShellProps) {
     ? "characters"
     : location.pathname.includes("/scenes")
       ? "scenes"
+      : location.pathname.includes("/shots")
+        ? "shots"
     : navItems.find((item) => location.pathname.startsWith(item.path))?.id;
 
   return (
@@ -94,6 +96,8 @@ export function AppShell({ children }: AppShellProps) {
                       ? `/projects/${currentProjectId}/characters`
                       : item.id === "scenes" && currentProjectId
                         ? `/projects/${currentProjectId}/scenes`
+                        : item.id === "shots" && currentProjectId
+                          ? `/projects/${currentProjectId}/shots`
                       : item.path;
                   navigate(path);
                 }}

@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 3 adds scene asset management on top of the project and character systems: scenes, scene states, reference image upload, media storage, thumbnails, and metadata for future shot/reference selection.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 4 adds a project-scoped shot workbench on top of the project, character, and scene systems: ordered shots, shot characters, reference bindings, and readiness checks for future generation workflows.
 
-This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, login, cloud services, infinite canvas, or a 3D director stage.
+This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, login, cloud services, infinite canvas, drag-and-drop sorting, or a 3D director stage.
 
 ## Structure
 
@@ -102,6 +102,29 @@ POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
 DELETE /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}
 ```
 
+Shot endpoints:
+
+```text
+GET    /api/projects/{project_id}/shots
+POST   /api/projects/{project_id}/shots
+GET    /api/projects/{project_id}/shots/{shot_id}
+PATCH  /api/projects/{project_id}/shots/{shot_id}
+DELETE /api/projects/{project_id}/shots/{shot_id}
+POST   /api/projects/{project_id}/shots/{shot_id}/move
+POST   /api/projects/{project_id}/shots/{shot_id}/duplicate
+
+GET    /api/projects/{project_id}/shots/{shot_id}/characters
+POST   /api/projects/{project_id}/shots/{shot_id}/characters
+PATCH  /api/projects/{project_id}/shots/{shot_id}/characters/{shot_character_id}
+DELETE /api/projects/{project_id}/shots/{shot_id}/characters/{shot_character_id}
+POST   /api/projects/{project_id}/shots/{shot_id}/characters/{shot_character_id}/move
+
+GET    /api/projects/{project_id}/shots/{shot_id}/references
+POST   /api/projects/{project_id}/shots/{shot_id}/references
+DELETE /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}
+POST   /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}/move
+```
+
 ## Frontend
 
 ```powershell
@@ -120,6 +143,8 @@ Routes:
 - `/projects/:projectId/characters/:characterId`: character detail, looks, and reference images.
 - `/projects/:projectId/scenes`: project scene library.
 - `/projects/:projectId/scenes/:sceneId`: scene detail, states, and reference images.
+- `/projects/:projectId/shots`: project shot workbench.
+- `/projects/:projectId/shots/:shotId`: project shot workbench with a selected shot.
 
 ## Alembic
 
