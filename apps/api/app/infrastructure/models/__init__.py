@@ -5,6 +5,11 @@ from app.infrastructure.models.character import (
     MediaAssetRecord,
 )
 from app.infrastructure.models.project import ProjectRecord
+from app.infrastructure.models.scene import (
+    SceneRecord,
+    SceneReferenceRecord,
+    SceneStateRecord,
+)
 
 __all__ = [
     "CharacterLookRecord",
@@ -12,4 +17,7 @@ __all__ = [
     "CharacterReferenceRecord",
     "MediaAssetRecord",
     "ProjectRecord",
+    "SceneRecord",
+    "SceneReferenceRecord",
+    "SceneStateRecord",
 ]

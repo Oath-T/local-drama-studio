@@ -10,6 +10,8 @@ The default product language is Simplified Chinese. User-visible UI copy and fut
 
 Future AI vision analysis must stay provider-neutral. Do not hard-code model vendors into character, look, reference-image, or media-asset domain models. AI-suggested metadata must remain separate from official user-confirmed metadata until a Service-layer confirmation flow validates and applies it.
 
+Scene asset modeling must keep stable place information on `Scene` and time, weather, lighting, season, and crowd changes on `SceneState`. Scene reference images describe the image itself; do not duplicate official environment state fields on `SceneReference`.
+
 ## Product Decision Rules
 
 Stop implementation and ask the product manager for confirmation before making decisions that affect product research direction, roadmap, interaction model, visual style, brand style, major technology direction, or large new capabilities.

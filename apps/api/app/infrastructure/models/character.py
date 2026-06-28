@@ -1,9 +1,13 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
+
+if TYPE_CHECKING:
+    from app.infrastructure.models.scene import SceneReferenceRecord
 
 
 class CharacterRecord(Base):
@@ -81,6 +85,12 @@ class MediaAssetRecord(Base):
 
     references: Mapped[list["CharacterReferenceRecord"]] = relationship(
         "CharacterReferenceRecord",
+        back_populates="media_asset",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    scene_references: Mapped[list["SceneReferenceRecord"]] = relationship(
+        "SceneReferenceRecord",
         back_populates="media_asset",
         cascade="all, delete-orphan",
         passive_deletes=True,

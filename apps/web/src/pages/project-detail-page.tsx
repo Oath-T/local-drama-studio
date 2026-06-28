@@ -1,4 +1,5 @@
-import { ArrowLeft, RefreshCw, UserRound } from "lucide-react";
+import { ArrowLeft, Images, RefreshCw, UserRound } from "lucide-react";
+import type React from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -92,24 +93,57 @@ export function ProjectDetailPage() {
               />
             </section>
 
-            <section className="rounded-md border border-border bg-panel p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-foreground">角色库</h2>
-                  <p className="mt-1 text-sm text-muted">{copy.projects.detailPlaceholder}</p>
-                </div>
-                <Button asChild>
-                  <Link to={`/projects/${projectQuery.data.id}/characters`}>
-                    <UserRound className="h-4 w-4" aria-hidden="true" />
-                    打开角色库
-                  </Link>
-                </Button>
-              </div>
+            <section className="grid gap-4 md:grid-cols-2">
+              <ProjectArea
+                title="角色库"
+                description="管理角色、造型和定妆参考图。"
+                href={`/projects/${projectQuery.data.id}/characters`}
+                action="打开角色库"
+                icon={<UserRound className="h-4 w-4" aria-hidden="true" />}
+              />
+              <ProjectArea
+                title="场景库"
+                description="管理场景、场景状态和空间参考图。"
+                href={`/projects/${projectQuery.data.id}/scenes`}
+                action="打开场景库"
+                icon={<Images className="h-4 w-4" aria-hidden="true" />}
+              />
             </section>
           </>
         )}
       </div>
     </AppShell>
+  );
+}
+
+function ProjectArea({
+  title,
+  description,
+  href,
+  action,
+  icon
+}: {
+  title: string;
+  description: string;
+  href: string;
+  action: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-md border border-border bg-panel p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="mt-1 text-sm text-muted">{description}</p>
+        </div>
+        <Button asChild>
+          <Link to={href}>
+            {icon}
+            {action}
+          </Link>
+        </Button>
+      </div>
+    </section>
   );
 }
 

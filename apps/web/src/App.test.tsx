@@ -325,7 +325,12 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "逆袭归来" })).toBeInTheDocument();
     expect(screen.getByText("写实电影质感")).toBeInTheDocument();
-    expect(screen.getByText("项目工作台将在后续 Sprint 中加入角色、场景和镜头管理。")).toBeInTheDocument();
+    expect(screen.getAllByText("角色库").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("场景库").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "打开场景库" })).toHaveAttribute(
+      "href",
+      `/projects/${baseProject.id}/scenes`
+    );
   });
 
   it("shows a Chinese 404 state for a missing project", async () => {

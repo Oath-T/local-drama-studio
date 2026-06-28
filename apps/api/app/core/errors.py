@@ -17,6 +17,8 @@ PATH_ID_ERROR_MESSAGES: dict[str, tuple[str, str]] = {
     "character_id": ("INVALID_CHARACTER_ID", "角色 ID 格式无效。"),
     "look_id": ("INVALID_LOOK_ID", "造型 ID 格式无效。"),
     "reference_id": ("INVALID_REFERENCE_ID", "参考图 ID 格式无效。"),
+    "scene_id": ("INVALID_SCENE_ID", "场景 ID 格式无效。"),
+    "state_id": ("INVALID_SCENE_STATE_ID", "场景状态 ID 格式无效。"),
     "media_asset_id": ("INVALID_MEDIA_ASSET_ID", "媒体资产 ID 格式无效。"),
 }
 

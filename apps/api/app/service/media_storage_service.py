@@ -53,6 +53,22 @@ class MediaStorageService:
         look_id: str,
         upload: UploadFile,
     ) -> StoredImage:
+        relative_dir = Path("projects") / project_id / "media" / "references"
+        return await self._store_image(upload, relative_dir)
+
+    async def store_scene_reference_image(
+        self,
+        project_id: str,
+        scene_id: str,
+        state_id: str,
+        upload: UploadFile,
+    ) -> StoredImage:
+        relative_dir = (
+            Path("projects") / project_id / "scenes" / scene_id / "states" / state_id / "references"
+        )
+        return await self._store_image(upload, relative_dir)
+
+    async def _store_image(self, upload: UploadFile, relative_dir: Path) -> StoredImage:
         original_filename = Path(upload.filename or "image").name
         extension = self._get_extension(original_filename)
         if extension not in ALLOWED_IMAGE_EXTENSIONS:
@@ -97,7 +113,6 @@ class MediaStorageService:
         normalized_extension = "jpg" if extension == "jpeg" else extension
         stored_filename = f"{asset_id}.{normalized_extension}"
         thumbnail_filename = f"{asset_id}_thumb.webp"
-        relative_dir = Path("projects") / project_id / "media" / "references"
         original_relative_path = relative_dir / stored_filename
         thumbnail_relative_path = relative_dir / thumbnail_filename
         original_path = self.resolve_relative_path(

@@ -50,6 +50,30 @@ GET    /api/media/{media_asset_id}/thumbnail
 GET    /api/media/{media_asset_id}/content
 ```
 
+Scene asset API:
+
+```text
+GET    /api/projects/{project_id}/scenes
+POST   /api/projects/{project_id}/scenes
+GET    /api/projects/{project_id}/scenes/{scene_id}
+PATCH  /api/projects/{project_id}/scenes/{scene_id}
+DELETE /api/projects/{project_id}/scenes/{scene_id}
+
+GET    /api/projects/{project_id}/scenes/{scene_id}/states
+POST   /api/projects/{project_id}/scenes/{scene_id}/states
+GET    /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}
+PATCH  /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/set-default
+DELETE /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}
+
+GET    /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
+GET    /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}
+PATCH  /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/set-primary
+DELETE /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}
+```
+
 Reference image uploads accept JPG, PNG, and WEBP images. Upload size and thumbnail size are configured through environment variables.
 
 ## Test

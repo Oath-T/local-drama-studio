@@ -24,6 +24,8 @@ npm run test
 - `/projects/:projectId`: project detail.
 - `/projects/:projectId/characters`: project character library.
 - `/projects/:projectId/characters/:characterId`: character details, looks, and reference images.
-- `/characters`, `/scenes`, `/shots`, `/tasks`: top-level empty states when no project context is selected.
+- `/projects/:projectId/scenes`: project scene library.
+- `/projects/:projectId/scenes/:sceneId`: scene details, states, and reference images.
+- `/characters`, `/scenes`, `/shots`, `/tasks`: top-level guide or empty states when no project context is selected.
 
 User-visible product copy defaults to Simplified Chinese. Keep future language expansion lightweight and avoid large i18n frameworks until explicitly needed.

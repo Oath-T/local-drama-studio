@@ -44,6 +44,8 @@ export function AppShell({ children }: AppShellProps) {
   const currentProjectId = projectMatch?.[1];
   const activeSection = location.pathname.includes("/characters")
     ? "characters"
+    : location.pathname.includes("/scenes")
+      ? "scenes"
     : navItems.find((item) => location.pathname.startsWith(item.path))?.id;
 
   return (
@@ -90,6 +92,8 @@ export function AppShell({ children }: AppShellProps) {
                   const path =
                     item.id === "characters" && currentProjectId
                       ? `/projects/${currentProjectId}/characters`
+                      : item.id === "scenes" && currentProjectId
+                        ? `/projects/${currentProjectId}/scenes`
                       : item.path;
                   navigate(path);
                 }}

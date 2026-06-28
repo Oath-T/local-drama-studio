@@ -26,3 +26,6 @@ def test_database_migrations_upgrade_to_head() -> None:
     assert "character_looks" in tables
     assert "media_assets" in tables
     assert "character_references" in tables
+    assert "scenes" in tables
+    assert "scene_states" in tables
+    assert "scene_references" in tables

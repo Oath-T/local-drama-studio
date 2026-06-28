@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppShell } from "@/components/layout/app-shell";
+import { sceneCopy } from "@/features/scenes/copy";
 import type { WorkbenchSection } from "@/features/workbench/store";
 import { copy as locale } from "@/locales";
 
@@ -13,8 +14,8 @@ const sectionCopy = {
   scenes: {
     eyebrow: locale.nav.scenes,
     title: locale.nav.scenes,
-    emptyTitle: locale.empty.scenesTitle,
-    emptyDescription: locale.empty.scenesDescription
+    emptyTitle: sceneCopy.globalGuideTitle,
+    emptyDescription: sceneCopy.globalGuideDescription
   },
   shots: {
     eyebrow: locale.nav.shots,

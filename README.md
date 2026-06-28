@@ -1,6 +1,6 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 2 adds the first asset domain on top of the project system: character records, character looks, reference image upload, media storage, thumbnails, and metadata for future shot/reference selection.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 3 adds scene asset management on top of the project and character systems: scenes, scene states, reference image upload, media storage, thumbnails, and metadata for future shot/reference selection.
 
 This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, login, cloud services, infinite canvas, or a 3D director stage.
 
@@ -80,6 +80,28 @@ GET    /api/media/{media_asset_id}/thumbnail
 GET    /api/media/{media_asset_id}/content
 ```
 
+Scene endpoints:
+
+```text
+GET    /api/projects/{project_id}/scenes
+POST   /api/projects/{project_id}/scenes
+GET    /api/projects/{project_id}/scenes/{scene_id}
+PATCH  /api/projects/{project_id}/scenes/{scene_id}
+DELETE /api/projects/{project_id}/scenes/{scene_id}
+
+GET    /api/projects/{project_id}/scenes/{scene_id}/states
+POST   /api/projects/{project_id}/scenes/{scene_id}/states
+PATCH  /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/set-default
+DELETE /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}
+
+GET    /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
+PATCH  /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/set-primary
+DELETE /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}
+```
+
 ## Frontend
 
 ```powershell
@@ -96,6 +118,8 @@ Routes:
 - `/projects/:projectId`: project detail.
 - `/projects/:projectId/characters`: project character library.
 - `/projects/:projectId/characters/:characterId`: character detail, looks, and reference images.
+- `/projects/:projectId/scenes`: project scene library.
+- `/projects/:projectId/scenes/:sceneId`: scene detail, states, and reference images.
 
 ## Alembic
 
