@@ -12,6 +12,14 @@ VALIDATION_CODE_MESSAGES: dict[str, str] = {
     "INVALID_DEFAULT_FPS": "请选择有效的默认帧率。",
 }
 
+PATH_ID_ERROR_MESSAGES: dict[str, tuple[str, str]] = {
+    "project_id": ("INVALID_PROJECT_ID", "项目 ID 格式无效。"),
+    "character_id": ("INVALID_CHARACTER_ID", "角色 ID 格式无效。"),
+    "look_id": ("INVALID_LOOK_ID", "造型 ID 格式无效。"),
+    "reference_id": ("INVALID_REFERENCE_ID", "参考图 ID 格式无效。"),
+    "media_asset_id": ("INVALID_MEDIA_ASSET_ID", "媒体资产 ID 格式无效。"),
+}
+
 HTTP_422 = 422
 
 
@@ -52,8 +60,10 @@ def error_response(
 def get_validation_error_code(exc: RequestValidationError) -> tuple[str, str]:
     for error in exc.errors():
         location = error.get("loc", ())
-        if len(location) >= 2 and location[0] == "path" and location[1] == "project_id":
-            return "INVALID_PROJECT_ID", "项目 ID 格式无效。"
+        if len(location) >= 2 and location[0] == "path":
+            path_param = str(location[1])
+            if path_param in PATH_ID_ERROR_MESSAGES:
+                return PATH_ID_ERROR_MESSAGES[path_param]
 
         context = error.get("ctx")
         if isinstance(context, dict):
@@ -91,6 +101,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         return error_response(
             code="internal_server_error",
-            message="An unexpected server error occurred.",
+            message="服务端发生未预期错误，请稍后重试。",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

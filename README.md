@@ -1,23 +1,23 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 1 adds the project system on top of the Sprint 0 foundation: project CRUD, a SQLite-backed project list, project detail pages, Alembic migrations, and Chinese-first UI copy.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 2 adds the first asset domain on top of the project system: character records, character looks, reference image upload, media storage, thumbnails, and metadata for future shot/reference selection.
 
-This sprint does not implement characters, scenes, shots, AI Agents, image generation, video generation, ComfyUI calls, login, cloud services, upload flows, infinite canvas, or a 3D director stage.
+This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, login, cloud services, infinite canvas, or a 3D director stage.
 
 ## Structure
 
 ```text
 local-drama-studio/
-├── apps/
-│   ├── web/
-│   └── api/
-├── storage/
-├── scripts/
-├── docs/
-├── .env.example
-├── .gitignore
-├── README.md
-└── docker-compose.yml
+|-- apps/
+|   |-- web/
+|   `-- api/
+|-- storage/
+|-- scripts/
+|-- docs/
+|-- .env.example
+|-- .gitignore
+|-- README.md
+`-- docker-compose.yml
 ```
 
 ## Prerequisites
@@ -64,13 +64,20 @@ PATCH  /api/projects/{project_id}
 DELETE /api/projects/{project_id}
 ```
 
-Expected response:
+Character endpoints:
 
-```json
-{
-  "status": "ok",
-  "service": "local-drama-studio-api"
-}
+```text
+GET    /api/projects/{project_id}/characters
+POST   /api/projects/{project_id}/characters
+GET    /api/projects/{project_id}/characters/{character_id}
+PATCH  /api/projects/{project_id}/characters/{character_id}
+DELETE /api/projects/{project_id}/characters/{character_id}
+
+GET    /api/projects/{project_id}/characters/{character_id}/looks
+POST   /api/projects/{project_id}/characters/{character_id}/looks
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references
+GET    /api/media/{media_asset_id}/thumbnail
+GET    /api/media/{media_asset_id}/content
 ```
 
 ## Frontend
@@ -82,6 +89,13 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+Routes:
+
+- `/projects`: project list.
+- `/projects/:projectId`: project detail.
+- `/projects/:projectId/characters`: project character library.
+- `/projects/:projectId/characters/:characterId`: character detail, looks, and reference images.
 
 ## Alembic
 
@@ -100,6 +114,7 @@ Backend:
 
 ```powershell
 cd apps\api
+ruff check .
 pytest
 ```
 
@@ -113,4 +128,4 @@ npm run test
 
 ## Configuration
 
-Copy `.env.example` to `.env` when local overrides are needed. Do not commit `.env`, database files, uploaded assets, or generated output.
+Copy `.env.example` to `.env` when local overrides are needed. Do not commit `.env`, SQLite database files, uploaded assets, or generated output.

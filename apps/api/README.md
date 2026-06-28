@@ -1,6 +1,6 @@
 # Local Drama Studio API
 
-FastAPI backend for the local development platform foundation.
+FastAPI backend for the local development platform.
 
 ## Run
 
@@ -11,7 +11,9 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 The application does not create or modify tables during startup. Run Alembic migrations before starting the API.
 
-## Project API
+## APIs
+
+Project API:
 
 ```text
 GET    /api/projects
@@ -21,8 +23,38 @@ PATCH  /api/projects/{project_id}
 DELETE /api/projects/{project_id}
 ```
 
+Character asset API:
+
+```text
+GET    /api/projects/{project_id}/characters
+POST   /api/projects/{project_id}/characters
+GET    /api/projects/{project_id}/characters/{character_id}
+PATCH  /api/projects/{project_id}/characters/{character_id}
+DELETE /api/projects/{project_id}/characters/{character_id}
+
+GET    /api/projects/{project_id}/characters/{character_id}/looks
+POST   /api/projects/{project_id}/characters/{character_id}/looks
+GET    /api/projects/{project_id}/characters/{character_id}/looks/{look_id}
+PATCH  /api/projects/{project_id}/characters/{character_id}/looks/{look_id}
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/set-default
+DELETE /api/projects/{project_id}/characters/{character_id}/looks/{look_id}
+
+GET    /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references
+GET    /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}
+PATCH  /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/set-primary
+DELETE /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}
+
+GET    /api/media/{media_asset_id}/thumbnail
+GET    /api/media/{media_asset_id}/content
+```
+
+Reference image uploads accept JPG, PNG, and WEBP images. Upload size and thumbnail size are configured through environment variables.
+
 ## Test
 
 ```powershell
+ruff check .
 pytest
 ```

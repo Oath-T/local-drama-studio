@@ -12,6 +12,24 @@ export class ApiClientError extends Error {
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 const requestTimeoutMs = 10000;
 
+const errorCodeMessages: Record<string, string> = {
+  PROJECT_NOT_FOUND: "项目不存在或已被删除。",
+  CHARACTER_NOT_FOUND: "角色不存在或已被删除。",
+  CHARACTER_LOOK_NOT_FOUND: "造型不存在或已被删除。",
+  CHARACTER_REFERENCE_NOT_FOUND: "参考图不存在或已被删除。",
+  CHARACTER_NAME_REQUIRED: "请输入角色名称。",
+  CHARACTER_LOOK_NAME_REQUIRED: "请输入造型名称。",
+  LAST_LOOK_DELETE_FORBIDDEN: "不能删除角色的最后一套造型。",
+  INVALID_PROJECT_ID: "项目 ID 格式无效。",
+  INVALID_CHARACTER_ID: "角色 ID 格式无效。",
+  INVALID_LOOK_ID: "造型 ID 格式无效。",
+  INVALID_REFERENCE_ID: "参考图 ID 格式无效。",
+  IMAGE_EXTENSION_NOT_ALLOWED: "仅支持 JPG、PNG 和 WEBP 图片。",
+  IMAGE_TOO_LARGE: "图片文件不能超过限制大小。",
+  IMAGE_INVALID: "图片文件已损坏或无法识别。",
+  FILE_NOT_FOUND: "媒体文件不存在或已被删除。"
+};
+
 function buildUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${baseUrl}${normalizedPath}`;
@@ -27,10 +45,13 @@ interface ErrorPayload {
 async function parseError(response: Response): Promise<ApiClientError> {
   try {
     const payload = (await response.json()) as ErrorPayload;
+    const code = payload.error?.code;
     return new ApiClientError(
-      payload.error?.message ?? `请求失败，状态码 ${response.status}。`,
+      (code ? errorCodeMessages[code] : undefined) ??
+        payload.error?.message ??
+        `请求失败，状态码 ${response.status}。`,
       response.status,
-      payload.error?.code
+      code
     );
   } catch {
     return new ApiClientError(`请求失败，状态码 ${response.status}。`, response.status);
@@ -46,11 +67,12 @@ export async function apiRequest<TResponse>(
   let response: Response;
 
   try {
+    const isFormData = init.body instanceof FormData;
     response = await fetch(buildUrl(path), {
       ...init,
       headers: {
         Accept: "application/json",
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.body && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...init.headers
       },
       signal: controller.signal
@@ -90,4 +112,11 @@ export async function apiPatch<TResponse, TBody>(path: string, body: TBody): Pro
 
 export async function apiDelete(path: string): Promise<void> {
   await apiRequest<void>(path, { method: "DELETE" });
+}
+
+export async function apiPostForm<TResponse>(
+  path: string,
+  body: FormData
+): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "POST", body });
 }

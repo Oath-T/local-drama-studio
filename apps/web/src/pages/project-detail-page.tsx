@@ -1,11 +1,10 @@
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, UserRound } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusMessage } from "@/components/ui/status-message";
 import { fetchProject, projectKeys } from "@/features/projects/api";
 import { copy } from "@/locales";
 
@@ -93,7 +92,20 @@ export function ProjectDetailPage() {
               />
             </section>
 
-            <StatusMessage tone="neutral">{copy.projects.detailPlaceholder}</StatusMessage>
+            <section className="rounded-md border border-border bg-panel p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">角色库</h2>
+                  <p className="mt-1 text-sm text-muted">{copy.projects.detailPlaceholder}</p>
+                </div>
+                <Button asChild>
+                  <Link to={`/projects/${projectQuery.data.id}/characters`}>
+                    <UserRound className="h-4 w-4" aria-hidden="true" />
+                    打开角色库
+                  </Link>
+                </Button>
+              </div>
+            </section>
           </>
         )}
       </div>

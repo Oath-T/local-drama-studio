@@ -28,9 +28,7 @@ class ProjectRepository:
         self.session.refresh(project)
         return project
 
-    def update_project(
-        self, project: ProjectRecord, values: Mapping[str, object]
-    ) -> ProjectRecord:
+    def update_project(self, project: ProjectRecord, values: Mapping[str, object]) -> ProjectRecord:
         for key, value in values.items():
             setattr(project, key, value)
         self.session.commit()

@@ -8,6 +8,8 @@ Do not implement Agents, a 3D director stage, infinite canvas, login, multi-user
 
 The default product language is Simplified Chinese. User-visible UI copy and future generated content or prompts should prefer Chinese by default, while code, database fields, filenames, and API identifiers continue to use English. Keep room for future English expansion without introducing large internationalization frameworks prematurely.
 
+Future AI vision analysis must stay provider-neutral. Do not hard-code model vendors into character, look, reference-image, or media-asset domain models. AI-suggested metadata must remain separate from official user-confirmed metadata until a Service-layer confirmation flow validates and applies it.
+
 ## Product Decision Rules
 
 Stop implementation and ask the product manager for confirmation before making decisions that affect product research direction, roadmap, interaction model, visual style, brand style, major technology direction, or large new capabilities.

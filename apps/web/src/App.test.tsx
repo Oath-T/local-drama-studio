@@ -4,6 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import App from "./App";
+import type {
+  Character,
+  CharacterLook,
+  CharacterReference,
+  MediaAsset
+} from "./features/characters/types";
 import type { Project } from "./features/projects/types";
 
 const baseProject: Project = {
@@ -17,6 +23,80 @@ const baseProject: Project = {
   cover_image_path: null,
   created_at: "2026-06-27T10:00:00+00:00",
   updated_at: "2026-06-27T10:00:00+00:00"
+};
+
+const baseMediaAsset: MediaAsset = {
+  id: "44444444-4444-4444-8444-444444444444",
+  project_id: baseProject.id,
+  media_type: "image",
+  original_filename: "reference.png",
+  mime_type: "image/png",
+  extension: "png",
+  size_bytes: 1200,
+  width: 800,
+  height: 600,
+  sha256: "abc123",
+  thumbnail_url: "/api/media/44444444-4444-4444-8444-444444444444/thumbnail",
+  content_url: "/api/media/44444444-4444-4444-8444-444444444444/content",
+  created_at: "2026-06-28T10:00:00+00:00"
+};
+
+const baseReference: CharacterReference = {
+  id: "33333333-3333-4333-8333-333333333333",
+  look_id: "22222222-2222-4222-8222-222222222222",
+  media_asset_id: baseMediaAsset.id,
+  shot_type: "closeup",
+  view_angle: "front",
+  expression: "neutral",
+  pose_type: "standing",
+  custom_expression: null,
+  custom_pose: null,
+  tags: ["identity"],
+  description: "front identity reference",
+  notes: null,
+  is_primary: true,
+  is_identity_anchor: true,
+  analysis_status: "not_analyzed",
+  suggestion_review_status: "not_reviewed",
+  analysis_suggestions: null,
+  media_asset: baseMediaAsset,
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
+};
+
+const baseLook: CharacterLook = {
+  id: baseReference.look_id,
+  character_id: "11111111-2222-4333-8444-555555555555",
+  name: "Base Look",
+  description: null,
+  costume_description: null,
+  hair_description: null,
+  makeup_description: null,
+  condition_description: null,
+  prompt_appearance: null,
+  is_default: true,
+  reference_count: 1,
+  primary_reference: baseReference,
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
+};
+
+const baseCharacter: Character = {
+  id: baseLook.character_id,
+  project_id: baseProject.id,
+  name: "Lin Zhixia",
+  aliases: null,
+  role_type: "protagonist",
+  description: "Lead character",
+  appearance_description: null,
+  personality_description: null,
+  prompt_identity: null,
+  notes: null,
+  default_look: baseLook,
+  look_count: 1,
+  reference_count: 1,
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
 };
 
 function renderApp(initialPath = "/projects") {
@@ -79,6 +159,30 @@ function mockProjectApi(initialProjects: Project[] = []) {
       };
       projects = [project, ...projects];
       return jsonResponse(project, 201);
+    }
+
+    const characterListMatch = url.match(/^\/api\/projects\/([^/]+)\/characters$/);
+    if (characterListMatch && method === "GET") {
+      return jsonResponse({ items: [baseCharacter], total: 1 });
+    }
+
+    const characterDetailMatch = url.match(
+      /^\/api\/projects\/([^/]+)\/characters\/([^/]+)$/
+    );
+    if (characterDetailMatch && method === "GET") {
+      return jsonResponse(baseCharacter);
+    }
+
+    const looksMatch = url.match(/^\/api\/projects\/([^/]+)\/characters\/([^/]+)\/looks$/);
+    if (looksMatch && method === "GET") {
+      return jsonResponse({ items: [baseLook], total: 1 });
+    }
+
+    const referencesMatch = url.match(
+      /^\/api\/projects\/([^/]+)\/characters\/([^/]+)\/looks\/([^/]+)\/references$/
+    );
+    if (referencesMatch && method === "GET") {
+      return jsonResponse({ items: [baseReference], total: 1 });
     }
 
     const detailMatch = url.match(/^\/api\/projects\/(.+)$/);

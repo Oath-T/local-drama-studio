@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     database_url: str = Field(default_factory=get_default_database_url)
     storage_dir: Path = Field(default_factory=get_default_storage_dir)
+    max_image_upload_mb: int = 15
+    thumbnail_max_size: int = 512
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )

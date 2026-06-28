@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { CharacterDetailPage } from "./pages/character-detail-page";
+import { CharacterLibraryPage } from "./pages/character-library-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
 import { ProjectsPage } from "./pages/projects-page";
 import { WorkbenchPage } from "./pages/workbench-page";
@@ -10,6 +12,11 @@ export default function App() {
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+      <Route path="/projects/:projectId/characters" element={<CharacterLibraryPage />} />
+      <Route
+        path="/projects/:projectId/characters/:characterId"
+        element={<CharacterDetailPage />}
+      />
       <Route path="/characters" element={<WorkbenchPage section="characters" />} />
       <Route path="/scenes" element={<WorkbenchPage section="scenes" />} />
       <Route path="/shots" element={<WorkbenchPage section="shots" />} />

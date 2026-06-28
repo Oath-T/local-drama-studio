@@ -21,6 +21,9 @@ npm run test
 ## Routes
 
 - `/projects`: project list.
-- `/projects/:projectId`: project detail placeholder.
+- `/projects/:projectId`: project detail.
+- `/projects/:projectId/characters`: project character library.
+- `/projects/:projectId/characters/:characterId`: character details, looks, and reference images.
+- `/characters`, `/scenes`, `/shots`, `/tasks`: top-level empty states when no project context is selected.
 
-User-visible copy is centralized under `src/locales` with `zh-CN` as the active default.
+User-visible product copy defaults to Simplified Chinese. Keep future language expansion lightweight and avoid large i18n frameworks until explicitly needed.

@@ -20,4 +20,9 @@ def test_database_migrations_upgrade_to_head() -> None:
     command.upgrade(alembic_config, "head")
 
     inspector = inspect(get_engine())
-    assert "projects" in inspector.get_table_names()
+    tables = inspector.get_table_names()
+    assert "projects" in tables
+    assert "characters" in tables
+    assert "character_looks" in tables
+    assert "media_assets" in tables
+    assert "character_references" in tables

@@ -40,7 +40,11 @@ export function AppShell({ children }: AppShellProps) {
   const navigate = useNavigate();
   const sidebarCollapsed = useWorkbenchStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useWorkbenchStore((state) => state.toggleSidebar);
-  const activeSection = navItems.find((item) => location.pathname.startsWith(item.path))?.id;
+  const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+  const currentProjectId = projectMatch?.[1];
+  const activeSection = location.pathname.includes("/characters")
+    ? "characters"
+    : navItems.find((item) => location.pathname.startsWith(item.path))?.id;
 
   return (
     <div className="flex h-screen min-h-[768px] overflow-hidden bg-background text-foreground">
@@ -82,7 +86,13 @@ export function AppShell({ children }: AppShellProps) {
                 type="button"
                 title={sidebarCollapsed ? item.label : undefined}
                 aria-current={isActive ? "page" : undefined}
-                onClick={() => navigate(item.path)}
+                onClick={() => {
+                  const path =
+                    item.id === "characters" && currentProjectId
+                      ? `/projects/${currentProjectId}/characters`
+                      : item.path;
+                  navigate(path);
+                }}
                 className={cn(
                   "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors",
                   isActive
