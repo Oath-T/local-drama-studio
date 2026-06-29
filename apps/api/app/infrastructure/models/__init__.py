@@ -4,6 +4,10 @@ from app.infrastructure.models.character import (
     CharacterReferenceRecord,
     MediaAssetRecord,
 )
+from app.infrastructure.models.keyframe_task import (
+    KeyframeGenerationTaskRecord,
+    KeyframeGenerationTaskReferenceRecord,
+)
 from app.infrastructure.models.project import ProjectRecord
 from app.infrastructure.models.scene import (
     SceneRecord,
@@ -21,6 +25,8 @@ __all__ = [
     "CharacterLookRecord",
     "CharacterRecord",
     "CharacterReferenceRecord",
+    "KeyframeGenerationTaskRecord",
+    "KeyframeGenerationTaskReferenceRecord",
     "MediaAssetRecord",
     "ProjectRecord",
     "SceneRecord",

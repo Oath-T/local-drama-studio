@@ -26,7 +26,13 @@ export const shotKeys = {
   references: (projectId: string, shotId: string) =>
     [...shotKeys.detail(projectId, shotId), "references"] as const,
   recommendations: (projectId: string, shotId: string) =>
-    [...shotKeys.detail(projectId, shotId), "recommendations"] as const
+    [...shotKeys.detail(projectId, shotId), "recommendations"] as const,
+  keyframeTasks: (projectId: string, shotId: string) =>
+    [...shotKeys.detail(projectId, shotId), "keyframe-tasks"] as const,
+  keyframeTask: (projectId: string, taskId: string) =>
+    [...shotKeys.all(projectId), "keyframe-task", taskId] as const,
+  keyframeTaskReferences: (projectId: string, taskId: string) =>
+    [...shotKeys.keyframeTask(projectId, taskId), "references"] as const
 };
 
 export function fetchShots(projectId: string): Promise<ShotListResponse> {

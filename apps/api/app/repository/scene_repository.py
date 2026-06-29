@@ -4,6 +4,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.infrastructure.models.character import MediaAssetRecord
+from app.infrastructure.models.keyframe_task import KeyframeGenerationTaskReferenceRecord
 from app.infrastructure.models.project import ProjectRecord
 from app.infrastructure.models.scene import (
     SceneRecord,
@@ -264,17 +265,29 @@ class SceneRepository:
     def delete_reference_and_media_asset(
         self,
         reference: SceneReferenceRecord,
-        media_asset_id: str,
+        media_asset_id: str | None,
         next_primary_reference: SceneReferenceRecord | None = None,
     ) -> None:
         try:
             self.session.delete(reference)
-            self.session.execute(
-                delete(MediaAssetRecord).where(MediaAssetRecord.id == media_asset_id)
-            )
+            if media_asset_id is not None:
+                self.session.execute(
+                    delete(MediaAssetRecord).where(MediaAssetRecord.id == media_asset_id)
+                )
             if next_primary_reference is not None:
                 next_primary_reference.is_primary = True
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
+
+    def get_keyframe_referenced_media_asset_ids(self, media_asset_ids: list[str]) -> set[str]:
+        if not media_asset_ids:
+            return set()
+        return set(
+            self.session.scalars(
+                select(KeyframeGenerationTaskReferenceRecord.media_asset_id).where(
+                    KeyframeGenerationTaskReferenceRecord.media_asset_id.in_(media_asset_ids)
+                )
+            ).all()
+        )

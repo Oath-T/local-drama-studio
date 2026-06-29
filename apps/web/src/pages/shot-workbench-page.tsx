@@ -29,6 +29,7 @@ import type { Character, CharacterLook } from "@/features/characters/types";
 import { fetchProject, projectKeys } from "@/features/projects/api";
 import { fetchSceneReferences, fetchScenes, fetchSceneStates, sceneKeys } from "@/features/scenes/api";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
+import { KeyframeTaskPanel } from "@/features/keyframe-tasks/components/keyframe-task-panel";
 import { ShotRecommendationPanel } from "@/features/shots/components/shot-recommendation-panel";
 import {
   addShotCharacter,
@@ -192,6 +193,9 @@ export function ShotWorkbenchPage() {
         : Promise.resolve(),
       nextShotId
         ? queryClient.invalidateQueries({ queryKey: shotKeys.recommendations(projectId, nextShotId) })
+        : Promise.resolve(),
+      nextShotId
+        ? queryClient.invalidateQueries({ queryKey: shotKeys.keyframeTasks(projectId, nextShotId) })
         : Promise.resolve()
     ]);
   }
@@ -723,7 +727,7 @@ function ReferencePanel({
   const [selectedShotCharacterId, setSelectedShotCharacterId] = useState("");
   const [characterPurpose, setCharacterPurpose] = useState<CharacterReferencePurpose>("identity");
   const [scenePurpose, setScenePurpose] = useState<SceneReferencePurpose>("environment");
-  const [activeTab, setActiveTab] = useState<"smart" | "character" | "scene" | "selected">("smart");
+  const [activeTab, setActiveTab] = useState<"smart" | "keyframes" | "character" | "scene" | "selected">("smart");
   const selectedShotCharacter = shot?.characters.find((item) => item.id === selectedShotCharacterId) ?? shot?.characters[0];
   const selectedCharacter = characters.find((item) => item.id === selectedShotCharacter?.character_id);
   const looksQuery = useQuery({
@@ -768,7 +772,7 @@ function ReferencePanel({
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
       <div className="grid gap-4">
         <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-background p-1 text-xs">
-          {(["smart", "character", "scene", "selected"] as const).map((tab) => (
+          {(["smart", "keyframes", "character", "scene", "selected"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -784,6 +788,14 @@ function ReferencePanel({
         </div>
         {activeTab === "smart" && (
           <ShotRecommendationPanel
+            projectId={projectId}
+            shot={shot}
+            onMessage={onMessage}
+            invalidateShotData={invalidateShotData}
+          />
+        )}
+        {activeTab === "keyframes" && (
+          <KeyframeTaskPanel
             projectId={projectId}
             shot={shot}
             onMessage={onMessage}

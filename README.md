@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 6 adds user-triggered visual analysis suggestions for character and scene reference images on top of the project, character, scene, shot, and rule-based recommendation systems.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 7 adds keyframe generation task preparation on top of project, character, scene, shot, rule-based recommendation, and user-triggered visual analysis systems.
 
-This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, or a 3D director stage.
+This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, generation queues, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, or a 3D director stage.
 
 ## Structure
 
@@ -126,6 +126,19 @@ POST   /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}
 
 GET    /api/projects/{project_id}/shots/{shot_id}/recommendations
 
+GET    /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
+POST   /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
+GET    /api/projects/{project_id}/keyframe-tasks/{task_id}
+PATCH  /api/projects/{project_id}/keyframe-tasks/{task_id}
+DELETE /api/projects/{project_id}/keyframe-tasks/{task_id}
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/duplicate
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/mark-ready
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/mark-draft
+GET    /api/projects/{project_id}/keyframe-tasks/{task_id}/references
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/references
+PATCH  /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
+DELETE /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
+
 GET    /api/system/capabilities
 GET    /api/projects/{project_id}/vision-analysis/tasks/{task_id}
 POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/tasks
@@ -141,6 +154,8 @@ POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
 Shot recommendations are computed from current shot parameters and asset metadata. They are not stored, do not call AI models, and do not automatically bind references.
 
 Vision analysis is user-triggered per reference image. Suggestions are stored separately from official metadata and must be accepted through the dedicated review flow before they change reference metadata. The API starts without an OpenAI key; manual editing remains available.
+
+Keyframe tasks store a validated shot snapshot, prompt fields, generation parameters, and selected task references. They only support `draft` and `ready` statuses in Sprint 7 and never call image generation services.
 
 ## Frontend
 

@@ -155,6 +155,7 @@ export const shotCopy = {
 export const shotRecommendationCopy = {
   tabs: {
     smart: "智能推荐",
+    keyframes: "关键帧任务",
     character: "人物参考",
     scene: "场景参考",
     selected: "已选资产"

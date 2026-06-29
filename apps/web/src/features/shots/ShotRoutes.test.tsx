@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 
 import App from "@/App";
 import type { Character, CharacterLook, CharacterReference, MediaAsset } from "@/features/characters/types";
+import { keyframeTaskCopy } from "@/features/keyframe-tasks/copy";
+import type { KeyframeTask } from "@/features/keyframe-tasks/types";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
 import { shotCopy, shotRecommendationCopy } from "./copy";
 import type { Shot, ShotRecommendationResponse } from "./types";
@@ -21,6 +23,11 @@ const secondSceneId = "12121212-1212-4121-8121-121212121212";
 const secondStateId = "13131313-1313-4131-8131-131313131313";
 const secondCharacterId = "14141414-1414-4141-8141-141414141414";
 const secondLookId = "15151515-1515-4151-8151-151515151515";
+const shotCharacterId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const shotCharacterReferenceId = "16161616-1616-4161-8161-161616161616";
+const shotSceneReferenceId = "17171717-1717-4171-8171-171717171717";
+const keyframeTaskId = "18181818-1818-4181-8181-181818181818";
+const keyframeTaskReferenceId = "19191919-1919-4191-8191-191919191919";
 
 const mediaAsset: MediaAsset = {
   id: "99999999-9999-4999-8999-999999999999",
@@ -229,7 +236,7 @@ const shot: Shot = {
   reference_count: 0,
   characters: [
     {
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      id: shotCharacterId,
       shot_id: shotId,
       character_id: characterId,
       character_name: character.name,
@@ -246,6 +253,142 @@ const shot: Shot = {
     }
   ],
   references: [],
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
+};
+
+const shotCharacterReferenceBinding = {
+  id: shotCharacterReferenceId,
+  shot_id: shotId,
+  reference_type: "character" as const,
+  character_reference_id: characterReferenceId,
+  scene_reference_id: null,
+  shot_character_id: shotCharacterId,
+  purpose: "identity" as const,
+  order_index: 1,
+  notes: null,
+  media_asset: mediaAsset,
+  character_reference: characterReference,
+  scene_reference: null,
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
+};
+
+const shotSceneReferenceBinding = {
+  id: shotSceneReferenceId,
+  shot_id: shotId,
+  reference_type: "scene" as const,
+  character_reference_id: null,
+  scene_reference_id: sceneReferenceId,
+  shot_character_id: null,
+  purpose: "environment" as const,
+  order_index: 2,
+  notes: null,
+  media_asset: mediaAsset,
+  character_reference: null,
+  scene_reference: sceneReference,
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
+};
+
+const shotWithReferences: Shot = {
+  ...shot,
+  references: [shotCharacterReferenceBinding, shotSceneReferenceBinding],
+  reference_count: 2,
+  readiness_status: "asset_ready",
+  missing_items: []
+};
+
+const keyframeTask: KeyframeTask = {
+  id: keyframeTaskId,
+  project_id: projectId,
+  shot_id: shotId,
+  name: "关键帧任务 1",
+  status: "draft",
+  shot_snapshot: {
+    schema_version: 1,
+    shot_id: shotId,
+    order_index: 1,
+    title: shot.name,
+    story_description: shot.story_description,
+    visual_description: shot.visual_description,
+    action_summary: shot.action_summary,
+    dialogue: shot.dialogue,
+    mood_description: shot.mood_description,
+    duration_seconds: shot.duration_seconds,
+    shot_scale: shot.shot_scale,
+    camera_angle: shot.camera_angle,
+    custom_camera_angle: shot.custom_camera_angle,
+    camera_height: shot.camera_height,
+    custom_camera_height: shot.custom_camera_height,
+    lens: null,
+    composition_type: shot.composition_type,
+    custom_composition: shot.custom_composition,
+    camera_movement: shot.camera_movement,
+    custom_camera_movement: shot.custom_camera_movement,
+    scene_id: sceneId,
+    scene_name: scene.name,
+    scene_state_id: stateId,
+    scene_state_name: state.name,
+    characters: [
+      {
+        shot_character_id: shotCharacterId,
+        character_id: characterId,
+        character_name: character.name,
+        look_id: lookId,
+        look_name: look.name,
+        action_description: null,
+        expression_description: null,
+        position_description: null,
+        is_primary_subject: true,
+        order_index: 1
+      }
+    ]
+  },
+  source_shot_updated_at: "2026-06-28T10:00:00+00:00",
+  prompt_zh: "中文提示词",
+  prompt_en: null,
+  negative_prompt: "低质量",
+  aspect_ratio: "9:16",
+  width: 768,
+  height: 1360,
+  seed: null,
+  steps: 30,
+  guidance_scale: 7,
+  sampler_name: null,
+  scheduler_name: null,
+  model_provider: null,
+  model_name: null,
+  model_version: null,
+  output_count: 1,
+  readiness: {
+    readiness_status: "ready",
+    blocking_issues: [],
+    warnings: ["no_english_prompt", "no_model_selected", "no_seed"]
+  },
+  shot_changed_since_snapshot: false,
+  references: [
+    {
+      id: keyframeTaskReferenceId,
+      task_id: keyframeTaskId,
+      reference_type: "character",
+      shot_reference_id: shotCharacterReferenceId,
+      character_reference_id: characterReferenceId,
+      scene_reference_id: null,
+      media_asset_id: mediaAsset.id,
+      purpose: "identity",
+      order_index: 1,
+      source_shot_character_id: shotCharacterId,
+      source_character_id: characterId,
+      source_look_id: lookId,
+      source_scene_id: null,
+      source_scene_state_id: null,
+      source_reference_deleted: false,
+      media_asset: mediaAsset,
+      created_at: "2026-06-28T10:00:00+00:00"
+    }
+  ],
+  reference_count: 1,
   created_at: "2026-06-28T10:00:00+00:00",
   updated_at: "2026-06-28T10:00:00+00:00"
 };
@@ -335,13 +478,18 @@ function mockShotApi(
     failScenes?: boolean;
     failCharacters?: boolean;
     failShotUpdate?: boolean;
+    keyframeTasks?: KeyframeTask[];
+    failKeyframeTasks?: boolean;
+    failKeyframeUpdate?: boolean;
   } = {}
 ) {
   const requests: Array<{ url: string; method: string; body?: string }> = [];
   let shots = options.shots ?? [shot];
+  let keyframeTasks = options.keyframeTasks ?? [];
   const scenes = options.scenes ?? [scene];
   const characters = options.characters ?? [character];
   const statesByScene = options.statesByScene ?? { [sceneId]: [state] };
+  const currentShot = () => shots.find((item) => item.id === shotId) ?? shot;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const method = init?.method ?? "GET";
@@ -371,13 +519,98 @@ function mockShotApi(
       shots = [created];
       return jsonResponse(created, 201);
     }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks` && method === "GET") {
+      if (options.failKeyframeTasks) {
+        return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      }
+      return jsonResponse({ items: keyframeTasks, total: keyframeTasks.length });
+    }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks` && method === "POST") {
+      const created = { ...keyframeTask, id: "20202020-2020-4202-8202-202020202020" };
+      keyframeTasks = [created, ...keyframeTasks];
+      return jsonResponse(created, 201);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` && method === "GET") {
+      return jsonResponse(keyframeTasks.find((item) => item.id === keyframeTaskId) ?? keyframeTask);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` && method === "PATCH") {
+      if (options.failKeyframeUpdate) {
+        return jsonResponse({ error: { code: "KEYFRAME_TASK_NOT_READY", message: "not ready" } }, 400);
+      }
+      const patch = body ? JSON.parse(body) : {};
+      const updated = { ...(keyframeTasks[0] ?? keyframeTask), ...patch, status: "draft" } as KeyframeTask;
+      keyframeTasks = keyframeTasks.map((item) => (item.id === keyframeTaskId ? updated : item));
+      return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` && method === "DELETE") {
+      keyframeTasks = keyframeTasks.filter((item) => item.id !== keyframeTaskId);
+      return emptyResponse();
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/duplicate` && method === "POST") {
+      const duplicate = {
+        ...keyframeTask,
+        id: "21212121-2121-4212-8212-212121212121",
+        name: "关键帧任务 1 - 副本"
+      };
+      keyframeTasks = [duplicate, ...keyframeTasks];
+      return jsonResponse(duplicate);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/mark-ready` && method === "POST") {
+      const updated = { ...keyframeTask, status: "ready" as const };
+      keyframeTasks = keyframeTasks.map((item) => (item.id === keyframeTaskId ? updated : item));
+      return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/mark-draft` && method === "POST") {
+      const updated = { ...keyframeTask, status: "draft" as const };
+      keyframeTasks = keyframeTasks.map((item) => (item.id === keyframeTaskId ? updated : item));
+      return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/references` && method === "GET") {
+      return jsonResponse({ items: keyframeTask.references, total: keyframeTask.references.length });
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/references` && method === "POST") {
+      const patch = body ? JSON.parse(body) : {};
+      const addedReference = {
+        ...keyframeTask.references[0],
+        id: "22222222-2222-4222-8222-222222222221",
+        shot_reference_id: patch.shot_reference_id,
+        purpose: patch.purpose,
+        order_index: keyframeTask.references.length + 1
+      };
+      const updated = {
+        ...keyframeTask,
+        references: [...keyframeTask.references, addedReference],
+        reference_count: keyframeTask.references.length + 1
+      };
+      keyframeTasks = keyframeTasks.map((item) => (item.id === keyframeTaskId ? updated : item));
+      return jsonResponse(updated, 201);
+    }
+    if (
+      url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/references/${keyframeTaskReferenceId}` &&
+      method === "PATCH"
+    ) {
+      const patch = body ? JSON.parse(body) : {};
+      const updated = {
+        ...keyframeTask,
+        references: keyframeTask.references.map((reference) =>
+          reference.id === keyframeTaskReferenceId ? { ...reference, ...patch } : reference
+        )
+      };
+      return jsonResponse(updated);
+    }
+    if (
+      url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/references/${keyframeTaskReferenceId}` &&
+      method === "DELETE"
+    ) {
+      return emptyResponse();
+    }
     if (url.includes("/recommendations?limit=5")) {
       if (options.failRecommendations) {
         return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
       }
       return jsonResponse(options.recommendations ?? recommendations);
     }
-    if (url.startsWith(`/api/projects/${projectId}/shots/`) && method === "GET" && !url.includes("/characters") && !url.includes("/references") && !url.includes("/recommendations")) {
+    if (url.startsWith(`/api/projects/${projectId}/shots/`) && method === "GET" && !url.includes("/characters") && !url.includes("/references") && !url.includes("/recommendations") && !url.includes("/keyframe-tasks")) {
       const id = url.split("/shots/")[1];
       return jsonResponse(shots.find((item) => item.id === id) ?? shot);
     }
@@ -391,19 +624,19 @@ function mockShotApi(
       return jsonResponse({ ...shot, ...(body ? JSON.parse(body) : {}) });
     }
     if (url === `/api/projects/${projectId}/shots/${shotId}` && method === "DELETE") return emptyResponse();
-    if (url.endsWith("/move") && method === "POST") return jsonResponse(shot);
-    if (url.endsWith("/duplicate") && method === "POST") return jsonResponse({ ...shot, id: "copy", name: "镜头一 - 副本" });
-    if (url === `/api/projects/${projectId}/shots/${shotId}/characters` && method === "GET") return jsonResponse({ items: shot.characters, total: 1 });
-    if (url === `/api/projects/${projectId}/shots/${shotId}/characters` && method === "POST") return jsonResponse(shot.characters[0], 201);
-    if (url.includes("/characters/") && method === "PATCH") return jsonResponse(shot.characters[0]);
+    if (url === `/api/projects/${projectId}/shots/${shotId}/move` && method === "POST") return jsonResponse(shot);
+    if (url === `/api/projects/${projectId}/shots/${shotId}/duplicate` && method === "POST") return jsonResponse({ ...shot, id: "copy", name: "镜头一 - 副本" });
+    if (url === `/api/projects/${projectId}/shots/${shotId}/characters` && method === "GET") return jsonResponse({ items: currentShot().characters, total: currentShot().characters.length });
+    if (url === `/api/projects/${projectId}/shots/${shotId}/characters` && method === "POST") return jsonResponse(currentShot().characters[0], 201);
+    if (url.includes("/characters/") && method === "PATCH") return jsonResponse(currentShot().characters[0]);
     if (url.includes("/characters/") && method === "DELETE") return emptyResponse();
-    if (url === `/api/projects/${projectId}/shots/${shotId}/references` && method === "GET") return jsonResponse({ items: shot.references, total: 0 });
+    if (url === `/api/projects/${projectId}/shots/${shotId}/references` && method === "GET") return jsonResponse({ items: currentShot().references, total: currentShot().references.length });
     if (url === `/api/projects/${projectId}/shots/${shotId}/references` && method === "POST") {
       if (options.failReference) return jsonResponse({ error: { code: "SHOT_REFERENCE_ALREADY_BOUND", message: "duplicate" } }, 409);
-      return jsonResponse({ ...shot.references[0], id: "new-ref" }, 201);
+      return jsonResponse({ ...currentShot().references[0], id: "new-ref" }, 201);
     }
     if (url.includes("/references/") && method === "DELETE") return emptyResponse();
-    if (url.includes("/references/") && method === "PATCH") return jsonResponse(shot.references[0]);
+    if (url.includes("/references/") && method === "PATCH") return jsonResponse(currentShot().references[0]);
     if (url === `/api/projects/${projectId}/characters`) {
       if (options.failCharacters) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
       return jsonResponse({ items: characters, total: characters.length });
@@ -740,5 +973,128 @@ describe("shot workbench routes", () => {
 
     expect(await screen.findByText("场景绑定")).toBeInTheDocument();
     expect(shotWithSceneRef.references[0].reference_type).toBe("scene");
+  });
+
+  it("shows keyframe task empty state and creates a task without generation", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({ shots: [shotWithReferences] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+
+    expect(await screen.findByText(keyframeTaskCopy.emptyTitle)).toBeInTheDocument();
+    expect(screen.getByText(keyframeTaskCopy.noGeneration)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: keyframeTaskCopy.create }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/shots/${shotId}/keyframe-tasks`)
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("edits keyframe task parameters, blocks invalid dimensions, and submits seed zero", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [keyframeTask]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+
+    const width = await screen.findByLabelText(keyframeTaskCopy.fields.width);
+    await user.clear(width);
+    await user.type(width, "250");
+    await user.click(screen.getByRole("button", { name: keyframeTaskCopy.save }));
+
+    expect(await screen.findByText("宽度必须在 256 到 4096 之间")).toBeInTheDocument();
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "PATCH" &&
+          request.url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}`
+      )
+    ).toBe(false);
+
+    await user.clear(width);
+    await user.type(width, "768");
+    const seed = screen.getByLabelText(keyframeTaskCopy.fields.seed);
+    await user.clear(seed);
+    await user.type(seed, "0");
+    await user.click(screen.getByRole("button", { name: keyframeTaskCopy.save }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` &&
+            request.body?.includes('"seed":0')
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("adds, reorders, and removes keyframe task references from current shot references", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [keyframeTask]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.addReference }));
+    const enabledDownButton = screen
+      .getAllByTitle("下移")
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(enabledDownButton).toBeDefined();
+    await user.click(enabledDownButton!);
+    await user.click(screen.getByTitle("移除参考图"));
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/keyframe-tasks/${keyframeTaskId}/references`) &&
+            request.body?.includes(shotCharacterReferenceId)
+        )
+      ).toBe(true);
+    });
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "PATCH" &&
+          request.url.endsWith(`/references/${keyframeTaskReferenceId}`)
+      )
+    ).toBe(true);
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "DELETE" &&
+          request.url.endsWith(`/references/${keyframeTaskReferenceId}`)
+      )
+    ).toBe(true);
+  });
+
+  it("keeps manual shot tabs usable when keyframe task loading fails", async () => {
+    const user = userEvent.setup();
+    mockShotApi({ failKeyframeTasks: true });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    expect(await screen.findByText(keyframeTaskCopy.loadFailed)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: shotRecommendationCopy.tabs.character }));
+    expect((await screen.findAllByText(shotCopy.sections.characterRefs)).length).toBeGreaterThan(0);
   });
 });

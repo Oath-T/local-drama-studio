@@ -35,6 +35,14 @@ flags such as identity anchor, spatial anchor, and empty plate are never selecte
 If the backend has no provider key, manual asset management remains fully usable and the analysis
 action shows a safe Chinese error.
 
+## Keyframe Tasks
+
+The shot workbench includes a "关键帧任务" tab. It can create, edit, duplicate, delete, mark ready,
+mark draft, and manage task-level references from the current shot's already-bound references.
+
+This tab only prepares task data. It does not show a generate button, call ComfyUI, or start a
+background queue in Sprint 7.
+
 ## Routes
 
 - `/projects`: project list.
@@ -44,7 +52,7 @@ action shows a safe Chinese error.
 - `/projects/:projectId/scenes`: project scene library.
 - `/projects/:projectId/scenes/:sceneId`: scene details, states, and reference images.
 - `/projects/:projectId/shots`: project shot workbench.
-- `/projects/:projectId/shots/:shotId`: shot detail, bindings, and recommendations.
+- `/projects/:projectId/shots/:shotId`: shot detail, bindings, recommendations, and keyframe task preparation.
 - `/characters`, `/scenes`, `/shots`, `/tasks`: top-level guide or empty states when no project context is selected.
 
 User-visible product copy defaults to Simplified Chinese. Keep future language expansion lightweight and avoid large i18n frameworks until explicitly needed.

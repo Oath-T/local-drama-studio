@@ -144,8 +144,18 @@ class SceneService:
         references = self._all_scene_references(scene.id)
         media_assets = [reference.media_asset for reference in references]
         media_asset_ids = [media_asset.id for media_asset in media_assets]
-        self.repository.delete_scene_and_media_assets(scene, media_asset_ids)
+        protected_media_ids = self.repository.get_keyframe_referenced_media_asset_ids(
+            media_asset_ids
+        )
+        deletable_media_ids = [
+            media_asset_id
+            for media_asset_id in media_asset_ids
+            if media_asset_id not in protected_media_ids
+        ]
+        self.repository.delete_scene_and_media_assets(scene, deletable_media_ids)
         for media_asset in media_assets:
+            if media_asset.id in protected_media_ids:
+                continue
             self._delete_media_files_safely(media_asset)
 
     def list_states(self, project_id: UUID, scene_id: UUID) -> SceneStateListResponse:
@@ -273,12 +283,23 @@ class SceneService:
         media_assets = [reference.media_asset for reference in references]
         next_default = self._select_next_default_state(state_record, states)
         state_record.scene.updated_at = utc_now()
+        media_asset_ids = [media_asset.id for media_asset in media_assets]
+        protected_media_ids = self.repository.get_keyframe_referenced_media_asset_ids(
+            media_asset_ids
+        )
+        deletable_media_ids = [
+            media_asset_id
+            for media_asset_id in media_asset_ids
+            if media_asset_id not in protected_media_ids
+        ]
         self.repository.delete_state_and_media_assets(
             state_record,
-            [media_asset.id for media_asset in media_assets],
+            deletable_media_ids,
             next_default,
         )
         for media_asset in media_assets:
+            if media_asset.id in protected_media_ids:
+                continue
             self._delete_media_files_safely(media_asset)
 
     def list_references(
@@ -454,8 +475,17 @@ class SceneService:
         references, _ = self.repository.list_references(str(state_id))
         next_primary = self._select_next_primary_reference(reference, references)
         reference.state.scene.updated_at = utc_now()
-        self.repository.delete_reference_and_media_asset(reference, media_asset.id, next_primary)
-        self._delete_media_files_safely(media_asset)
+        protected_media_ids = self.repository.get_keyframe_referenced_media_asset_ids(
+            [media_asset.id]
+        )
+        delete_media_asset_id = None if media_asset.id in protected_media_ids else media_asset.id
+        self.repository.delete_reference_and_media_asset(
+            reference,
+            delete_media_asset_id,
+            next_primary,
+        )
+        if media_asset.id not in protected_media_ids:
+            self._delete_media_files_safely(media_asset)
 
     def _ensure_project(self, project_id: UUID) -> None:
         if not self.repository.project_exists(str(project_id)):

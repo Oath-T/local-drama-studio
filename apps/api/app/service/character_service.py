@@ -141,8 +141,18 @@ class CharacterService:
         references = self._all_character_references(character.id)
         media_assets = [reference.media_asset for reference in references]
         media_asset_ids = [media_asset.id for media_asset in media_assets]
-        self.repository.delete_character_and_media_assets(character, media_asset_ids)
+        protected_media_ids = self.repository.get_keyframe_referenced_media_asset_ids(
+            media_asset_ids
+        )
+        deletable_media_ids = [
+            media_asset_id
+            for media_asset_id in media_asset_ids
+            if media_asset_id not in protected_media_ids
+        ]
+        self.repository.delete_character_and_media_assets(character, deletable_media_ids)
         for media_asset in media_assets:
+            if media_asset.id in protected_media_ids:
+                continue
             self._delete_media_files_safely(media_asset)
 
     def list_looks(self, project_id: UUID, character_id: UUID) -> CharacterLookListResponse:
@@ -231,8 +241,18 @@ class CharacterService:
         media_assets = [reference.media_asset for reference in references]
         next_default = self._select_next_default_look(look, looks)
         media_asset_ids = [media_asset.id for media_asset in media_assets]
-        self.repository.delete_look_and_media_assets(look, media_asset_ids, next_default)
+        protected_media_ids = self.repository.get_keyframe_referenced_media_asset_ids(
+            media_asset_ids
+        )
+        deletable_media_ids = [
+            media_asset_id
+            for media_asset_id in media_asset_ids
+            if media_asset_id not in protected_media_ids
+        ]
+        self.repository.delete_look_and_media_assets(look, deletable_media_ids, next_default)
         for media_asset in media_assets:
+            if media_asset.id in protected_media_ids:
+                continue
             self._delete_media_files_safely(media_asset)
 
     def list_references(
@@ -360,8 +380,17 @@ class CharacterService:
         media_asset = reference.media_asset
         references, _ = self.repository.list_references(str(look_id))
         next_primary = self._select_next_primary_reference(reference, references)
-        self.repository.delete_reference_and_media_asset(reference, media_asset.id, next_primary)
-        self._delete_media_files_safely(media_asset)
+        protected_media_ids = self.repository.get_keyframe_referenced_media_asset_ids(
+            [media_asset.id]
+        )
+        delete_media_asset_id = None if media_asset.id in protected_media_ids else media_asset.id
+        self.repository.delete_reference_and_media_asset(
+            reference,
+            delete_media_asset_id,
+            next_primary,
+        )
+        if media_asset.id not in protected_media_ids:
+            self._delete_media_files_safely(media_asset)
 
     def get_media_asset(self, media_asset_id: UUID) -> MediaAssetRecord:
         media_asset = self.repository.get_media_asset(str(media_asset_id))

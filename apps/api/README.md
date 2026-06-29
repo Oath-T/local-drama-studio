@@ -105,6 +105,26 @@ Vision analysis uses a provider-neutral service boundary. OpenAI is the first pr
 through environment variables. Suggestions never overwrite official metadata without the dedicated
 confirmation API.
 
+Keyframe generation task API:
+
+```text
+GET    /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
+POST   /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
+GET    /api/projects/{project_id}/keyframe-tasks/{task_id}
+PATCH  /api/projects/{project_id}/keyframe-tasks/{task_id}
+DELETE /api/projects/{project_id}/keyframe-tasks/{task_id}
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/duplicate
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/mark-ready
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/mark-draft
+GET    /api/projects/{project_id}/keyframe-tasks/{task_id}/references
+POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/references
+PATCH  /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
+DELETE /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
+```
+
+Keyframe tasks prepare snapshots, prompts, parameters, and task references only. They do not call
+ComfyUI, external image models, local image models, or background queues in this sprint.
+
 ## Test
 
 ```powershell

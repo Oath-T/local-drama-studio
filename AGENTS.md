@@ -14,6 +14,8 @@ Scene asset modeling must keep stable place information on `Scene` and time, wea
 
 Shot reference recommendations are a rule-based, explainable foundation layer. They must not train or call visual models, must not persist recommendation results, and must not automatically bind references unless a future sprint explicitly changes that direction.
 
+Keyframe task preparation may organize shot snapshots, prompts, parameters, and selected references. It must not execute image generation, queue generation jobs, call ComfyUI, or create generated outputs unless explicitly requested in a future sprint.
+
 ## Product Decision Rules
 
 Stop implementation and ask the product manager for confirmation before making decisions that affect product research direction, roadmap, interaction model, visual style, brand style, major technology direction, or large new capabilities.
