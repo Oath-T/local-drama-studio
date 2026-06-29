@@ -55,6 +55,24 @@ const errorCodeMessages: Record<string, string> = {
   FILE_NOT_FOUND: "媒体文件不存在或已被删除。"
 };
 
+Object.assign(errorCodeMessages, {
+  vision_provider_not_configured: "视觉分析服务尚未配置，请先检查本地环境配置。",
+  vision_provider_auth_failed: "视觉分析服务鉴权失败，请检查本地 API Key 配置。",
+  vision_provider_rate_limited: "视觉分析服务请求过于频繁，请稍后重试。",
+  vision_provider_timeout: "视觉分析请求超时，请稍后重试。",
+  vision_provider_unavailable: "视觉分析服务暂时不可用，请稍后重试。",
+  vision_provider_refused: "视觉分析服务拒绝处理这张图片，请更换图片或手动填写元数据。",
+  vision_output_invalid: "视觉分析返回结构无效，请稍后重试。",
+  media_not_found: "参考图文件不存在或已被删除。",
+  media_read_failed: "参考图文件读取失败，请检查文件是否仍在本地存储中。",
+  analysis_already_running: "这张参考图已有分析任务正在运行。",
+  analysis_task_not_found: "分析任务不存在或已被删除。",
+  analysis_interrupted: "上一次分析因服务重启中断，请重新发起分析。",
+  analysis_failed: "视觉分析失败，请稍后重试。",
+  suggestion_not_available: "当前参考图没有可审核的分析建议。",
+  suggestion_validation_failed: "分析建议校验失败，请重新分析或手动填写。"
+});
+
 function buildUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${baseUrl}${normalizedPath}`;

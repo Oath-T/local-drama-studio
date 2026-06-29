@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.schemas.vision_analysis import CharacterVisionAnalysisSuggestion
 from app.domain.character import (
     AnalysisStatus,
     Expression,
@@ -55,15 +56,7 @@ class CharacterLookUpdateRequest(BaseModel):
     prompt_appearance: str | None = Field(default=None, max_length=3000)
 
 
-class VisionAnalysisSuggestion(BaseModel):
-    shot_type: ShotType | None = None
-    view_angle: ViewAngle | None = None
-    expression: Expression | None = None
-    pose_type: PoseType | None = None
-    tags: list[str] = Field(default_factory=list, max_length=20)
-    description: str | None = Field(default=None, max_length=1000)
-    quality_notes: str | None = Field(default=None, max_length=1000)
-    identity_anchor_recommended: bool = False
+VisionAnalysisSuggestion = CharacterVisionAnalysisSuggestion
 
 
 class CharacterReferenceUpdateRequest(BaseModel):

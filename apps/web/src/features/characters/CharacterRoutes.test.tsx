@@ -70,6 +70,35 @@ const secondReference: CharacterReference = {
   media_asset: secondMediaAsset
 };
 
+const analyzedReference: CharacterReference = {
+  ...reference,
+  shot_type: "unknown",
+  view_angle: "unknown",
+  expression: "unknown",
+  pose_type: "unknown",
+  tags: [],
+  description: null,
+  is_identity_anchor: false,
+  analysis_status: "completed",
+  analysis_suggestions: {
+    schema_version: 1,
+    shot_type: "closeup",
+    view_angle: "front",
+    expression: "neutral",
+    custom_expression: null,
+    pose_type: "standing",
+    custom_pose: null,
+    tags: ["正脸", "清晰"],
+    description: "正面近景参考图",
+    quality_notes: ["画面清晰"],
+    identity_anchor_recommended: true,
+    appearance_summary: "可见面部特征",
+    costume_summary: "深色服装",
+    hair_summary: "短发",
+    confidence_notes: "基于可见画面判断"
+  }
+};
+
 const look: CharacterLook = {
   id: lookId,
   character_id: characterId,
@@ -210,6 +239,36 @@ function mockCharacterApi(options: MockOptions = {}) {
     }
     if (url === `/api/projects/${projectId}/characters/${characterId}/looks/${lookId}/references`) {
       return jsonResponse({ items: references, total: references.length });
+    }
+    if (url.includes("/analysis/latest-task") && method === "GET") {
+      return jsonResponse({ task: null });
+    }
+    if (url.includes("/analysis/tasks") && method === "POST") {
+      return jsonResponse(
+        {
+          id: "66666666-6666-4666-8666-666666666666",
+          project_id: projectId,
+          target_type: "character_reference",
+          character_reference_id: referenceId,
+          scene_reference_id: null,
+          provider: "openai",
+          status: "pending",
+          attempt_count: 0,
+          error_code: null,
+          error_message_safe: null,
+          started_at: null,
+          completed_at: null,
+          created_at: "2026-06-29T00:00:00+00:00",
+          updated_at: "2026-06-29T00:00:00+00:00"
+        },
+        202
+      );
+    }
+    if (url.includes("/analysis/confirm") && method === "POST") {
+      return jsonResponse({ suggestion_review_status: "edited_and_accepted" });
+    }
+    if (url.includes("/analysis/reject") && method === "POST") {
+      return jsonResponse({ suggestion_review_status: "rejected" });
     }
     if (url.includes("/references/") && url.endsWith("/set-primary") && method === "POST") {
       return jsonResponse(secondReference);
@@ -395,5 +454,23 @@ describe("character routes", () => {
     expect(await screen.findByText("参考图不存在或已被删除。")).toBeInTheDocument();
     expect(screen.getByText("Lin Zhixia")).toBeInTheDocument();
     expect(screen.getAllByText("Base Look").length).toBeGreaterThan(0);
+  });
+
+  it("reviews completed vision suggestions without auto-accepting boolean fields", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockCharacterApi({ references: [analyzedReference] });
+    renderRoute(`/projects/${projectId}/characters/${characterId}`);
+
+    await user.click(await screen.findByRole("button", { name: "查看建议" }));
+
+    expect(await screen.findByRole("heading", { name: "视觉分析建议" })).toBeInTheDocument();
+    expect(screen.getByText("正面近景参考图")).toBeInTheDocument();
+    expect(screen.getByText("身份基准图")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "采纳选中字段" }));
+
+    const confirmRequest = requests.find((request) => request.url.includes("/analysis/confirm"));
+    expect(confirmRequest?.method).toBe("POST");
+    expect(confirmRequest?.body).toContain("description");
+    expect(confirmRequest?.body).not.toContain("is_identity_anchor");
   });
 });

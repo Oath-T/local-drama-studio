@@ -1,4 +1,5 @@
 import type { MediaAsset } from "@/features/characters/types";
+import type { SceneVisionAnalysisSuggestion } from "@/features/vision-analysis/types";
 
 export type SceneType = "interior" | "exterior" | "mixed" | "vehicle" | "virtual" | "other";
 export type TimeOfDay =
@@ -103,7 +104,7 @@ export interface SceneReference {
   notes: string | null;
   analysis_status: AnalysisStatus;
   suggestion_review_status: SuggestionReviewStatus;
-  analysis_suggestions: unknown | null;
+  analysis_suggestions: SceneVisionAnalysisSuggestion | null;
   media_asset: MediaAsset;
   created_at: string;
   updated_at: string;

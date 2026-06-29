@@ -46,16 +46,7 @@ export type SuggestionReviewStatus =
   | "edited_and_accepted"
   | "rejected";
 
-export interface VisionAnalysisSuggestion {
-  shot_type: ShotType | null;
-  view_angle: ViewAngle | null;
-  expression: Expression | null;
-  pose_type: PoseType | null;
-  tags: string[];
-  description: string | null;
-  quality_notes: string | null;
-  identity_anchor_recommended: boolean;
-}
+export type VisionAnalysisSuggestion = CharacterVisionAnalysisSuggestion;
 
 export interface MediaAsset {
   id: string;
@@ -183,3 +174,4 @@ export interface CharacterReferenceUpdateInput {
   notes?: string | null;
   is_identity_anchor?: boolean | null;
 }
+import type { CharacterVisionAnalysisSuggestion } from "@/features/vision-analysis/types";

@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 5 adds real-time, explainable shot reference recommendations on top of the project, character, scene, and shot systems.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 6 adds user-triggered visual analysis suggestions for character and scene reference images on top of the project, character, scene, shot, and rule-based recommendation systems.
 
-This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, background AI analysis jobs, model training, model fine-tuning, local or external vision model calls, login, cloud services, infinite canvas, drag-and-drop sorting, or a 3D director stage.
+This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, or a 3D director stage.
 
 ## Structure
 
@@ -125,9 +125,22 @@ DELETE /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}
 POST   /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}/move
 
 GET    /api/projects/{project_id}/shots/{shot_id}/recommendations
+
+GET    /api/system/capabilities
+GET    /api/projects/{project_id}/vision-analysis/tasks/{task_id}
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/tasks
+GET    /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/latest-task
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/confirm
+POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/reject
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/tasks
+GET    /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/latest-task
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/confirm
+POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/reject
 ```
 
 Shot recommendations are computed from current shot parameters and asset metadata. They are not stored, do not call AI models, and do not automatically bind references.
+
+Vision analysis is user-triggered per reference image. Suggestions are stored separately from official metadata and must be accepted through the dedicated review flow before they change reference metadata. The API starts without an OpenAI key; manual editing remains available.
 
 ## Frontend
 
@@ -182,3 +195,15 @@ npm run test
 ## Configuration
 
 Copy `.env.example` to `.env` when local overrides are needed. Do not commit `.env`, SQLite database files, uploaded assets, or generated output.
+
+Vision analysis configuration:
+
+```text
+LDS_API_VISION_PROVIDER=openai
+LDS_API_OPENAI_API_KEY=
+LDS_API_OPENAI_VISION_MODEL=
+LDS_API_VISION_ANALYSIS_TIMEOUT_SECONDS=60
+LDS_API_VISION_ANALYSIS_MAX_CONCURRENCY=1
+LDS_API_VISION_ANALYSIS_MAX_RETRIES=1
+LDS_API_VISION_ANALYSIS_MAX_IMAGE_MB=15
+```

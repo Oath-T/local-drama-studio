@@ -25,6 +25,16 @@ computed from shot parameters and existing asset metadata, do not use trained mo
 never bind automatically. Manual character reference, scene reference, and selected-asset
 tabs remain available.
 
+## Vision Analysis
+
+Character and scene reference cards can start user-triggered image analysis when the backend is
+configured. Results are shown as suggestions in a review dialog. Users may accept selected fields,
+edit final values before accepting, reject a suggestion, or run analysis again. Boolean semantic
+flags such as identity anchor, spatial anchor, and empty plate are never selected automatically.
+
+If the backend has no provider key, manual asset management remains fully usable and the analysis
+action shows a safe Chinese error.
+
 ## Routes
 
 - `/projects`: project list.

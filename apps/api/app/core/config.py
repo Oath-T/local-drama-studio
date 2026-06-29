@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     database_url: str = Field(default_factory=get_default_database_url)
     storage_dir: Path = Field(default_factory=get_default_storage_dir)
     max_image_upload_mb: int = 15
+    vision_analysis_max_image_mb: int | None = None
+    vision_provider: str = "openai"
+    openai_api_key: str | None = None
+    openai_vision_model: str | None = None
+    vision_analysis_timeout_seconds: int = 60
+    vision_analysis_max_concurrency: int = 1
+    vision_analysis_max_retries: int = 1
     thumbnail_max_size: int = 512
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]

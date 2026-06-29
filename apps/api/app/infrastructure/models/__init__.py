@@ -15,6 +15,7 @@ from app.infrastructure.models.shot import (
     ShotRecord,
     ShotReferenceRecord,
 )
+from app.infrastructure.models.vision_analysis import VisionAnalysisTaskRecord
 
 __all__ = [
     "CharacterLookRecord",
@@ -28,4 +29,5 @@ __all__ = [
     "ShotCharacterRecord",
     "ShotRecord",
     "ShotReferenceRecord",
+    "VisionAnalysisTaskRecord",
 ]

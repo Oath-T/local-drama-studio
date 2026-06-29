@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.schemas.character import MediaAssetResponse
+from app.api.schemas.vision_analysis import SceneVisionAnalysisSuggestion
 from app.domain.scene import (
     AnalysisStatus,
     CameraPosition,
@@ -67,18 +68,6 @@ class SceneStateUpdateRequest(BaseModel):
     environment_condition: str | None = Field(default=None, max_length=2000)
     crowd_level: CrowdLevel | None = None
     prompt_state: str | None = Field(default=None, max_length=3000)
-
-
-class SceneVisionAnalysisSuggestion(BaseModel):
-    shot_scale: ShotScale | None = None
-    camera_position: CameraPosition | None = None
-    view_direction: ViewDirection | None = None
-    composition_type: CompositionType | None = None
-    tags: list[str] = Field(default_factory=list, max_length=20)
-    description: str | None = Field(default=None, max_length=1000)
-    quality_notes: str | None = Field(default=None, max_length=1000)
-    spatial_anchor_recommended: bool = False
-    empty_plate_recommended: bool = False
 
 
 class SceneReferenceUpdateRequest(BaseModel):

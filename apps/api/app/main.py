@@ -8,11 +8,13 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.infrastructure.database import initialize_database
+from app.service.vision_analysis_task_runner import mark_interrupted_vision_tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     initialize_database()
+    mark_interrupted_vision_tasks()
     yield
 
 

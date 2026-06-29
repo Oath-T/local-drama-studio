@@ -86,6 +86,25 @@ Recommendations are real-time, rule-based, and explainable. They do not call AI 
 do not persist recommendation results, and still require the user to confirm binding through
 the existing ShotReference create endpoint.
 
+Vision analysis API:
+
+```text
+GET  /api/system/capabilities
+GET  /api/projects/{project_id}/vision-analysis/tasks/{task_id}
+POST /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/tasks
+GET  /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/latest-task
+POST /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/confirm
+POST /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/reject
+POST /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/tasks
+GET  /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/latest-task
+POST /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/confirm
+POST /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references/{reference_id}/analysis/reject
+```
+
+Vision analysis uses a provider-neutral service boundary. OpenAI is the first provider, configured
+through environment variables. Suggestions never overwrite official metadata without the dedicated
+confirmation API.
+
 ## Test
 
 ```powershell

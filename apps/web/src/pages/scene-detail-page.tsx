@@ -38,6 +38,7 @@ import { SceneReferencePreviewDialog } from "@/features/scenes/components/scene-
 import { SceneStateFormDialog } from "@/features/scenes/components/scene-state-form-dialog";
 import { sceneCopy } from "@/features/scenes/copy";
 import type { SceneReference, SceneState } from "@/features/scenes/types";
+import { SceneReferenceAnalysisDialog } from "@/features/vision-analysis/components/reference-analysis-dialog";
 import { copy } from "@/locales";
 import { ApiClientError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -322,6 +323,14 @@ export function SceneDetailPage() {
                             onToggleSpatialAnchor={() => toggleSpatialMutation.mutate(reference)}
                             onToggleEmptyPlate={() => toggleEmptyPlateMutation.mutate(reference)}
                             onDelete={() => deleteReferenceMutation.mutateAsync(reference)}
+                            onAnalysisUpdated={() =>
+                              invalidateSceneScope(
+                                queryClient,
+                                projectId,
+                                sceneId,
+                                reference.state_id
+                              )
+                            }
                             disabled={
                               setPrimaryMutation.isPending ||
                               toggleSpatialMutation.isPending ||
@@ -469,6 +478,7 @@ function ReferenceCard({
   onToggleSpatialAnchor,
   onToggleEmptyPlate,
   onDelete,
+  onAnalysisUpdated,
   disabled
 }: {
   projectId: string;
@@ -480,6 +490,7 @@ function ReferenceCard({
   onToggleSpatialAnchor: () => void;
   onToggleEmptyPlate: () => void;
   onDelete: () => Promise<void>;
+  onAnalysisUpdated: () => Promise<void>;
   disabled: boolean;
 }) {
   return (
@@ -507,6 +518,14 @@ function ReferenceCard({
           {reference.tags.length > 0 && <span>{reference.tags.join(" / ")}</span>}
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
+          <SceneReferenceAnalysisDialog
+            projectId={projectId}
+            sceneId={sceneId}
+            reference={reference}
+            onUpdated={onAnalysisUpdated}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
           <SceneReferencePreviewDialog
             reference={reference}
             trigger={

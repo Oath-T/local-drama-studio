@@ -40,6 +40,7 @@ import { ReferenceUploadDialog } from "@/features/characters/components/referenc
 import { Badge } from "@/features/characters/components/status-badge";
 import { characterCopy } from "@/features/characters/copy";
 import type { CharacterLook, CharacterReference } from "@/features/characters/types";
+import { CharacterReferenceAnalysisDialog } from "@/features/vision-analysis/components/reference-analysis-dialog";
 import { copy } from "@/locales";
 import { ApiClientError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -318,6 +319,14 @@ export function CharacterDetailPage() {
                             onSetPrimary={() => setPrimaryReferenceMutation.mutate(reference)}
                             onToggleIdentity={() => toggleIdentityMutation.mutate(reference)}
                             onDelete={() => deleteReferenceMutation.mutateAsync(reference)}
+                            onAnalysisUpdated={() =>
+                              invalidateCharacterScope(
+                                queryClient,
+                                projectId,
+                                characterId,
+                                reference.look_id
+                              )
+                            }
                             disabled={
                               setPrimaryReferenceMutation.isPending ||
                               toggleIdentityMutation.isPending ||
@@ -463,6 +472,7 @@ function ReferenceCard({
   onSetPrimary,
   onToggleIdentity,
   onDelete,
+  onAnalysisUpdated,
   disabled
 }: {
   projectId: string;
@@ -473,6 +483,7 @@ function ReferenceCard({
   onSetPrimary: () => void;
   onToggleIdentity: () => void;
   onDelete: () => Promise<void>;
+  onAnalysisUpdated: () => Promise<void>;
   disabled: boolean;
 }) {
   return (
@@ -503,6 +514,14 @@ function ReferenceCard({
           {reference.tags.length > 0 && <span>{reference.tags.join(" / ")}</span>}
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
+          <CharacterReferenceAnalysisDialog
+            projectId={projectId}
+            characterId={characterId}
+            reference={reference}
+            onUpdated={onAnalysisUpdated}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
           <ReferencePreviewDialog
             reference={reference}
             trigger={

@@ -75,6 +75,38 @@ const secondReference: SceneReference = {
   media_asset: secondMediaAsset
 };
 
+const analyzedReference: SceneReference = {
+  ...reference,
+  shot_scale: "unknown",
+  camera_position: "unknown",
+  view_direction: "unknown",
+  composition_type: "unknown",
+  tags: [],
+  description: null,
+  is_spatial_anchor: false,
+  is_empty_plate: false,
+  analysis_status: "completed",
+  analysis_suggestions: {
+    schema_version: 1,
+    shot_scale: "wide",
+    camera_position: "eye_level",
+    custom_camera_position: null,
+    view_direction: "front",
+    custom_view_direction: null,
+    composition_type: "centered",
+    custom_composition: null,
+    tags: ["空间", "入口"],
+    description: "宽景空间参考图",
+    quality_notes: ["结构清楚"],
+    spatial_anchor_recommended: true,
+    empty_plate_recommended: true,
+    detected_time_of_day: "night",
+    detected_weather: "indoor",
+    detected_lighting: "cool_indoor",
+    confidence_notes: null
+  }
+};
+
 const state: SceneState = {
   id: stateId,
   scene_id: sceneId,
@@ -217,6 +249,36 @@ function mockSceneApi(options: MockOptions = {}) {
         return jsonResponse(reference, 201);
       }
       return jsonResponse({ items: references, total: references.length });
+    }
+    if (url.includes("/analysis/latest-task") && method === "GET") {
+      return jsonResponse({ task: null });
+    }
+    if (url.includes("/analysis/tasks") && method === "POST") {
+      return jsonResponse(
+        {
+          id: "66666666-6666-4666-8666-666666666666",
+          project_id: projectId,
+          target_type: "scene_reference",
+          character_reference_id: null,
+          scene_reference_id: referenceId,
+          provider: "openai",
+          status: "pending",
+          attempt_count: 0,
+          error_code: null,
+          error_message_safe: null,
+          started_at: null,
+          completed_at: null,
+          created_at: "2026-06-29T00:00:00+00:00",
+          updated_at: "2026-06-29T00:00:00+00:00"
+        },
+        202
+      );
+    }
+    if (url.includes("/analysis/confirm") && method === "POST") {
+      return jsonResponse({ suggestion_review_status: "edited_and_accepted" });
+    }
+    if (url.includes("/analysis/reject") && method === "POST") {
+      return jsonResponse({ suggestion_review_status: "rejected" });
     }
     if (url.includes("/references/") && url.endsWith("/set-primary") && method === "POST") {
       return jsonResponse(secondReference);
@@ -377,5 +439,26 @@ describe("scene routes", () => {
 
     expect(await screen.findByText("场景参考图不存在或已被删除。")).toBeInTheDocument();
     expect(screen.getByText("Office Exterior")).toBeInTheDocument();
+  });
+
+  it("reviews scene vision suggestions without auto-accepting boolean fields", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockSceneApi({ references: [analyzedReference] });
+    renderRoute(`/projects/${projectId}/scenes/${sceneId}`);
+
+    await user.click(await screen.findByRole("button", { name: "查看建议" }));
+
+    expect(await screen.findByRole("heading", { name: "视觉分析建议" })).toBeInTheDocument();
+    expect(screen.getByText("宽景空间参考图")).toBeInTheDocument();
+    expect(screen.getByText("空间结构基准图")).toBeInTheDocument();
+    expect(screen.getByText("空镜")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "采纳选中字段" }));
+
+    const confirmRequest = requests.find((request) => request.url.includes("/analysis/confirm"));
+    const body = String(confirmRequest?.body ?? "");
+    expect(confirmRequest?.method).toBe("POST");
+    expect(body).toContain("description");
+    expect(body).not.toContain("is_spatial_anchor");
+    expect(body).not.toContain("is_empty_plate");
   });
 });
