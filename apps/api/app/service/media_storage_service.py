@@ -66,6 +66,16 @@ class MediaStorageService:
         relative_dir = Path("projects") / project_id / "media" / "scene-references"
         return await self._store_image(upload, relative_dir)
 
+    def store_generated_keyframe_image(
+        self,
+        project_id: str,
+        filename: str,
+        content: bytes,
+        mime_type_hint: str | None,
+    ) -> StoredImage:
+        relative_dir = Path("projects") / project_id / "media" / "generated-keyframes"
+        return self._store_image_bytes(filename, content, mime_type_hint, relative_dir)
+
     async def _store_image(self, upload: UploadFile, relative_dir: Path) -> StoredImage:
         original_filename = Path(upload.filename or "image").name
         extension = self._get_extension(original_filename)
@@ -144,6 +154,86 @@ class MediaStorageService:
             relative_path=original_relative_path.as_posix(),
             thumbnail_relative_path=thumbnail_relative_path.as_posix(),
             mime_type=mime_type,
+            extension=normalized_extension,
+            size_bytes=len(content),
+            width=width,
+            height=height,
+            sha256=digest,
+        )
+
+    def _store_image_bytes(
+        self,
+        filename: str,
+        content: bytes,
+        mime_type_hint: str | None,
+        relative_dir: Path,
+    ) -> StoredImage:
+        original_filename = Path(filename or "generated-keyframe.png").name
+        extension = self._get_extension(original_filename) or "png"
+        if extension not in ALLOWED_IMAGE_EXTENSIONS:
+            raise_media_error(CharacterErrorCode.IMAGE_EXTENSION_NOT_ALLOWED, HTTP_422)
+
+        max_bytes = self.settings.generated_output_max_mb * 1024 * 1024
+        if len(content) > max_bytes:
+            raise_media_error(
+                CharacterErrorCode.IMAGE_TOO_LARGE,
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        digest = sha256(content).hexdigest()
+        try:
+            image = Image.open(BytesIO(content))
+            image.verify()
+            image = Image.open(BytesIO(content))
+            image_format = image.format
+            image = ImageOps.exif_transpose(image)
+        except (UnidentifiedImageError, OSError):
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+
+        detected_mime_type = Image.MIME.get(image_format or "")
+        if detected_mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+        if mime_type_hint and mime_type_hint not in ALLOWED_IMAGE_MIME_TYPES:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+
+        width, height = image.size
+        asset_id = str(uuid4())
+        normalized_extension = "jpg" if extension == "jpeg" else extension
+        stored_filename = f"{asset_id}.{normalized_extension}"
+        thumbnail_filename = f"{asset_id}_thumb.webp"
+        original_relative_path = relative_dir / stored_filename
+        thumbnail_relative_path = relative_dir / thumbnail_filename
+        original_path = self.resolve_relative_path(
+            original_relative_path.as_posix(),
+            must_exist=False,
+        )
+        thumbnail_path = self.resolve_relative_path(
+            thumbnail_relative_path.as_posix(),
+            must_exist=False,
+        )
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            image.save(original_path)
+            thumbnail = image.copy()
+            thumbnail.thumbnail(
+                (self.settings.thumbnail_max_size, self.settings.thumbnail_max_size)
+            )
+            thumbnail.save(thumbnail_path, format="WEBP", quality=82)
+        except OSError:
+            self.delete_relative_file(original_relative_path.as_posix())
+            self.delete_relative_file(thumbnail_relative_path.as_posix())
+            raise_media_error(
+                CharacterErrorCode.IMAGE_UPLOAD_FAILED,
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return StoredImage(
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            relative_path=original_relative_path.as_posix(),
+            thumbnail_relative_path=thumbnail_relative_path.as_posix(),
+            mime_type=detected_mime_type,
             extension=normalized_extension,
             size_bytes=len(content),
             width=width,

@@ -122,8 +122,30 @@ PATCH  /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_refe
 DELETE /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
 ```
 
-Keyframe tasks prepare snapshots, prompts, parameters, and task references only. They do not call
-ComfyUI, external image models, local image models, or background queues in this sprint.
+Keyframe generation run API:
+
+```text
+GET  /api/projects/{project_id}/keyframe-workflows
+POST /api/projects/{project_id}/keyframe-tasks/{task_id}/runs
+GET  /api/projects/{project_id}/keyframe-tasks/{task_id}/runs
+GET  /api/projects/{project_id}/keyframe-runs/{run_id}
+POST /api/projects/{project_id}/keyframe-runs/{run_id}/retry
+POST /api/projects/{project_id}/keyframe-outputs/{output_id}/select
+DELETE /api/projects/{project_id}/keyframe-outputs/{output_id}/select
+```
+
+Sprint 8 supports only the fixed `keyframe_basic_v1` ComfyUI API workflow. It uses prompt text,
+width, height, seed, steps, guidance, sampler, scheduler, and the configured checkpoint. It does
+not use task reference images, does not expose ComfyUI URLs or local paths, and requires
+`output_count=1`.
+
+Required local configuration for real generation:
+
+```text
+LDS_API_KEYFRAME_PROVIDER=comfyui
+LDS_API_COMFYUI_BASE_URL=http://127.0.0.1:8188
+LDS_API_COMFYUI_DEFAULT_CHECKPOINT=your-checkpoint.safetensors
+```
 
 ## Test
 

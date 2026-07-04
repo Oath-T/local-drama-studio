@@ -4,6 +4,10 @@ from app.infrastructure.models.character import (
     CharacterReferenceRecord,
     MediaAssetRecord,
 )
+from app.infrastructure.models.keyframe_generation import (
+    KeyframeGenerationOutputRecord,
+    KeyframeGenerationRunRecord,
+)
 from app.infrastructure.models.keyframe_task import (
     KeyframeGenerationTaskRecord,
     KeyframeGenerationTaskReferenceRecord,
@@ -27,6 +31,8 @@ __all__ = [
     "CharacterReferenceRecord",
     "KeyframeGenerationTaskRecord",
     "KeyframeGenerationTaskReferenceRecord",
+    "KeyframeGenerationOutputRecord",
+    "KeyframeGenerationRunRecord",
     "MediaAssetRecord",
     "ProjectRecord",
     "SceneRecord",

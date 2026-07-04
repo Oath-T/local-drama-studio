@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 
 import App from "@/App";
 import type { Character, CharacterLook, CharacterReference, MediaAsset } from "@/features/characters/types";
+import { keyframeGenerationCopy } from "@/features/keyframe-generation/copy";
+import type { KeyframeRun, KeyframeWorkflow, SystemCapabilities } from "@/features/keyframe-generation/types";
 import { keyframeTaskCopy } from "@/features/keyframe-tasks/copy";
 import type { KeyframeTask } from "@/features/keyframe-tasks/types";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
@@ -28,6 +30,8 @@ const shotCharacterReferenceId = "16161616-1616-4161-8161-161616161616";
 const shotSceneReferenceId = "17171717-1717-4171-8171-171717171717";
 const keyframeTaskId = "18181818-1818-4181-8181-181818181818";
 const keyframeTaskReferenceId = "19191919-1919-4191-8191-191919191919";
+const keyframeRunId = "23232323-2323-4232-8232-232323232323";
+const keyframeOutputId = "24242424-2424-4242-8242-242424242424";
 
 const mediaAsset: MediaAsset = {
   id: "99999999-9999-4999-8999-999999999999",
@@ -393,6 +397,77 @@ const keyframeTask: KeyframeTask = {
   updated_at: "2026-06-28T10:00:00+00:00"
 };
 
+const keyframeWorkflow: KeyframeWorkflow = {
+  workflow_id: "keyframe_basic_v1",
+  display_name: "基础文生图关键帧",
+  version: "1.0.0",
+  available: true,
+  missing_requirements: [],
+  uses_reference_inputs: false
+};
+
+const systemCapabilities: SystemCapabilities = {
+  vision_analysis: { available: false, provider: "openai" },
+  keyframe_generation: { available: true, provider: "comfyui", status: "online" }
+};
+
+const keyframeRun: KeyframeRun = {
+  id: keyframeRunId,
+  project_id: projectId,
+  keyframe_task_id: keyframeTaskId,
+  run_number: 1,
+  provider: "comfyui",
+  workflow_id: "keyframe_basic_v1",
+  workflow_version: "1.0.0",
+  status: "completed",
+  provider_job_id: "prompt-1",
+  submitted_payload_snapshot: {
+    schema_version: 1,
+    task_id: keyframeTaskId,
+    task_updated_at: keyframeTask.updated_at,
+    workflow_id: "keyframe_basic_v1",
+    workflow_version: "1.0.0",
+    prompt_zh: keyframeTask.prompt_zh,
+    prompt_en: null,
+    effective_prompt_language: "zh",
+    effective_positive_prompt: keyframeTask.prompt_zh ?? "",
+    negative_prompt: keyframeTask.negative_prompt,
+    width: keyframeTask.width,
+    height: keyframeTask.height,
+    seed: 123,
+    steps: keyframeTask.steps,
+    guidance_scale: keyframeTask.guidance_scale,
+    sampler_name: "euler",
+    scheduler_name: "normal",
+    output_count: 1,
+    task_reference_ids: [keyframeTaskReferenceId],
+    media_asset_ids: [mediaAsset.id],
+    reference_inputs_used: false
+  },
+  error_code: null,
+  error_message_safe: null,
+  queued_at: "2026-06-28T10:00:00+00:00",
+  started_at: "2026-06-28T10:00:01+00:00",
+  completed_at: "2026-06-28T10:00:05+00:00",
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:05+00:00",
+  outputs: [
+    {
+      id: keyframeOutputId,
+      project_id: projectId,
+      run_id: keyframeRunId,
+      media_asset_id: mediaAsset.id,
+      output_index: 1,
+      width: 768,
+      height: 1360,
+      seed: 123,
+      is_selected: false,
+      media_asset: mediaAsset,
+      created_at: "2026-06-28T10:00:05+00:00"
+    }
+  ]
+};
+
 const recommendations: ShotRecommendationResponse = {
   shot_id: shotId,
   generated_from_updated_at: shot.updated_at,
@@ -481,11 +556,19 @@ function mockShotApi(
     keyframeTasks?: KeyframeTask[];
     failKeyframeTasks?: boolean;
     failKeyframeUpdate?: boolean;
+    capabilities?: SystemCapabilities;
+    failCapabilities?: boolean;
+    workflows?: KeyframeWorkflow[];
+    failWorkflows?: boolean;
+    keyframeRuns?: KeyframeRun[];
+    failKeyframeRuns?: boolean;
+    failStartRun?: boolean;
   } = {}
 ) {
   const requests: Array<{ url: string; method: string; body?: string }> = [];
   let shots = options.shots ?? [shot];
   let keyframeTasks = options.keyframeTasks ?? [];
+  let keyframeRuns = options.keyframeRuns ?? [];
   const scenes = options.scenes ?? [scene];
   const characters = options.characters ?? [character];
   const statesByScene = options.statesByScene ?? { [sceneId]: [state] };
@@ -497,6 +580,10 @@ function mockShotApi(
     requests.push({ url, method, body });
 
     if (url === "/api/health") return jsonResponse({ status: "ok", service: "local-drama-studio-api" });
+    if (url === "/api/system/capabilities") {
+      if (options.failCapabilities) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      return jsonResponse(options.capabilities ?? systemCapabilities);
+    }
     if (url === `/api/projects/${projectId}`) {
       return jsonResponse({
         id: projectId,
@@ -518,6 +605,11 @@ function mockShotApi(
       const created = { ...shot, id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "镜头 1" };
       shots = [created];
       return jsonResponse(created, 201);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-workflows` && method === "GET") {
+      if (options.failWorkflows) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      const workflows = options.workflows ?? [keyframeWorkflow];
+      return jsonResponse({ items: workflows, total: workflows.length });
     }
     if (url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks` && method === "GET") {
       if (options.failKeyframeTasks) {
@@ -564,6 +656,47 @@ function mockShotApi(
       const updated = { ...keyframeTask, status: "draft" as const };
       keyframeTasks = keyframeTasks.map((item) => (item.id === keyframeTaskId ? updated : item));
       return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/runs` && method === "GET") {
+      if (options.failKeyframeRuns) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      return jsonResponse({ items: keyframeRuns, total: keyframeRuns.length });
+    }
+    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/runs` && method === "POST") {
+      if (options.failStartRun) {
+        return jsonResponse(
+          { error: { code: "workflow_output_count_unsupported", message: "unsupported" } },
+          422
+        );
+      }
+      keyframeRuns = [{ ...keyframeRun, status: "queued" }, ...keyframeRuns];
+      return jsonResponse({ run_id: keyframeRun.id, status: "queued" }, 202);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-runs/${keyframeRunId}` && method === "GET") {
+      return jsonResponse(keyframeRuns.find((run) => run.id === keyframeRunId) ?? keyframeRun);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-runs/${keyframeRunId}/retry` && method === "POST") {
+      const retryRun = {
+        ...keyframeRun,
+        id: "25252525-2525-4252-8252-252525252525",
+        run_number: 2,
+        status: "queued" as const
+      };
+      keyframeRuns = [retryRun, ...keyframeRuns];
+      return jsonResponse({ run_id: retryRun.id, status: "queued" }, 202);
+    }
+    if (url === `/api/projects/${projectId}/keyframe-outputs/${keyframeOutputId}/select` && method === "POST") {
+      keyframeRuns = keyframeRuns.map((run) => ({
+        ...run,
+        outputs: run.outputs.map((output) => ({ ...output, is_selected: output.id === keyframeOutputId }))
+      }));
+      return jsonResponse({ ...keyframeRun.outputs[0], is_selected: true });
+    }
+    if (url === `/api/projects/${projectId}/keyframe-outputs/${keyframeOutputId}/select` && method === "DELETE") {
+      keyframeRuns = keyframeRuns.map((run) => ({
+        ...run,
+        outputs: run.outputs.map((output) => ({ ...output, is_selected: false }))
+      }));
+      return jsonResponse({ ...keyframeRun.outputs[0], is_selected: false });
     }
     if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}/references` && method === "GET") {
       return jsonResponse({ items: keyframeTask.references, total: keyframeTask.references.length });
@@ -1096,5 +1229,105 @@ describe("shot workbench routes", () => {
 
     await user.click(screen.getByRole("button", { name: shotRecommendationCopy.tabs.character }));
     expect((await screen.findAllByText(shotCopy.sections.characterRefs)).length).toBeGreaterThan(0);
+  });
+
+  it("shows keyframe generation section and starts a basic workflow run", async () => {
+    const user = userEvent.setup();
+    const readyTask = { ...keyframeTask, status: "ready" as const };
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [readyTask]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+
+    expect(await screen.findByText(keyframeGenerationCopy.noReferenceInputs)).toBeInTheDocument();
+    expect(await screen.findByText(keyframeGenerationCopy.providerStatus.online)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: keyframeGenerationCopy.start }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/keyframe-tasks/${keyframeTaskId}/runs`) &&
+            request.body?.includes("keyframe_basic_v1")
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("explains why basic workflow generation is disabled for output count greater than one", async () => {
+    const user = userEvent.setup();
+    const readyTask = { ...keyframeTask, status: "ready" as const, output_count: 2 };
+    mockShotApi({ shots: [shotWithReferences], keyframeTasks: [readyTask] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+
+    expect(
+      await screen.findByText(keyframeGenerationCopy.disabledReasons.outputCountUnsupported)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: keyframeGenerationCopy.start })).toBeDisabled();
+  });
+
+  it("disables generation when provider is offline or a run is active", async () => {
+    const user = userEvent.setup();
+    const readyTask = { ...keyframeTask, status: "ready" as const };
+    const offlineCapabilities: SystemCapabilities = {
+      ...systemCapabilities,
+      keyframe_generation: { available: false, provider: "comfyui", status: "offline" }
+    };
+    mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [readyTask],
+      capabilities: offlineCapabilities
+    });
+
+    const { unmount } = renderRoute(`/projects/${projectId}/shots/${shotId}`);
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+    expect(await screen.findByText(keyframeGenerationCopy.disabledReasons.providerOffline)).toBeInTheDocument();
+    unmount();
+    vi.restoreAllMocks();
+
+    mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [readyTask],
+      keyframeRuns: [{ ...keyframeRun, status: "running", outputs: [] }]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+    expect(await screen.findByText(keyframeGenerationCopy.disabledReasons.activeRun)).toBeInTheDocument();
+  });
+
+  it("shows generated outputs and toggles selected version", async () => {
+    const user = userEvent.setup();
+    const readyTask = { ...keyframeTask, status: "ready" as const };
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [readyTask],
+      keyframeRuns: [keyframeRun]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+    await screen.findByText(keyframeGenerationCopy.outputGallery);
+    await user.click(screen.getByRole("button", { name: keyframeGenerationCopy.useVersion }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/keyframe-outputs/${keyframeOutputId}/select`)
+        )
+      ).toBe(true);
+    });
   });
 });

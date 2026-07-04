@@ -8,7 +8,7 @@ import type {
 export const keyframeTaskCopy = {
   tab: "关键帧任务",
   title: "关键帧生成任务",
-  description: "本轮只整理镜头快照、提示词、参数和参考图，不调用模型，也不会生成图片。",
+  description: "整理镜头快照、提示词、参数和任务参考图；准备完成后可提交到本地 ComfyUI 生成关键帧。",
   create: "新建任务",
   creating: "正在创建",
   edit: "编辑任务",
@@ -31,7 +31,7 @@ export const keyframeTaskCopy = {
   referenceDeleteFailed: "任务参考图移除失败。",
   emptyTitle: "当前镜头还没有关键帧任务",
   emptyDescription: "创建任务后，可以检查镜头快照、提示词、生成参数和参考图是否准备完整。",
-  noGeneration: "暂无生成队列或执行按钮。",
+  noGeneration: "进入任务编辑后，可以查看 ComfyUI 状态并手动开始生成。",
   deleteDescription: (name: string) =>
     `确定删除关键帧任务“${name}”吗？这只会删除任务和任务参考绑定，不会删除镜头、资产库或媒体文件。`,
   sourceDeleted: "源参考已删除",

@@ -35,13 +35,16 @@ flags such as identity anchor, spatial anchor, and empty plate are never selecte
 If the backend has no provider key, manual asset management remains fully usable and the analysis
 action shows a safe Chinese error.
 
-## Keyframe Tasks
+## Keyframe Tasks And Generation
 
-The shot workbench includes a "关键帧任务" tab. It can create, edit, duplicate, delete, mark ready,
-mark draft, and manage task-level references from the current shot's already-bound references.
+The shot workbench includes a keyframe task panel. It can create, edit, duplicate, delete, mark
+ready, mark draft, manage task-level references from the current shot's already-bound references,
+and start the first local ComfyUI keyframe run when the backend provider and workflow are ready.
 
-This tab only prepares task data. It does not show a generate button, call ComfyUI, or start a
-background queue in Sprint 7.
+Sprint 8 only supports the fixed `keyframe_basic_v1` basic txt2img workflow. The generation area
+always explains that the current workflow uses only prompts and generation parameters, not task
+reference images. It does not support batch generation, reference-image workflows, Custom Nodes,
+model downloads, cancellation, video generation, or automatic binding.
 
 ## Routes
 

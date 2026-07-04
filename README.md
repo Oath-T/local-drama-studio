@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 7 adds keyframe generation task preparation on top of project, character, scene, shot, rule-based recommendation, and user-triggered visual analysis systems.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 8 adds user-triggered ComfyUI keyframe generation runs on top of project, character, scene, shot, rule-based recommendation, visual analysis, and keyframe task preparation systems.
 
-This sprint does not implement AI Agents, image generation, video generation, ComfyUI calls, generation queues, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, or a 3D director stage.
+This sprint does not implement AI Agents, video generation, batch automatic generation, reference-image workflows, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, or a 3D director stage.
 
 ## Structure
 
@@ -157,6 +157,11 @@ Vision analysis is user-triggered per reference image. Suggestions are stored se
 
 Keyframe tasks store a validated shot snapshot, prompt fields, generation parameters, and selected task references. They only support `draft` and `ready` statuses in Sprint 7 and never call image generation services.
 
+Keyframe generation runs are separate execution records. Sprint 8 supports the fixed
+`keyframe_basic_v1` ComfyUI API workflow only. It uses prompt text and generation parameters,
+does not use task reference images, requires `output_count=1`, and saves generated images as
+platform `MediaAsset` records through safe media URLs.
+
 ## Frontend
 
 ```powershell
@@ -222,3 +227,19 @@ LDS_API_VISION_ANALYSIS_MAX_CONCURRENCY=1
 LDS_API_VISION_ANALYSIS_MAX_RETRIES=1
 LDS_API_VISION_ANALYSIS_MAX_IMAGE_MB=15
 ```
+
+ComfyUI keyframe generation configuration:
+
+```text
+LDS_API_KEYFRAME_PROVIDER=comfyui
+LDS_API_COMFYUI_BASE_URL=http://127.0.0.1:8188
+LDS_API_COMFYUI_DEFAULT_CHECKPOINT=
+LDS_API_COMFYUI_WORKFLOW_DIR=./workflows
+LDS_API_COMFYUI_TIMEOUT_SECONDS=30
+LDS_API_COMFYUI_POLL_INTERVAL_SECONDS=2
+LDS_API_COMFYUI_JOB_TIMEOUT_SECONDS=900
+LDS_API_COMFYUI_MAX_CONCURRENCY=1
+LDS_API_GENERATED_OUTPUT_MAX_MB=25
+```
+
+The frontend never receives the ComfyUI base URL, workflow JSON, local paths, or model paths.

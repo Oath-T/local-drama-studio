@@ -38,6 +38,7 @@ import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
+import { KeyframeGenerationSection } from "@/features/keyframe-generation/components/keyframe-generation-section";
 import { shotKeys } from "@/features/shots/api";
 import { shotCopy } from "@/features/shots/copy";
 import type {
@@ -593,6 +594,13 @@ function KeyframeTaskEditorDialog({
             </Button>
           </div>
         </form>
+
+        <KeyframeGenerationSection
+          projectId={projectId}
+          task={task}
+          onMessage={onMessage}
+          invalidateTaskData={invalidateTaskData}
+        />
 
         <section className="grid gap-3 border-t border-border pt-4">
           <div>

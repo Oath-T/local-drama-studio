@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     vision_analysis_timeout_seconds: int = 60
     vision_analysis_max_concurrency: int = 1
     vision_analysis_max_retries: int = 1
+    keyframe_provider: str = "comfyui"
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+    comfyui_timeout_seconds: int = 30
+    comfyui_poll_interval_seconds: int = 2
+    comfyui_job_timeout_seconds: int = 900
+    comfyui_max_concurrency: int = 1
+    comfyui_workflow_dir: Path = Path("workflows")
+    comfyui_default_checkpoint: str | None = None
+    generated_output_max_mb: int = 25
     thumbnail_max_size: int = 512
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -64,11 +73,24 @@ class Settings(BaseSettings):
             return get_default_storage_dir()
         return Path(value)
 
+    @field_validator("comfyui_workflow_dir", mode="before")
+    @classmethod
+    def parse_comfyui_workflow_dir(cls, value: str | Path | None) -> Path:
+        if value is None or value == "":
+            return Path("workflows")
+        return Path(value)
+
     @property
     def resolved_storage_dir(self) -> Path:
         if self.storage_dir.is_absolute():
             return self.storage_dir
         return get_repository_root() / self.storage_dir
+
+    @property
+    def resolved_comfyui_workflow_dir(self) -> Path:
+        if self.comfyui_workflow_dir.is_absolute():
+            return self.comfyui_workflow_dir
+        return get_repository_root() / self.comfyui_workflow_dir
 
 
 @lru_cache

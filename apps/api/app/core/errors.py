@@ -27,6 +27,8 @@ PATH_ID_ERROR_MESSAGES: dict[str, tuple[str, str]] = {
     "shot_reference_id": ("INVALID_SHOT_REFERENCE_ID", "镜头参考图 ID 格式无效。"),
     "task_id": ("INVALID_KEYFRAME_TASK_ID", "关键帧任务 ID 格式无效。"),
     "task_reference_id": ("INVALID_KEYFRAME_TASK_REFERENCE_ID", "任务参考图 ID 格式无效。"),
+    "run_id": ("INVALID_KEYFRAME_RUN_ID", "关键帧生成记录 ID 格式无效。"),
+    "output_id": ("INVALID_KEYFRAME_OUTPUT_ID", "关键帧生成结果 ID 格式无效。"),
 }
 
 HTTP_422 = 422

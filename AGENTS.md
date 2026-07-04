@@ -14,7 +14,7 @@ Scene asset modeling must keep stable place information on `Scene` and time, wea
 
 Shot reference recommendations are a rule-based, explainable foundation layer. They must not train or call visual models, must not persist recommendation results, and must not automatically bind references unless a future sprint explicitly changes that direction.
 
-Keyframe task preparation may organize shot snapshots, prompts, parameters, and selected references. It must not execute image generation, queue generation jobs, call ComfyUI, or create generated outputs unless explicitly requested in a future sprint.
+Keyframe task preparation may organize shot snapshots, prompts, parameters, and selected references. ComfyUI keyframe generation is allowed only through the approved provider-neutral, user-triggered run flow. Do not add video generation, batch auto-generation, reference-image workflows, Custom Node installation, model downloads, or generated-output evaluation unless explicitly requested in a future sprint.
 
 ## Product Decision Rules
 

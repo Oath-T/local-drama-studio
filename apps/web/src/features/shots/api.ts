@@ -32,7 +32,14 @@ export const shotKeys = {
   keyframeTask: (projectId: string, taskId: string) =>
     [...shotKeys.all(projectId), "keyframe-task", taskId] as const,
   keyframeTaskReferences: (projectId: string, taskId: string) =>
-    [...shotKeys.keyframeTask(projectId, taskId), "references"] as const
+    [...shotKeys.keyframeTask(projectId, taskId), "references"] as const,
+  keyframeWorkflows: (projectId: string) =>
+    ["projects", projectId, "keyframe-workflows"] as const,
+  keyframeRuns: (projectId: string, taskId: string) =>
+    [...shotKeys.keyframeTask(projectId, taskId), "runs"] as const,
+  keyframeRun: (projectId: string, runId: string) =>
+    [...shotKeys.all(projectId), "keyframe-run", runId] as const,
+  systemCapabilities: () => ["system", "capabilities"] as const
 };
 
 export function fetchShots(projectId: string): Promise<ShotListResponse> {

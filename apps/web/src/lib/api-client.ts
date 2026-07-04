@@ -73,6 +73,34 @@ const errorCodeMessages: Record<string, string> = {
 };
 
 Object.assign(errorCodeMessages, {
+  project_not_found: "项目不存在或已被删除。",
+  keyframe_task_not_found: "关键帧任务不存在或已被删除。",
+  keyframe_provider_not_configured: "关键帧生成服务尚未配置。",
+  comfyui_unavailable: "ComfyUI 未连接，请确认本地服务已启动。",
+  comfyui_timeout: "ComfyUI 响应超时，请稍后重试。",
+  comfyui_invalid_response: "ComfyUI 返回了无法识别的响应。",
+  comfyui_submission_failed: "ComfyUI 提交生成任务失败。",
+  comfyui_node_error: "ComfyUI 工作流节点校验失败。",
+  comfyui_job_not_found: "未能确认 ComfyUI 生成任务状态。",
+  comfyui_execution_failed: "ComfyUI 执行过程中失败。",
+  comfyui_output_missing: "ComfyUI 未返回可保存的图片输出。",
+  comfyui_output_download_failed: "生成图片下载失败。",
+  workflow_not_found: "工作流不存在或未注册。",
+  workflow_manifest_invalid: "工作流配置文件无效。",
+  workflow_node_missing: "工作流缺少必要节点。",
+  workflow_input_missing: "工作流节点缺少必要输入。",
+  workflow_model_missing: "工作流依赖的模型尚未配置。",
+  workflow_output_count_unsupported:
+    "当前基础工作流仅支持单次生成一张图片，请将输出数量调整为 1。",
+  workflow_sampler_unsupported: "当前工作流不支持该采样器。",
+  workflow_scheduler_unsupported: "当前工作流不支持该调度器。",
+  task_not_ready: "当前关键帧任务尚未准备完成。",
+  generation_already_running: "当前任务已有生成正在执行。",
+  generation_run_not_found: "生成记录不存在或已被删除。",
+  generation_output_not_found: "生成结果不存在或已被删除。",
+  generation_interrupted: "生成任务已中断，请重新生成。",
+  reference_upload_failed: "参考图上传到生成服务失败。",
+  generated_media_save_failed: "生成图片保存失败。",
   vision_provider_not_configured: "视觉分析服务尚未配置，请先检查本地环境配置。",
   vision_provider_auth_failed: "视觉分析服务鉴权失败，请检查本地 API Key 配置。",
   vision_provider_rate_limited: "视觉分析服务请求过于频繁，请稍后重试。",
@@ -172,6 +200,10 @@ export async function apiPatch<TResponse, TBody>(path: string, body: TBody): Pro
 
 export async function apiDelete(path: string): Promise<void> {
   await apiRequest<void>(path, { method: "DELETE" });
+}
+
+export async function apiDeleteJson<TResponse>(path: string): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "DELETE" });
 }
 
 export async function apiPostForm<TResponse>(
