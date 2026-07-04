@@ -39,6 +39,16 @@ export const shotKeys = {
     [...shotKeys.keyframeTask(projectId, taskId), "runs"] as const,
   keyframeRun: (projectId: string, runId: string) =>
     [...shotKeys.all(projectId), "keyframe-run", runId] as const,
+  videoTasks: (projectId: string, shotId: string) =>
+    [...shotKeys.detail(projectId, shotId), "video-tasks"] as const,
+  videoTask: (projectId: string, taskId: string) =>
+    [...shotKeys.all(projectId), "video-task", taskId] as const,
+  videoWorkflows: (projectId: string) =>
+    ["projects", projectId, "video-workflows"] as const,
+  videoRuns: (projectId: string, taskId: string) =>
+    [...shotKeys.videoTask(projectId, taskId), "runs"] as const,
+  videoRun: (projectId: string, runId: string) =>
+    [...shotKeys.all(projectId), "video-run", runId] as const,
   systemCapabilities: () => ["system", "capabilities"] as const
 };
 

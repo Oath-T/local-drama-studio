@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -259,6 +259,8 @@ def get_thumbnail(
     service: Annotated[CharacterService, Depends(get_character_service)],
 ) -> FileResponse:
     media_asset, relative_path = service.resolve_media_file(media_asset_id, "thumbnail")
+    if relative_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     path = MediaStorageService().resolve_relative_path(relative_path)
     return FileResponse(path, media_type="image/webp", filename=f"{media_asset.id}_thumb.webp")
 
@@ -269,6 +271,8 @@ def get_content(
     service: Annotated[CharacterService, Depends(get_character_service)],
 ) -> FileResponse:
     media_asset, relative_path = service.resolve_media_file(media_asset_id, "content")
+    if relative_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     path = MediaStorageService().resolve_relative_path(relative_path)
     return FileResponse(
         path,

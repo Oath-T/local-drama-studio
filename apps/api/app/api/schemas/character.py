@@ -83,7 +83,7 @@ class MediaAssetResponse(BaseModel):
     width: int
     height: int
     sha256: str
-    thumbnail_url: str
+    thumbnail_url: str | None
     content_url: str
     created_at: datetime
 

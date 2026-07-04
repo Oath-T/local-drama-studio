@@ -3,7 +3,10 @@ from fastapi import APIRouter
 from app.api.schemas.vision_analysis import VisionAnalysisCapabilitiesResponse
 from app.core.config import get_settings
 from app.infrastructure.generation.base import GenerationProviderRuntimeError
-from app.infrastructure.generation.factory import create_keyframe_generation_provider
+from app.infrastructure.generation.factory import (
+    create_keyframe_generation_provider,
+    create_video_generation_provider,
+)
 from app.infrastructure.vision.factory import is_vision_analysis_available
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -27,10 +30,26 @@ async def get_capabilities() -> VisionAnalysisCapabilitiesResponse:
         }
     except GenerationProviderRuntimeError:
         pass
+    video_generation = {
+        "available": False,
+        "provider": settings.keyframe_provider,
+        "status": "unconfigured",
+    }
+    try:
+        video_provider = create_video_generation_provider(settings)
+        health = await video_provider.check_health()
+        video_generation = {
+            "available": health.available,
+            "provider": health.provider,
+            "status": health.status,
+        }
+    except GenerationProviderRuntimeError:
+        pass
     return VisionAnalysisCapabilitiesResponse(
         vision_analysis={
             "available": is_vision_analysis_available(settings),
             "provider": settings.vision_provider,
         },
         keyframe_generation=keyframe_generation,
+        video_generation=video_generation,
     )

@@ -1,8 +1,8 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 8 adds user-triggered ComfyUI keyframe generation runs on top of project, character, scene, shot, rule-based recommendation, visual analysis, and keyframe task preparation systems.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 9 adds a local ComfyUI image-to-video task loop on top of project, character, scene, shot, rule-based recommendation, visual analysis, keyframe task preparation, and keyframe generation systems.
 
-This sprint does not implement AI Agents, video generation, batch automatic generation, reference-image workflows, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, or a 3D director stage.
+This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure
 
@@ -139,6 +139,19 @@ POST   /api/projects/{project_id}/keyframe-tasks/{task_id}/references
 PATCH  /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
 DELETE /api/projects/{project_id}/keyframe-tasks/{task_id}/references/{task_reference_id}
 
+GET    /api/projects/{project_id}/video-workflows
+POST   /api/projects/{project_id}/video-input-images
+GET    /api/projects/{project_id}/shots/{shot_id}/video-tasks
+POST   /api/projects/{project_id}/shots/{shot_id}/video-tasks
+GET    /api/projects/{project_id}/video-tasks/{task_id}
+PATCH  /api/projects/{project_id}/video-tasks/{task_id}
+DELETE /api/projects/{project_id}/video-tasks/{task_id}
+POST   /api/projects/{project_id}/video-tasks/{task_id}/mark-ready
+POST   /api/projects/{project_id}/video-tasks/{task_id}/mark-draft
+POST   /api/projects/{project_id}/video-tasks/{task_id}/runs
+GET    /api/projects/{project_id}/video-tasks/{task_id}/runs
+POST   /api/projects/{project_id}/video-tasks/{task_id}/outputs/{output_id}/select
+
 GET    /api/system/capabilities
 GET    /api/projects/{project_id}/vision-analysis/tasks/{task_id}
 POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/tasks
@@ -161,6 +174,12 @@ Keyframe generation runs are separate execution records. Sprint 8 supports the f
 `keyframe_basic_v1` ComfyUI API workflow only. It uses prompt text and generation parameters,
 does not use task reference images, requires `output_count=1`, and saves generated images as
 platform `MediaAsset` records through safe media URLs.
+
+Video generation tasks are separate from keyframe generation. Sprint 9 supports a provider-neutral
+image-to-video task and run model with the fixed `video_i2v_14b_v1` workflow identifier. The
+repository includes only a workflow manifest template; if `video_i2v_14b_v1.json` is not supplied
+locally under the configured workflow directory, the workflow is reported as unavailable and no
+fake generation is exposed.
 
 ## Frontend
 
@@ -240,6 +259,7 @@ LDS_API_COMFYUI_POLL_INTERVAL_SECONDS=2
 LDS_API_COMFYUI_JOB_TIMEOUT_SECONDS=900
 LDS_API_COMFYUI_MAX_CONCURRENCY=1
 LDS_API_GENERATED_OUTPUT_MAX_MB=25
+LDS_API_GENERATED_VIDEO_MAX_MB=500
 ```
 
 The frontend never receives the ComfyUI base URL, workflow JSON, local paths, or model paths.

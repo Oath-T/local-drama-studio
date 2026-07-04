@@ -23,6 +23,11 @@ from app.infrastructure.models.shot import (
     ShotRecord,
     ShotReferenceRecord,
 )
+from app.infrastructure.models.video_generation import (
+    VideoGenerationOutputRecord,
+    VideoGenerationRunRecord,
+    VideoGenerationTaskRecord,
+)
 from app.infrastructure.models.vision_analysis import VisionAnalysisTaskRecord
 
 __all__ = [
@@ -42,4 +47,7 @@ __all__ = [
     "ShotRecord",
     "ShotReferenceRecord",
     "VisionAnalysisTaskRecord",
+    "VideoGenerationOutputRecord",
+    "VideoGenerationRunRecord",
+    "VideoGenerationTaskRecord",
 ]

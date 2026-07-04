@@ -10,6 +10,8 @@ import type { KeyframeRun, KeyframeWorkflow, SystemCapabilities } from "@/featur
 import { keyframeTaskCopy } from "@/features/keyframe-tasks/copy";
 import type { KeyframeTask } from "@/features/keyframe-tasks/types";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
+import { videoGenerationCopy } from "@/features/video-generation/copy";
+import type { VideoRun, VideoTask, VideoWorkflow } from "@/features/video-generation/types";
 import { shotCopy, shotRecommendationCopy } from "./copy";
 import type { Shot, ShotRecommendationResponse } from "./types";
 
@@ -32,6 +34,9 @@ const keyframeTaskId = "18181818-1818-4181-8181-181818181818";
 const keyframeTaskReferenceId = "19191919-1919-4191-8191-191919191919";
 const keyframeRunId = "23232323-2323-4232-8232-232323232323";
 const keyframeOutputId = "24242424-2424-4242-8242-242424242424";
+const videoTaskId = "26262626-2626-4262-8262-262626262626";
+const videoRunId = "27272727-2727-4272-8272-272727272727";
+const videoOutputId = "28282828-2828-4282-8282-282828282828";
 
 const mediaAsset: MediaAsset = {
   id: "99999999-9999-4999-8999-999999999999",
@@ -408,7 +413,8 @@ const keyframeWorkflow: KeyframeWorkflow = {
 
 const systemCapabilities: SystemCapabilities = {
   vision_analysis: { available: false, provider: "openai" },
-  keyframe_generation: { available: true, provider: "comfyui", status: "online" }
+  keyframe_generation: { available: true, provider: "comfyui", status: "online" },
+  video_generation: { available: true, provider: "comfyui", status: "online" }
 };
 
 const keyframeRun: KeyframeRun = {
@@ -468,6 +474,100 @@ const keyframeRun: KeyframeRun = {
   ]
 };
 
+const videoWorkflow: VideoWorkflow = {
+  workflow_id: "video_i2v_14b_v1",
+  display_name: "Video I2V 14B Basic",
+  version: "0.1.0",
+  available: false,
+  missing_requirements: ["workflow_file_missing"],
+  reference_inputs_used: true
+};
+
+const videoTask: VideoTask = {
+  id: videoTaskId,
+  project_id: projectId,
+  shot_id: shotId,
+  name: "视频生成任务",
+  status: "draft",
+  input_media_asset_id: mediaAsset.id,
+  source_keyframe_output_id: null,
+  source_keyframe_task_id: null,
+  prompt: "雨夜街道逐渐推进",
+  negative_prompt: null,
+  duration_seconds: 5,
+  fps: 16,
+  width: 768,
+  height: 1360,
+  seed: null,
+  motion_strength: null,
+  camera_motion: null,
+  workflow_id: "video_i2v_14b_v1",
+  input_media_asset: mediaAsset,
+  readiness: {
+    readiness_status: "incomplete",
+    blocking_issues: ["workflow_unavailable"],
+    warnings: ["no_negative_prompt", "no_camera_motion", "no_seed"]
+  },
+  latest_run_status: null,
+  selected_output: null,
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:00+00:00"
+};
+
+const videoRun: VideoRun = {
+  id: videoRunId,
+  project_id: projectId,
+  video_task_id: videoTaskId,
+  run_number: 1,
+  provider: "comfyui",
+  workflow_id: "video_i2v_14b_v1",
+  workflow_version: "0.1.0",
+  status: "completed",
+  provider_job_id: "video-prompt-1",
+  submitted_payload_snapshot: {
+    schema_version: 1,
+    video_task_id: videoTaskId,
+    shot_id: shotId,
+    workflow_id: "video_i2v_14b_v1",
+    workflow_version: "0.1.0",
+    input_media_asset_id: mediaAsset.id,
+    prompt: "雨夜街道逐渐推进",
+    negative_prompt: null,
+    duration_seconds: 5,
+    fps: 16,
+    width: 768,
+    height: 1360,
+    seed: 123,
+    motion_strength: null,
+    camera_motion: null,
+    reference_inputs_used: true
+  },
+  error_code: null,
+  error_message_safe: null,
+  queued_at: "2026-06-28T10:00:00+00:00",
+  started_at: "2026-06-28T10:00:01+00:00",
+  completed_at: "2026-06-28T10:00:05+00:00",
+  created_at: "2026-06-28T10:00:00+00:00",
+  updated_at: "2026-06-28T10:00:05+00:00",
+  outputs: [
+    {
+      id: videoOutputId,
+      project_id: projectId,
+      run_id: videoRunId,
+      media_asset_id: mediaAsset.id,
+      output_index: 1,
+      width: 768,
+      height: 1360,
+      duration_seconds: 5,
+      fps: 16,
+      seed: 123,
+      is_selected: false,
+      media_asset: { ...mediaAsset, media_type: "video", thumbnail_url: null, mime_type: "video/mp4", extension: "mp4" },
+      created_at: "2026-06-28T10:00:05+00:00"
+    }
+  ]
+};
+
 const recommendations: ShotRecommendationResponse = {
   shot_id: shotId,
   generated_from_updated_at: shot.updated_at,
@@ -482,7 +582,7 @@ const recommendations: ShotRecommendationResponse = {
         {
           reference_id: characterReferenceId,
           media_asset_id: mediaAsset.id,
-          thumbnail_url: mediaAsset.thumbnail_url,
+          thumbnail_url: mediaAsset.thumbnail_url ?? mediaAsset.content_url,
           content_url: mediaAsset.content_url,
           source_look_id: lookId,
           source_look_name: look.name,
@@ -507,7 +607,7 @@ const recommendations: ShotRecommendationResponse = {
       {
         reference_id: sceneReferenceId,
         media_asset_id: mediaAsset.id,
-        thumbnail_url: mediaAsset.thumbnail_url,
+        thumbnail_url: mediaAsset.thumbnail_url ?? mediaAsset.content_url,
         content_url: mediaAsset.content_url,
         source_state_id: stateId,
         source_state_name: state.name,
@@ -563,12 +663,19 @@ function mockShotApi(
     keyframeRuns?: KeyframeRun[];
     failKeyframeRuns?: boolean;
     failStartRun?: boolean;
+    videoWorkflows?: VideoWorkflow[];
+    videoTasks?: VideoTask[];
+    failVideoTasks?: boolean;
+    videoRuns?: VideoRun[];
+    failVideoRuns?: boolean;
   } = {}
 ) {
   const requests: Array<{ url: string; method: string; body?: string }> = [];
   let shots = options.shots ?? [shot];
   let keyframeTasks = options.keyframeTasks ?? [];
   let keyframeRuns = options.keyframeRuns ?? [];
+  let videoTasks = options.videoTasks ?? [];
+  let videoRuns = options.videoRuns ?? [];
   const scenes = options.scenes ?? [scene];
   const characters = options.characters ?? [character];
   const statesByScene = options.statesByScene ?? { [sceneId]: [state] };
@@ -610,6 +717,70 @@ function mockShotApi(
       if (options.failWorkflows) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
       const workflows = options.workflows ?? [keyframeWorkflow];
       return jsonResponse({ items: workflows, total: workflows.length });
+    }
+    if (url === `/api/projects/${projectId}/video-workflows` && method === "GET") {
+      const workflows = options.videoWorkflows ?? [videoWorkflow];
+      return jsonResponse({ items: workflows, total: workflows.length });
+    }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/video-tasks` && method === "GET") {
+      if (options.failVideoTasks) {
+        return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      }
+      return jsonResponse({ items: videoTasks, total: videoTasks.length });
+    }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/video-tasks` && method === "POST") {
+      const created = { ...videoTask, id: videoTaskId };
+      videoTasks = [created, ...videoTasks];
+      return jsonResponse(created, 201);
+    }
+    if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}` && method === "PATCH") {
+      const patch = body ? JSON.parse(body) : {};
+      const updated = { ...(videoTasks[0] ?? videoTask), ...patch, status: "draft" } as VideoTask;
+      videoTasks = videoTasks.map((item) => (item.id === videoTaskId ? updated : item));
+      return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}` && method === "DELETE") {
+      videoTasks = videoTasks.filter((item) => item.id !== videoTaskId);
+      return emptyResponse();
+    }
+    if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}/mark-ready` && method === "POST") {
+      const updated = {
+        ...(videoTasks[0] ?? videoTask),
+        status: "ready" as const,
+        readiness: { readiness_status: "ready" as const, blocking_issues: [], warnings: [] }
+      };
+      videoTasks = videoTasks.map((item) => (item.id === videoTaskId ? updated : item));
+      return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}/mark-draft` && method === "POST") {
+      const updated = { ...(videoTasks[0] ?? videoTask), status: "draft" as const };
+      videoTasks = videoTasks.map((item) => (item.id === videoTaskId ? updated : item));
+      return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}/runs` && method === "GET") {
+      if (options.failVideoRuns) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      return jsonResponse({ items: videoRuns, total: videoRuns.length });
+    }
+    if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}/runs` && method === "POST") {
+      const queuedRun = { ...videoRun, status: "queued" as const };
+      videoRuns = videoRuns.some((run) => run.id === videoRun.id)
+        ? videoRuns.map((run) => (run.id === videoRun.id ? queuedRun : run))
+        : [queuedRun, ...videoRuns];
+      return jsonResponse({ run_id: videoRun.id, status: "queued" }, 202);
+    }
+    if (url === `/api/projects/${projectId}/video-outputs/${videoOutputId}/select` && method === "POST") {
+      videoRuns = videoRuns.map((run) => ({
+        ...run,
+        outputs: run.outputs.map((output) => ({ ...output, is_selected: output.id === videoOutputId }))
+      }));
+      return jsonResponse({ ...videoRun.outputs[0], is_selected: true });
+    }
+    if (url === `/api/projects/${projectId}/video-outputs/${videoOutputId}/select` && method === "DELETE") {
+      videoRuns = videoRuns.map((run) => ({
+        ...run,
+        outputs: run.outputs.map((output) => ({ ...output, is_selected: false }))
+      }));
+      return jsonResponse({ ...videoRun.outputs[0], is_selected: false });
     }
     if (url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks` && method === "GET") {
       if (options.failKeyframeTasks) {
@@ -1257,6 +1428,89 @@ describe("shot workbench routes", () => {
         )
       ).toBe(true);
     });
+  });
+
+  it("creates a video task from a selected keyframe output", async () => {
+    const user = userEvent.setup();
+    const selectedRun = {
+      ...keyframeRun,
+      outputs: keyframeRun.outputs.map((output) => ({ ...output, is_selected: true }))
+    };
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [keyframeTask],
+      keyframeRuns: [selectedRun]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: videoGenerationCopy.useKeyframeOutput }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/shots/${shotId}/video-tasks`) &&
+            request.body?.includes(keyframeOutputId)
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("starts a ready video task, renders video output, and selects a version", async () => {
+    const user = userEvent.setup();
+    const readyVideoTask = {
+      ...videoTask,
+      status: "ready" as const,
+      readiness: { readiness_status: "ready" as const, blocking_issues: [], warnings: [] }
+    };
+    const availableVideoWorkflow = {
+      ...videoWorkflow,
+      available: true,
+      missing_requirements: []
+    };
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      videoTasks: [readyVideoTask],
+      videoWorkflows: [availableVideoWorkflow],
+      videoRuns: [videoRun]
+    });
+    const { container } = renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    expect(await screen.findByText(videoGenerationCopy.outputGallery)).toBeInTheDocument();
+    expect(document.querySelector("video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: videoGenerationCopy.start }));
+    await user.click(screen.getByRole("button", { name: videoGenerationCopy.useVersion }));
+    await waitFor(() => expect(screen.getByRole("button", { name: videoGenerationCopy.unselect })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: videoGenerationCopy.unselect }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/video-tasks/${videoTaskId}/runs`) &&
+            request.body?.includes("video_i2v_14b_v1")
+        )
+      ).toBe(true);
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/video-outputs/${videoOutputId}/select`)
+        )
+      ).toBe(true);
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.url.endsWith(`/video-outputs/${videoOutputId}/select`)
+        )
+      ).toBe(true);
+    });
+    expect(container).toBeDefined();
   });
 
   it("explains why basic workflow generation is disabled for output count greater than one", async () => {

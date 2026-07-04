@@ -342,7 +342,11 @@ function OutputCard({
   return (
     <article className="rounded-md border border-border bg-background p-2">
       {media ? (
-        <img src={media.thumbnail_url} alt="" className="aspect-video w-full rounded object-cover" />
+        <img
+          src={media.thumbnail_url ?? media.content_url}
+          alt=""
+          className="aspect-video w-full rounded object-cover"
+        />
       ) : (
         <div className="aspect-video rounded border border-dashed border-border" />
       )}

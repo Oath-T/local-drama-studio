@@ -118,6 +118,31 @@ Object.assign(errorCodeMessages, {
   suggestion_validation_failed: "分析建议校验失败，请重新分析或手动填写。"
 });
 
+Object.assign(errorCodeMessages, {
+  video_task_not_found: "视频生成任务不存在或已被删除。",
+  video_task_not_ready: "当前视频生成任务尚未准备完成。",
+  video_input_image_missing: "请先选择起始图。",
+  video_input_image_unavailable: "起始图不存在或已被删除。",
+  video_input_image_invalid: "起始图必须是当前项目内的图片媒体。",
+  video_workflow_not_selected: "请先选择视频工作流。",
+  video_workflow_unavailable: "视频工作流当前不可用。",
+  video_generation_already_running: "当前任务已有视频生成正在执行。",
+  video_provider_not_configured: "视频生成服务尚未配置。",
+  video_comfyui_unavailable: "ComfyUI 未连接，请确认本地服务已启动。",
+  video_comfyui_timeout: "ComfyUI 响应超时，请稍后重试。",
+  video_comfyui_invalid_response: "ComfyUI 返回了无法识别的响应。",
+  video_comfyui_submission_failed: "ComfyUI 提交视频生成任务失败。",
+  video_comfyui_node_error: "ComfyUI 视频工作流节点校验失败。",
+  video_comfyui_execution_failed: "ComfyUI 视频执行过程中失败。",
+  video_output_missing: "ComfyUI 未返回可保存的视频输出。",
+  video_output_download_failed: "视频输出下载失败。",
+  video_output_save_failed: "视频输出保存失败。",
+  video_reference_upload_failed: "起始图上传到 ComfyUI 失败。",
+  video_run_not_found: "视频生成记录不存在或已被删除。",
+  video_generation_interrupted: "视频生成任务已中断，请重新生成。",
+  video_output_not_found: "视频生成结果不存在或已被删除。"
+});
+
 function buildUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${baseUrl}${normalizedPath}`;

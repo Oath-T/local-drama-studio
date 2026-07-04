@@ -489,7 +489,7 @@ function ReferenceCard({
   return (
     <article className="overflow-hidden rounded-md border border-border bg-background">
       <img
-        src={reference.media_asset.thumbnail_url}
+        src={reference.media_asset.thumbnail_url ?? reference.media_asset.content_url}
         alt=""
         className="aspect-[4/3] w-full object-cover"
       />

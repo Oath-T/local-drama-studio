@@ -52,6 +52,8 @@ class WorkflowRegistry:
     def list_workflows(self) -> list[LoadedWorkflow]:
         workflows: list[LoadedWorkflow] = []
         for manifest_path in sorted(self._workflow_dir().glob("*.manifest.json")):
+            if manifest_path.name.startswith("video_"):
+                continue
             workflows.append(self._load_manifest_path(manifest_path))
         return workflows
 

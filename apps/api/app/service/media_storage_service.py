@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
@@ -14,6 +15,8 @@ from app.domain.character import CharacterErrorCode
 from app.domain.media_asset import (
     ALLOWED_IMAGE_EXTENSIONS,
     ALLOWED_IMAGE_MIME_TYPES,
+    ALLOWED_VIDEO_EXTENSIONS,
+    ALLOWED_VIDEO_MIME_TYPES,
 )
 
 CHARACTER_ERROR_MESSAGES = {
@@ -42,6 +45,17 @@ class StoredImage:
     sha256: str
 
 
+@dataclass(frozen=True)
+class StoredVideo:
+    original_filename: str
+    stored_filename: str
+    relative_path: str
+    mime_type: str
+    extension: str
+    size_bytes: int
+    sha256: str
+
+
 class MediaStorageService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -66,6 +80,14 @@ class MediaStorageService:
         relative_dir = Path("projects") / project_id / "media" / "scene-references"
         return await self._store_image(upload, relative_dir)
 
+    async def store_project_input_image(
+        self,
+        project_id: str,
+        upload: UploadFile,
+    ) -> StoredImage:
+        relative_dir = Path("projects") / project_id / "media" / "video-inputs"
+        return await self._store_image(upload, relative_dir)
+
     def store_generated_keyframe_image(
         self,
         project_id: str,
@@ -75,6 +97,16 @@ class MediaStorageService:
     ) -> StoredImage:
         relative_dir = Path("projects") / project_id / "media" / "generated-keyframes"
         return self._store_image_bytes(filename, content, mime_type_hint, relative_dir)
+
+    def store_generated_video(
+        self,
+        project_id: str,
+        filename: str,
+        content: bytes,
+        mime_type_hint: str | None,
+    ) -> StoredVideo:
+        relative_dir = Path("projects") / project_id / "media" / "generated-videos"
+        return self._store_video_bytes(filename, content, mime_type_hint, relative_dir)
 
     async def _store_image(self, upload: UploadFile, relative_dir: Path) -> StoredImage:
         original_filename = Path(upload.filename or "image").name
@@ -238,6 +270,60 @@ class MediaStorageService:
             size_bytes=len(content),
             width=width,
             height=height,
+            sha256=digest,
+        )
+
+    def _store_video_bytes(
+        self,
+        filename: str,
+        content: bytes,
+        mime_type_hint: str | None,
+        relative_dir: Path,
+    ) -> StoredVideo:
+        original_filename = Path(filename or "generated-video.mp4").name
+        extension = self._get_extension(original_filename)
+        if extension not in ALLOWED_VIDEO_EXTENSIONS:
+            raise_media_error(CharacterErrorCode.IMAGE_EXTENSION_NOT_ALLOWED, HTTP_422)
+
+        max_bytes = self.settings.generated_video_max_mb * 1024 * 1024
+        if len(content) > max_bytes:
+            raise_media_error(
+                CharacterErrorCode.IMAGE_TOO_LARGE,
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        detected_mime_type = mimetypes.guess_type(original_filename)[0]
+        if detected_mime_type not in ALLOWED_VIDEO_MIME_TYPES:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+        if mime_type_hint and mime_type_hint not in ALLOWED_VIDEO_MIME_TYPES:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+
+        digest = sha256(content).hexdigest()
+        asset_id = str(uuid4())
+        stored_filename = f"{asset_id}.{extension}"
+        original_relative_path = relative_dir / stored_filename
+        original_path = self.resolve_relative_path(
+            original_relative_path.as_posix(),
+            must_exist=False,
+        )
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            original_path.write_bytes(content)
+        except OSError:
+            self.delete_relative_file(original_relative_path.as_posix())
+            raise_media_error(
+                CharacterErrorCode.IMAGE_UPLOAD_FAILED,
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return StoredVideo(
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            relative_path=original_relative_path.as_posix(),
+            mime_type=detected_mime_type,
+            extension=extension,
+            size_bytes=len(content),
             sha256=digest,
         )
 

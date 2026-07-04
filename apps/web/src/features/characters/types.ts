@@ -56,10 +56,10 @@ export interface MediaAsset {
   mime_type: string;
   extension: string;
   size_bytes: number;
-  width: number;
-  height: number;
+  width: number | null;
+  height: number | null;
   sha256: string;
-  thumbnail_url: string;
+  thumbnail_url: string | null;
   content_url: string;
   created_at: string;
 }

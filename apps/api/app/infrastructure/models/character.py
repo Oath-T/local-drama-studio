@@ -74,7 +74,7 @@ class MediaAssetRecord(Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     relative_path: Mapped[str] = mapped_column(String(800), nullable=False)
-    thumbnail_relative_path: Mapped[str] = mapped_column(String(800), nullable=False)
+    thumbnail_relative_path: Mapped[str | None] = mapped_column(String(800), nullable=True)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     extension: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)

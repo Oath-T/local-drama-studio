@@ -400,7 +400,7 @@ class CharacterService:
 
     def resolve_media_file(
         self, media_asset_id: UUID, variant: str
-    ) -> tuple[MediaAssetRecord, str]:
+    ) -> tuple[MediaAssetRecord, str | None]:
         media_asset = self.get_media_asset(media_asset_id)
         relative_path = (
             media_asset.thumbnail_relative_path
@@ -567,7 +567,11 @@ class CharacterService:
             width=media_asset.width,
             height=media_asset.height,
             sha256=media_asset.sha256,
-            thumbnail_url=f"/api/media/{media_asset.id}/thumbnail",
+            thumbnail_url=(
+                f"/api/media/{media_asset.id}/thumbnail"
+                if media_asset.thumbnail_relative_path
+                else None
+            ),
             content_url=f"/api/media/{media_asset.id}/content",
             created_at=ensure_utc(media_asset.created_at),
         )

@@ -121,9 +121,16 @@ class KeyframeGenerationCapabilityResponse(BaseModel):
     status: str
 
 
+class VideoGenerationCapabilityResponse(BaseModel):
+    available: bool
+    provider: str
+    status: str
+
+
 class VisionAnalysisCapabilitiesResponse(BaseModel):
     vision_analysis: dict[Literal["available", "provider"], bool | str]
     keyframe_generation: KeyframeGenerationCapabilityResponse | None = None
+    video_generation: VideoGenerationCapabilityResponse | None = None
 
 
 class AnalysisConfirmRequest(BaseModel):

@@ -20,6 +20,7 @@ export interface SystemCapabilities {
     provider: string;
   };
   keyframe_generation: KeyframeGenerationCapability | null;
+  video_generation: KeyframeGenerationCapability | null;
 }
 
 export interface KeyframeWorkflow {

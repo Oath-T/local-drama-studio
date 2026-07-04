@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     comfyui_workflow_dir: Path = Path("workflows")
     comfyui_default_checkpoint: str | None = None
     generated_output_max_mb: int = 25
+    generated_video_max_mb: int = 500
     thumbnail_max_size: int = 512
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]

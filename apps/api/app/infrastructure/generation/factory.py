@@ -3,11 +3,14 @@ from urllib.parse import urlparse
 
 from app.core.config import Settings, get_settings
 from app.domain.keyframe_generation import KeyframeGenerationErrorCode
+from app.domain.video_generation import VideoGenerationErrorCode
 from app.infrastructure.generation.base import (
     GenerationProviderRuntimeError,
     KeyframeGenerationProvider,
+    VideoGenerationProvider,
 )
 from app.infrastructure.generation.comfyui_provider import ComfyUIKeyframeGenerationProvider
+from app.infrastructure.generation.comfyui_video_provider import ComfyUIVideoGenerationProvider
 
 
 def create_keyframe_generation_provider(
@@ -32,6 +35,27 @@ def is_keyframe_provider_configured(settings: Settings | None = None) -> bool:
     except GenerationProviderRuntimeError:
         return False
     return True
+
+
+def create_video_generation_provider(settings: Settings | None = None) -> VideoGenerationProvider:
+    current_settings = settings or get_settings()
+    if current_settings.keyframe_provider != "comfyui":
+        raise GenerationProviderRuntimeError(
+            VideoGenerationErrorCode.PROVIDER_NOT_CONFIGURED,
+            "Video generation provider is not configured.",
+        )
+    _validate_comfyui_base_url_for_video(current_settings.comfyui_base_url)
+    return ComfyUIVideoGenerationProvider(current_settings)
+
+
+def _validate_comfyui_base_url_for_video(value: str) -> None:
+    try:
+        _validate_comfyui_base_url(value)
+    except GenerationProviderRuntimeError as exc:
+        raise GenerationProviderRuntimeError(
+            VideoGenerationErrorCode.PROVIDER_NOT_CONFIGURED,
+            "ComfyUI base URL is invalid.",
+        ) from exc
 
 
 def _validate_comfyui_base_url(value: str) -> None:

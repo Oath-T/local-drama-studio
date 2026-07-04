@@ -41,6 +41,7 @@ import { Badge } from "@/features/characters/components/status-badge";
 import { KeyframeGenerationSection } from "@/features/keyframe-generation/components/keyframe-generation-section";
 import { shotKeys } from "@/features/shots/api";
 import { shotCopy } from "@/features/shots/copy";
+import { VideoGenerationPanel } from "@/features/video-generation/components/video-generation-panel";
 import type {
   CharacterReferencePurpose,
   SceneReferencePurpose,
@@ -283,6 +284,13 @@ export function KeyframeTaskPanel({
         onTaskUpdated={(task) => setEditingTask(task)}
         onMessage={onMessage}
         invalidateTaskData={invalidateTaskData}
+      />
+
+      <VideoGenerationPanel
+        projectId={projectId}
+        shot={shot}
+        onMessage={onMessage}
+        invalidateShotData={invalidateShotData}
       />
     </div>
   );
@@ -703,7 +711,7 @@ function TaskReferenceRow({
     <article className="grid gap-3 rounded-md border border-border bg-background p-2 md:grid-cols-[96px_minmax(0,1fr)]">
       {reference.media_asset ? (
         <img
-          src={reference.media_asset.thumbnail_url}
+          src={reference.media_asset.thumbnail_url ?? reference.media_asset.content_url}
           alt=""
           className="aspect-video w-full rounded object-cover"
         />

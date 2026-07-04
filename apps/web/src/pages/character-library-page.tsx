@@ -127,7 +127,7 @@ function CharacterCard({ projectId, character }: { projectId: string; character:
       <div className="flex aspect-[16/9] items-center justify-center bg-background">
         {primaryReference ? (
           <img
-            src={primaryReference.media_asset.thumbnail_url}
+            src={primaryReference.media_asset.thumbnail_url ?? primaryReference.media_asset.content_url}
             alt=""
             className="h-full w-full object-cover"
           />

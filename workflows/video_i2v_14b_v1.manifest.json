@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "workflow_id": "video_i2v_14b_v1",
+  "display_name": "Video I2V 14B Basic",
+  "version": "0.1.0",
+  "workflow_file": "video_i2v_14b_v1.json",
+  "provider": "comfyui",
+  "required_node_types": [],
+  "input_image_binding": {
+    "node_id": "input_image",
+    "input_name": "image"
+  },
+  "input_image_subfolder_binding": {
+    "node_id": "input_image",
+    "input_name": "subfolder"
+  },
+  "input_image_type_binding": {
+    "node_id": "input_image",
+    "input_name": "type"
+  },
+  "parameter_bindings": {
+    "positive_prompt": {
+      "node_id": "positive_prompt",
+      "input_name": "text"
+    },
+    "negative_prompt": {
+      "node_id": "negative_prompt",
+      "input_name": "text"
+    },
+    "width": {
+      "node_id": "video_settings",
+      "input_name": "width"
+    },
+    "height": {
+      "node_id": "video_settings",
+      "input_name": "height"
+    },
+    "duration_seconds": {
+      "node_id": "video_settings",
+      "input_name": "duration_seconds"
+    },
+    "fps": {
+      "node_id": "video_settings",
+      "input_name": "fps"
+    },
+    "seed": {
+      "node_id": "video_settings",
+      "input_name": "seed"
+    },
+    "motion_strength": {
+      "node_id": "video_settings",
+      "input_name": "motion_strength"
+    },
+    "camera_motion": {
+      "node_id": "video_settings",
+      "input_name": "camera_motion"
+    }
+  },
+  "output_node_ids": ["video_output"],
+  "output_file_keys": ["videos", "gifs", "files", "images"],
+  "allowed_output_extensions": ["mp4", "webm", "mov", "gif"]
+}

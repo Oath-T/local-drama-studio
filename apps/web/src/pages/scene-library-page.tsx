@@ -164,7 +164,10 @@ function SceneCard({
       <div className="flex aspect-[16/9] items-center justify-center bg-background">
         {scene.cover_reference ? (
           <img
-            src={scene.cover_reference.media_asset.thumbnail_url}
+            src={
+              scene.cover_reference.media_asset.thumbnail_url ??
+              scene.cover_reference.media_asset.content_url
+            }
             alt=""
             className="h-full w-full object-cover"
           />

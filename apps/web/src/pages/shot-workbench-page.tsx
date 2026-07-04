@@ -836,7 +836,11 @@ function ReferencePanel({
                         purpose: characterPurpose
                       })}
                     >
-                      <img src={reference.media_asset.thumbnail_url} alt="" className="aspect-video w-full rounded object-cover" />
+                      <img
+                        src={reference.media_asset.thumbnail_url ?? reference.media_asset.content_url}
+                        alt=""
+                        className="aspect-video w-full rounded object-cover"
+                      />
                       <div className="mt-1 text-xs text-foreground">{shotCopy.purposes[characterPurpose]}</div>
                       {mismatched && <div className="mt-1 text-xs text-amber-300">{shotCopy.lookMismatchWarning}</div>}
                     </button>
@@ -873,7 +877,11 @@ function ReferencePanel({
                       purpose: scenePurpose
                     })}
                   >
-                    <img src={reference.media_asset.thumbnail_url} alt="" className="aspect-video w-full rounded object-cover" />
+                    <img
+                      src={reference.media_asset.thumbnail_url ?? reference.media_asset.content_url}
+                      alt=""
+                      className="aspect-video w-full rounded object-cover"
+                    />
                     <div className="mt-1 text-xs text-foreground">{shotCopy.purposes[scenePurpose]}</div>
                   </button>
                 ))}
@@ -891,7 +899,13 @@ function ReferencePanel({
           ) : (
             shot.references.map((reference: ShotReference) => (
               <article key={reference.id} className="rounded-md border border-border bg-background p-2">
-                {reference.media_asset && <img src={reference.media_asset.thumbnail_url} alt="" className="aspect-video w-full rounded object-cover" />}
+                {reference.media_asset && (
+                  <img
+                    src={reference.media_asset.thumbnail_url ?? reference.media_asset.content_url}
+                    alt=""
+                    className="aspect-video w-full rounded object-cover"
+                  />
+                )}
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="text-sm">{shotCopy.purposes[reference.purpose as keyof typeof shotCopy.purposes] ?? reference.purpose}</div>
                   <Badge>{reference.reference_type === "character" ? "人物" : "场景"}</Badge>
