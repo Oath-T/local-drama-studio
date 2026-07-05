@@ -1,8 +1,9 @@
 import copy
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import (
     AliasChoices,
@@ -17,10 +18,19 @@ from app.core.config import Settings
 from app.domain.video_generation import VideoGenerationErrorCode, VideoInputRole, VideoWorkflowMode
 from app.infrastructure.generation.base import GenerationProviderRuntimeError, ProviderUploadedImage
 
+MAX_WORKFLOW_STRING_LENGTH = 10000
+WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"[A-Za-z]:\\")
+UNIX_USER_PATH_RE = re.compile(r"(^|[\s\"'])/(Users|home)/")
+DATA_URI_RE = re.compile(r"data:(image|video)/", re.IGNORECASE)
+
 
 class VideoWorkflowBinding(BaseModel):
     node_id: str
     input_name: str = Field(validation_alias=AliasChoices("input_name", "input"))
+
+
+class VideoWorkflowComputedBinding(VideoWorkflowBinding):
+    type: Literal["duration_seconds_times_fps_plus_one"]
 
 
 class VideoWorkflowManifest(BaseModel):
@@ -43,6 +53,9 @@ class VideoWorkflowManifest(BaseModel):
     )
     required_node_types: list[str] = Field(default_factory=list)
     parameter_bindings: dict[str, VideoWorkflowBinding] = Field(default_factory=dict)
+    computed_parameter_bindings: dict[str, VideoWorkflowComputedBinding] = Field(
+        default_factory=dict
+    )
     input_image_binding: VideoWorkflowBinding | None = None
     input_image_subfolder_binding: VideoWorkflowBinding | None = None
     input_image_type_binding: VideoWorkflowBinding | None = None
@@ -165,7 +178,6 @@ class VideoWorkflowRegistry:
             )
         scalar_values: dict[str, object] = {
             "positive_prompt": values.positive_prompt,
-            "negative_prompt": values.negative_prompt or "",
             "width": values.width,
             "height": values.height,
             "duration_seconds": values.duration_seconds,
@@ -174,9 +186,13 @@ class VideoWorkflowRegistry:
             "motion_strength": values.motion_strength if values.motion_strength is not None else 0,
             "camera_motion": values.camera_motion or "",
         }
+        if values.negative_prompt is not None:
+            scalar_values["negative_prompt"] = values.negative_prompt
         for key, binding in workflow.manifest.parameter_bindings.items():
             if key in scalar_values:
                 self._apply(payload, binding, scalar_values[key])
+        for binding in workflow.manifest.computed_parameter_bindings.values():
+            self._apply(payload, binding, self._computed_value(binding.type, values))
         return payload
 
     def _load_manifest(self, path: Path) -> LoadedVideoWorkflow:
@@ -208,7 +224,10 @@ class VideoWorkflowRegistry:
                 VideoGenerationErrorCode.WORKFLOW_UNAVAILABLE,
                 "Video workflow JSON must be an object.",
             )
-        missing = self._missing_bindings(workflow_raw, manifest)
+        missing = [
+            *self._workflow_safety_issues(workflow_raw),
+            *self._missing_bindings(workflow_raw, manifest),
+        ]
         return LoadedVideoWorkflow(
             manifest=manifest,
             workflow=workflow_raw,
@@ -231,6 +250,10 @@ class VideoWorkflowRegistry:
             if role not in manifest.image_input_bindings:
                 missing.append(f"workflow_input_role_binding_missing:{role.value}")
         bindings = list(manifest.parameter_bindings.items())
+        bindings.extend(
+            (f"computed_parameter:{name}", binding)
+            for name, binding in manifest.computed_parameter_bindings.items()
+        )
         for role, binding in manifest.image_input_bindings.items():
             bindings.append((f"image_input:{role.value}", binding))
         for role, binding in manifest.image_input_subfolder_bindings.items():
@@ -253,12 +276,64 @@ class VideoWorkflowRegistry:
         for node_id in manifest.output_node_ids:
             if node_id not in workflow:
                 missing.append(f"workflow_output_node_missing:{node_id}")
+                continue
+            if "SaveVideo" in manifest.required_node_types:
+                class_type = workflow.get(node_id, {}).get("class_type")
+                if class_type != "SaveVideo":
+                    missing.append(f"workflow_output_node_type_invalid:{node_id}")
+        class_types = {
+            node.get("class_type")
+            for node in workflow.values()
+            if isinstance(node, dict) and isinstance(node.get("class_type"), str)
+        }
+        for node_type in manifest.required_node_types:
+            if node_type not in class_types:
+                missing.append(f"workflow_required_node_type_missing:{node_type}")
         return sorted(set(missing))
+
+    @staticmethod
+    def _workflow_safety_issues(workflow: dict[str, Any]) -> list[str]:
+        issues: list[str] = []
+        if any(key in workflow for key in ("nodes", "links", "groups")):
+            issues.append("workflow_ui_format")
+        for value in _walk_workflow_values(workflow):
+            if not isinstance(value, str):
+                continue
+            if len(value) > MAX_WORKFLOW_STRING_LENGTH:
+                issues.append("workflow_unsafe_long_string")
+            if WINDOWS_ABSOLUTE_PATH_RE.search(value) or UNIX_USER_PATH_RE.search(value):
+                issues.append("workflow_unsafe_absolute_path")
+            if "base64," in value.lower() or DATA_URI_RE.search(value):
+                issues.append("workflow_unsafe_data_uri")
+        return sorted(set(issues))
+
+    @staticmethod
+    def _computed_value(
+        binding_type: str,
+        values: VideoWorkflowMappingValues,
+    ) -> int:
+        if binding_type == "duration_seconds_times_fps_plus_one":
+            if values.duration_seconds <= 0 or values.fps <= 0:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.WORKFLOW_UNAVAILABLE,
+                    "Video workflow computed parameter is invalid.",
+                )
+            length = values.duration_seconds * values.fps + 1
+            if not isinstance(length, int) or length <= 1:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.WORKFLOW_UNAVAILABLE,
+                    "Video workflow computed parameter is invalid.",
+                )
+            return length
+        raise GenerationProviderRuntimeError(
+            VideoGenerationErrorCode.WORKFLOW_UNAVAILABLE,
+            "Video workflow computed parameter type is unsupported.",
+        )
 
     @staticmethod
     def _apply(
         payload: dict[str, Any],
-        binding: VideoWorkflowBinding | None,
+        binding: VideoWorkflowBinding | VideoWorkflowComputedBinding | None,
         value: object,
     ) -> None:
         if binding is None:
@@ -276,3 +351,17 @@ class VideoWorkflowRegistry:
                 "Video workflow input map is missing.",
             )
         inputs[binding.input_name] = value
+
+
+def _walk_workflow_values(value: object) -> list[object]:
+    if isinstance(value, dict):
+        values: list[object] = []
+        for item in value.values():
+            values.extend(_walk_workflow_values(item))
+        return values
+    if isinstance(value, list):
+        values = []
+        for item in value:
+            values.extend(_walk_workflow_values(item))
+        return values
+    return [value]

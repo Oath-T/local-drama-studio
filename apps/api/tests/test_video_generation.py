@@ -1,4 +1,6 @@
 import asyncio
+import json
+import shutil
 from io import BytesIO
 from pathlib import Path
 
@@ -7,7 +9,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.domain.video_generation import VideoGenerationErrorCode
+from app.domain.video_generation import VideoGenerationErrorCode, VideoInputRole
 from app.infrastructure.database import get_session_factory
 from app.infrastructure.generation.base import (
     GenerationProviderHealth,
@@ -18,6 +20,11 @@ from app.infrastructure.generation.base import (
     ProviderUploadedImage,
     VideoProviderRequest,
 )
+from app.infrastructure.generation.comfyui_video_provider import ComfyUIVideoGenerationProvider
+from app.infrastructure.generation.video_workflow import (
+    VideoWorkflowMappingValues,
+    VideoWorkflowRegistry,
+)
 from app.infrastructure.models.character import MediaAssetRecord
 from app.infrastructure.models.video_generation import (
     VideoGenerationOutputRecord,
@@ -26,17 +33,36 @@ from app.infrastructure.models.video_generation import (
 from app.service.video_generation_runner import VideoGenerationRunner
 from tests.test_keyframe_tasks import create_ready_shot_fixture
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+WAN_WORKFLOW_ID = "video_wan22_14b_flf2v_v1"
+WAN_WORKFLOW_JSON = REPO_ROOT / "workflows" / f"{WAN_WORKFLOW_ID}.json"
+WAN_WORKFLOW_MANIFEST = REPO_ROOT / "workflows" / f"{WAN_WORKFLOW_ID}.manifest.json"
+OLD_WAN_WORKFLOW_JSON = REPO_ROOT / "workflows" / "video_wan2_2_14B_flf2v.json"
+
 
 class StubVideoProvider:
     submitted_workflow: dict[str, object] | None = None
     uploaded_filenames: list[str] = []
     fail_upload_role: str | None = None
+    output_node_ids: list[str] = []
 
     async def check_health(self) -> GenerationProviderHealth:
         return GenerationProviderHealth(available=True, provider="comfyui", status="online")
 
     async def get_required_node_types(self) -> set[str]:
-        return {"LoadImage", "VideoCombine"}
+        return {
+            "CLIPLoader",
+            "CLIPTextEncode",
+            "CreateVideo",
+            "KSamplerAdvanced",
+            "LoadImage",
+            "SaveVideo",
+            "UNETLoader",
+            "VAEDecode",
+            "VAELoader",
+            "VideoCombine",
+            "WanFirstLastFrameToVideo",
+        }
 
     async def upload_input_image(
         self,
@@ -67,10 +93,11 @@ class StubVideoProvider:
         self,
         provider_job_id: str,
         *,
+        output_node_ids: list[str],
         output_file_keys: list[str],
         allowed_extensions: list[str],
     ) -> list[ProviderOutputFile]:
-        assert output_file_keys == ["videos"]
+        StubVideoProvider.output_node_ids = output_node_ids
         assert "mp4" in allowed_extensions
         return [
             ProviderOutputFile(
@@ -103,6 +130,7 @@ def enable_video_generation(monkeypatch, workflow_dir: Path | None = None) -> No
     StubVideoProvider.submitted_workflow = None
     StubVideoProvider.uploaded_filenames = []
     StubVideoProvider.fail_upload_role = None
+    StubVideoProvider.output_node_ids = []
     if workflow_dir:
         monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
     monkeypatch.setenv("LDS_API_COMFYUI_POLL_INTERVAL_SECONDS", "1")
@@ -216,6 +244,36 @@ def write_first_last_video_workflow_files(workflow_dir: Path) -> None:
     )
 
 
+def write_wan_workflow_files(workflow_dir: Path) -> None:
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(WAN_WORKFLOW_MANIFEST, workflow_dir / WAN_WORKFLOW_MANIFEST.name)
+    shutil.copy2(WAN_WORKFLOW_JSON, workflow_dir / WAN_WORKFLOW_JSON.name)
+
+
+def workflow_mapping_values(
+    *,
+    duration_seconds: int = 2,
+    fps: int = 16,
+    negative_prompt: str | None = None,
+    seed: int = 123,
+) -> VideoWorkflowMappingValues:
+    return VideoWorkflowMappingValues(
+        positive_prompt="rainy street",
+        negative_prompt=negative_prompt,
+        width=640,
+        height=640,
+        duration_seconds=duration_seconds,
+        fps=fps,
+        seed=seed,
+        motion_strength=None,
+        camera_motion=None,
+        input_images={
+            VideoInputRole.START_FRAME: ProviderUploadedImage("start.png"),
+            VideoInputRole.END_FRAME: ProviderUploadedImage("end.png"),
+        },
+    )
+
+
 def create_ready_video_task(
     client: TestClient,
     monkeypatch,
@@ -256,6 +314,187 @@ def create_completed_video_run(
     assert run.status_code == 200
     assert run.json()["status"] == "completed"
     return run.json()
+
+
+def test_wan_workflow_file_is_normalized_and_placeholders_are_clean() -> None:
+    assert WAN_WORKFLOW_JSON.exists()
+    assert WAN_WORKFLOW_MANIFEST.exists()
+    assert not OLD_WAN_WORKFLOW_JSON.exists()
+
+    workflow = json.loads(WAN_WORKFLOW_JSON.read_text(encoding="utf-8"))
+    serialized = json.dumps(workflow, ensure_ascii=False)
+
+    assert workflow["80"]["inputs"]["image"] == "lds_start_frame_placeholder.png"
+    assert workflow["89"]["inputs"]["image"] == "lds_end_frame_placeholder.png"
+    assert "保安.png" not in serialized
+    assert "男主逆袭.png" not in serialized
+
+
+def test_wan_workflow_builds_real_mapping_and_computed_length(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_wan_workflow_files(workflow_dir)
+    monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
+    get_settings.cache_clear()
+    registry = VideoWorkflowRegistry(get_settings())
+    workflow = registry.get_workflow(WAN_WORKFLOW_ID)
+
+    assert workflow.available_locally is True
+    for duration, expected_length in [(2, 33), (3, 49), (5, 81)]:
+        payload = registry.build_workflow(
+            workflow,
+            workflow_mapping_values(
+                duration_seconds=duration,
+                fps=16,
+                negative_prompt="low quality",
+                seed=789,
+            ),
+        )
+        assert payload["80"]["inputs"]["image"] == "start.png"
+        assert payload["89"]["inputs"]["image"] == "end.png"
+        assert payload["90"]["inputs"]["text"] == "rainy street"
+        assert payload["78"]["inputs"]["text"] == "low quality"
+        assert payload["81"]["inputs"]["width"] == 640
+        assert payload["81"]["inputs"]["height"] == 640
+        assert payload["81"]["inputs"]["length"] == expected_length
+        assert payload["86"]["inputs"]["fps"] == 16
+        assert payload["84"]["inputs"]["noise_seed"] == 789
+        assert payload["87"]["inputs"]["noise_seed"] == 0
+        assert payload["87"]["inputs"]["add_noise"] == "disable"
+
+
+def test_wan_workflow_negative_prompt_keeps_default_when_empty(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_wan_workflow_files(workflow_dir)
+    monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
+    get_settings.cache_clear()
+    registry = VideoWorkflowRegistry(get_settings())
+    workflow = registry.get_workflow(WAN_WORKFLOW_ID)
+    assert workflow.workflow is not None
+    default_negative = workflow.workflow["78"]["inputs"]["text"]
+
+    payload = registry.build_workflow(workflow, workflow_mapping_values(negative_prompt=None))
+    overridden = registry.build_workflow(
+        workflow,
+        workflow_mapping_values(negative_prompt="blur, watermark"),
+    )
+
+    assert payload["78"]["inputs"]["text"] == default_negative
+    assert overridden["78"]["inputs"]["text"] == "blur, watermark"
+
+
+def test_wan_workflow_safety_accepts_model_names_and_rejects_absolute_paths(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_wan_workflow_files(workflow_dir)
+    monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
+    get_settings.cache_clear()
+    registry = VideoWorkflowRegistry(get_settings())
+    workflow = registry.get_workflow(WAN_WORKFLOW_ID)
+    serialized = json.dumps(workflow.workflow, ensure_ascii=False)
+
+    assert workflow.available_locally is True
+    assert "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors" in serialized
+
+    unsafe = json.loads(WAN_WORKFLOW_JSON.read_text(encoding="utf-8"))
+    unsafe["80"]["inputs"]["image"] = "F:\\LocalDramaStudio\\storage\\secret.png"
+    (workflow_dir / WAN_WORKFLOW_JSON.name).write_text(
+        json.dumps(unsafe, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    get_settings.cache_clear()
+    unsafe_workflow = VideoWorkflowRegistry(get_settings()).get_workflow(WAN_WORKFLOW_ID)
+
+    assert unsafe_workflow.available_locally is False
+    assert "workflow_unsafe_absolute_path" in unsafe_workflow.missing_requirements
+
+
+def test_wan_workflow_is_unavailable_when_real_file_is_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(WAN_WORKFLOW_MANIFEST, workflow_dir / WAN_WORKFLOW_MANIFEST.name)
+    monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
+    get_settings.cache_clear()
+
+    workflow = VideoWorkflowRegistry(get_settings()).get_workflow(WAN_WORKFLOW_ID)
+
+    assert workflow.available_locally is False
+    assert workflow.missing_requirements == ["workflow_file_missing"]
+
+
+def test_wan_workflow_safety_rejects_ui_format_and_missing_required_nodes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_wan_workflow_files(workflow_dir)
+
+    ui_workflow = {"nodes": [], "links": [], "groups": []}
+    (workflow_dir / WAN_WORKFLOW_JSON.name).write_text(json.dumps(ui_workflow), encoding="utf-8")
+    monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
+    get_settings.cache_clear()
+    workflow = VideoWorkflowRegistry(get_settings()).get_workflow(WAN_WORKFLOW_ID)
+
+    assert workflow.available_locally is False
+    assert "workflow_ui_format" in workflow.missing_requirements
+
+    write_wan_workflow_files(workflow_dir)
+    missing_node = json.loads(WAN_WORKFLOW_JSON.read_text(encoding="utf-8"))
+    missing_node.pop("80")
+    (workflow_dir / WAN_WORKFLOW_JSON.name).write_text(
+        json.dumps(missing_node, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    get_settings.cache_clear()
+    workflow = VideoWorkflowRegistry(get_settings()).get_workflow(WAN_WORKFLOW_ID)
+
+    assert workflow.available_locally is False
+    assert "workflow_node_missing:80" in workflow.missing_requirements
+
+    write_wan_workflow_files(workflow_dir)
+    wrong_output = json.loads(WAN_WORKFLOW_JSON.read_text(encoding="utf-8"))
+    wrong_output["83"]["class_type"] = "PreviewImage"
+    (workflow_dir / WAN_WORKFLOW_JSON.name).write_text(
+        json.dumps(wrong_output, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    get_settings.cache_clear()
+    workflow = VideoWorkflowRegistry(get_settings()).get_workflow(WAN_WORKFLOW_ID)
+
+    assert workflow.available_locally is False
+    assert "workflow_output_node_type_invalid:83" in workflow.missing_requirements
+
+
+def test_comfyui_video_output_refs_use_manifest_output_node_and_video_extensions() -> None:
+    history_item = {
+        "outputs": {
+            "82": {"images": [{"filename": "preview.png", "subfolder": "", "type": "output"}]},
+            "83": {
+                "videos": [{"filename": "final.mp4", "subfolder": "run", "type": "output"}],
+                "images": [{"filename": "poster.png", "subfolder": "run", "type": "output"}],
+            },
+            "99": {"videos": [{"filename": "other.mp4", "subfolder": "", "type": "output"}]},
+        }
+    }
+
+    refs = ComfyUIVideoGenerationProvider._output_file_refs(
+        history_item,
+        ["83"],
+        ["videos", "files", "gifs", "images"],
+        ["mp4", "webm", "mov", "gif"],
+    )
+
+    assert refs == [{"filename": "final.mp4", "subfolder": "run", "type": "output"}]
 
 
 def test_video_workflow_missing_file_is_unavailable(
@@ -361,6 +600,7 @@ def test_video_run_completes_saves_video_and_is_idempotent(
     assert "relative_path" not in str(refreshed)
     assert StubVideoProvider.submitted_workflow is not None
     assert "_start_frame." in StubVideoProvider.submitted_workflow["1"]["inputs"]["image"]
+    assert StubVideoProvider.output_node_ids == ["4"]
     assert StubVideoProvider.submitted_workflow["2"]["inputs"]["text"] == "雨夜街道逐渐推进"
 
 
@@ -531,6 +771,74 @@ def test_first_last_frame_task_requires_end_frame_and_snapshots_inputs(
     assert StubVideoProvider.submitted_workflow is not None
     assert "_start_frame." in StubVideoProvider.submitted_workflow["1"]["inputs"]["image"]
     assert "_end_frame." in StubVideoProvider.submitted_workflow["5"]["inputs"]["image"]
+
+
+def test_wan_first_last_workflow_run_uses_manifest_nodes_and_saves_video(
+    migrated_client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_wan_workflow_files(workflow_dir)
+    enable_video_generation(monkeypatch, workflow_dir)
+    data = create_ready_shot_fixture(migrated_client)
+    start_frame = upload_video_input(migrated_client, data["project_id"])
+    end_frame = upload_video_input(migrated_client, data["project_id"])
+    task = migrated_client.post(
+        f"/api/projects/{data['project_id']}/shots/{data['shot']['id']}/video-tasks",
+        json={
+            "inputs": [
+                {"role": "start_frame", "media_asset_id": start_frame["id"]},
+                {"role": "end_frame", "media_asset_id": end_frame["id"]},
+            ]
+        },
+    ).json()
+    patch = migrated_client.patch(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}",
+        json={
+            "prompt": "fixed seed first last frame test",
+            "negative_prompt": "bad quality",
+            "duration_seconds": 2,
+            "fps": 16,
+            "width": 640,
+            "height": 640,
+            "seed": 321,
+            "workflow_id": WAN_WORKFLOW_ID,
+        },
+    )
+    ready = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/mark-ready"
+    )
+
+    assert patch.status_code == 200
+    assert ready.status_code == 200
+    response = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/runs",
+        json={"workflow_id": WAN_WORKFLOW_ID},
+    )
+    run_id = response.json()["run_id"]
+    asyncio.run(VideoGenerationRunner().run_task(run_id))
+    refreshed = migrated_client.get(
+        f"/api/projects/{data['project_id']}/video-runs/{run_id}"
+    ).json()
+
+    assert response.status_code == 202
+    assert refreshed["status"] == "completed"
+    assert refreshed["outputs"][0]["media_asset"]["media_type"] == "video"
+    assert StubVideoProvider.output_node_ids == ["83"]
+    assert StubVideoProvider.submitted_workflow is not None
+    workflow = StubVideoProvider.submitted_workflow
+    assert "_start_frame." in workflow["80"]["inputs"]["image"]
+    assert "_end_frame." in workflow["89"]["inputs"]["image"]
+    assert workflow["90"]["inputs"]["text"] == "fixed seed first last frame test"
+    assert workflow["78"]["inputs"]["text"] == "bad quality"
+    assert workflow["81"]["inputs"]["width"] == 640
+    assert workflow["81"]["inputs"]["height"] == 640
+    assert workflow["81"]["inputs"]["length"] == 33
+    assert workflow["86"]["inputs"]["fps"] == 16
+    assert workflow["84"]["inputs"]["noise_seed"] == 321
+    assert workflow["87"]["inputs"]["noise_seed"] == 0
+    assert workflow["87"]["inputs"]["add_noise"] == "disable"
 
 
 def test_first_last_frame_runner_does_not_submit_when_role_upload_fails(

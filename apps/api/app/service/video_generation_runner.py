@@ -103,6 +103,7 @@ class VideoGenerationRunner:
                 workflow = self._load_workflow_manifest(run_id)
                 outputs = await provider.fetch_video_outputs(
                     provider_job_id,
+                    output_node_ids=workflow.manifest.output_node_ids,
                     output_file_keys=workflow.manifest.output_file_keys,
                     allowed_extensions=workflow.manifest.allowed_output_extensions,
                 )

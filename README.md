@@ -1,6 +1,6 @@
 # Local Drama Studio
 
-Local Drama Studio is a local-first AI short-drama production platform. Sprint 9.1 adds role-based video frame inputs on top of project, character, scene, shot, rule-based recommendation, visual analysis, keyframe task preparation, keyframe generation, and local ComfyUI image-to-video task systems.
+Local Drama Studio is a local-first AI short-drama production platform. Sprint 9.2 adds a real Wan2.2 14B first-last-frame ComfyUI workflow definition on top of project, character, scene, shot, rule-based recommendation, visual analysis, keyframe task preparation, keyframe generation, and local ComfyUI video task systems.
 
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
@@ -178,10 +178,11 @@ platform `MediaAsset` records through safe media URLs.
 
 Video generation tasks are separate from keyframe generation. Sprint 9 supports a provider-neutral
 image-to-video task and run model with the fixed `video_i2v_14b_v1` workflow identifier. Sprint 9.1
-adds role-based `start_frame` and `end_frame` inputs and the placeholder
-`video_wan22_14b_flf2v_v1` first-last-frame manifest. The repository includes only workflow
-manifest templates; if matching workflow JSON files are not supplied locally under the configured
-workflow directory, the workflow is reported as unavailable and no fake generation is exposed.
+adds role-based `start_frame` and `end_frame` inputs. Sprint 9.2 includes the real
+`video_wan22_14b_flf2v_v1` first-last-frame workflow definition exported from ComfyUI. The platform
+does not download models, install Custom Nodes, or modify the user's ComfyUI directory. If a
+configured workflow JSON is missing or fails safety checks, that workflow is reported as unavailable
+and no fake generation is exposed.
 
 ## Frontend
 

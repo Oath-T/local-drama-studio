@@ -74,7 +74,7 @@ The repository includes:
 workflows/video_wan22_14b_flf2v_v1.manifest.json
 ```
 
-The matching real workflow JSON is intentionally not committed. Until the user provides it locally, the workflow is shown as unavailable.
+At the end of Sprint 9.1, the matching real workflow JSON was intentionally not committed. Sprint 9.2 later adds the real `video_wan22_14b_flf2v_v1.json` workflow definition.
 
 ## Readiness
 
@@ -97,7 +97,7 @@ If any role upload fails, the runner marks the run failed and does not submit `/
 
 ## Known Limits
 
-- No real `video_wan22_14b_flf2v_v1.json` is shipped.
+- No real `video_wan22_14b_flf2v_v1.json` was shipped in Sprint 9.1; Sprint 9.2 adds it.
 - The UI supports simple upload slots only.
 - No shared media input library or batch upload.
 - No cancellation change from Sprint 9.

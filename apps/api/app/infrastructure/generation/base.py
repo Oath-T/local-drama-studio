@@ -108,6 +108,7 @@ class VideoGenerationProvider(Protocol):
         self,
         provider_job_id: str,
         *,
+        output_node_ids: list[str],
         output_file_keys: list[str],
         allowed_extensions: list[str],
     ) -> list[ProviderOutputFile]: ...

@@ -151,6 +151,7 @@ class ComfyUIVideoGenerationProvider:
         self,
         provider_job_id: str,
         *,
+        output_node_ids: list[str],
         output_file_keys: list[str],
         allowed_extensions: list[str],
     ) -> list[ProviderOutputFile]:
@@ -161,7 +162,12 @@ class ComfyUIVideoGenerationProvider:
                 VideoGenerationErrorCode.OUTPUT_MISSING,
                 "ComfyUI output is missing.",
             )
-        refs = self._output_file_refs(history_item, output_file_keys, allowed_extensions)
+        refs = self._output_file_refs(
+            history_item,
+            output_node_ids,
+            output_file_keys,
+            allowed_extensions,
+        )
         if not refs:
             raise GenerationProviderRuntimeError(
                 VideoGenerationErrorCode.OUTPUT_MISSING,
@@ -264,6 +270,7 @@ class ComfyUIVideoGenerationProvider:
     @staticmethod
     def _output_file_refs(
         history_item: Mapping[str, Any],
+        output_node_ids: list[str],
         output_file_keys: list[str],
         allowed_extensions: list[str],
     ) -> list[dict[str, str]]:
@@ -272,7 +279,12 @@ class ComfyUIVideoGenerationProvider:
         outputs = history_item.get("outputs")
         if not isinstance(outputs, dict):
             return refs
-        for output in outputs.values():
+        selected_outputs = (
+            [outputs.get(node_id) for node_id in output_node_ids]
+            if output_node_ids
+            else list(outputs.values())
+        )
+        for output in selected_outputs:
             if not isinstance(output, dict):
                 continue
             for key in output_file_keys:
