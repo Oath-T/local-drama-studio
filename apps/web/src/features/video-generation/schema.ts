@@ -72,7 +72,7 @@ export const videoTaskFormSchema = z.object({
 });
 
 export type VideoTaskFormValues = z.input<typeof videoTaskFormSchema>;
-type ParsedVideoTaskFormValues = z.output<typeof videoTaskFormSchema>;
+export type ParsedVideoTaskFormValues = z.output<typeof videoTaskFormSchema>;
 
 export function videoTaskFormValuesToPayload(
   values: ParsedVideoTaskFormValues

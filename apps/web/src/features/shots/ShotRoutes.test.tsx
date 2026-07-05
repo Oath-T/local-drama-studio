@@ -1606,6 +1606,100 @@ describe("shot workbench routes", () => {
     expect(screen.getByRole("button", { name: videoGenerationCopy.save })).toBeEnabled();
   });
 
+  it("saves Wan first-last video task fields before marking ready and starting", async () => {
+    const user = userEvent.setup();
+    const firstLastWorkflow: VideoWorkflow = {
+      ...videoWorkflow,
+      workflow_id: "video_wan22_14b_flf2v_v1",
+      display_name: "Wan2.2 14B 首尾帧视频",
+      version: "0.2.0",
+      mode: "first_last_frame_to_video",
+      required_input_roles: ["start_frame", "end_frame"],
+      available: true,
+      missing_requirements: []
+    };
+    const firstLastTask: VideoTask = {
+      ...videoTask,
+      prompt: null,
+      negative_prompt: null,
+      duration_seconds: 2,
+      fps: 16,
+      width: 640,
+      height: 640,
+      seed: null,
+      motion_strength: null,
+      camera_motion: null,
+      workflow_id: firstLastWorkflow.workflow_id,
+      inputs: [
+        ...videoTask.inputs,
+        {
+          id: "video-input-end",
+          role: "end_frame",
+          media_asset_id: mediaAsset.id,
+          source_keyframe_output_id: null,
+          source_keyframe_task_id: null,
+          sort_order: 2,
+          media_asset: mediaAsset,
+          created_at: "2026-06-28T10:00:00+00:00",
+          updated_at: "2026-06-28T10:00:00+00:00"
+        }
+      ],
+      readiness: {
+        readiness_status: "incomplete",
+        blocking_issues: ["missing_prompt", "workflow_unavailable"],
+        warnings: []
+      }
+    };
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      videoTasks: [firstLastTask],
+      videoWorkflows: [firstLastWorkflow]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    expect(await screen.findByText(/v0\.2\.0/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: videoGenerationCopy.start })).toBeDisabled();
+
+    await user.type(screen.getByLabelText(videoGenerationCopy.fields.prompt), "cinematic rain push in");
+    await user.type(screen.getByLabelText(videoGenerationCopy.fields.negativePrompt), "bad quality");
+    await user.clear(screen.getByLabelText(videoGenerationCopy.fields.seed));
+    await user.type(screen.getByLabelText(videoGenerationCopy.fields.seed), "12345");
+    await user.clear(screen.getByLabelText(videoGenerationCopy.fields.motionStrength));
+    await user.type(screen.getByLabelText(videoGenerationCopy.fields.motionStrength), "0.45");
+    const cameraMotionInputs = screen.getAllByLabelText(videoGenerationCopy.fields.cameraMotion);
+    await user.type(cameraMotionInputs[cameraMotionInputs.length - 1], "slow cinematic push-in");
+    await user.click(screen.getByRole("button", { name: videoGenerationCopy.save }));
+
+    await waitFor(() => {
+      const saveRequest = requests.find(
+        (request) =>
+          request.method === "PATCH" &&
+          request.url.endsWith(`/video-tasks/${videoTaskId}`)
+      );
+      expect(saveRequest).toBeTruthy();
+      const payload = JSON.parse(saveRequest?.body ?? "{}");
+      expect(payload).toMatchObject({
+        prompt: "cinematic rain push in",
+        negative_prompt: "bad quality",
+        workflow_id: "video_wan22_14b_flf2v_v1",
+        duration_seconds: 2,
+        fps: 16,
+        width: 640,
+        height: 640,
+        seed: 12345,
+        motion_strength: 0.45,
+        camera_motion: "slow cinematic push-in"
+      });
+      expect(payload).not.toHaveProperty("inputs");
+    });
+
+    await user.click(screen.getByRole("button", { name: videoGenerationCopy.markReady }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: videoGenerationCopy.start })).toBeEnabled()
+    );
+  });
+
   it("starts a ready video task, renders video output, and selects a version", async () => {
     const user = userEvent.setup();
     const readyVideoTask = {

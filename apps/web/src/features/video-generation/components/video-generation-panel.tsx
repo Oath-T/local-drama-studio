@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, ExternalLink, Play, Plus, RefreshCw, RotateCcw, Save, Star, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -37,6 +37,7 @@ import {
 } from "../api";
 import { videoGenerationCopy, videoMissingRequirementText } from "../copy";
 import {
+  type ParsedVideoTaskFormValues,
   videoTaskFormSchema,
   videoTaskFormValuesToPayload,
   type VideoTaskFormValues
@@ -329,8 +330,12 @@ function VideoTaskEditor({
   invalidateVideoData: (taskId?: string) => Promise<void>;
   onDeleted: () => void;
 }) {
-  const form = useForm<VideoTaskFormValues>({
-    resolver: zodResolver(videoTaskFormSchema),
+  const form = useForm<VideoTaskFormValues, unknown, ParsedVideoTaskFormValues>({
+    resolver: zodResolver(videoTaskFormSchema) as Resolver<
+      VideoTaskFormValues,
+      unknown,
+      ParsedVideoTaskFormValues
+    >,
     defaultValues: taskToFormValues(task)
   });
   const runsQuery = useQuery({
@@ -353,8 +358,8 @@ function VideoTaskEditor({
   }, [form, workflows]);
 
   const updateMutation = useMutation({
-    mutationFn: (values: VideoTaskFormValues) =>
-      updateVideoTask(projectId, task.id, videoTaskFormValuesToPayload(videoTaskFormSchema.parse(values))),
+    mutationFn: (values: ParsedVideoTaskFormValues) =>
+      updateVideoTask(projectId, task.id, videoTaskFormValuesToPayload(values)),
     onSuccess: async (updated) => {
       await invalidateVideoData(updated.id);
       onMessage({ tone: "success", text: videoGenerationCopy.saved });
