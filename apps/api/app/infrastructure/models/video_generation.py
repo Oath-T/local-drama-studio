@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
@@ -75,6 +85,59 @@ class VideoGenerationTaskRecord(Base):
         back_populates="task",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    inputs: Mapped[list["VideoGenerationTaskInputRecord"]] = relationship(
+        "VideoGenerationTaskInputRecord",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class VideoGenerationTaskInputRecord(Base):
+    __tablename__ = "video_generation_task_inputs"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('start_frame', 'end_frame')",
+            name="ck_video_generation_task_inputs_role",
+        ),
+        CheckConstraint("sort_order >= 1", name="ck_video_generation_task_inputs_sort_order"),
+        UniqueConstraint("task_id", "role", name="uq_video_generation_task_inputs_task_role"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    task_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("video_generation_tasks.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    media_asset_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("media_assets.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    source_keyframe_output_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("keyframe_generation_outputs.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    source_keyframe_task_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("keyframe_generation_tasks.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    task: Mapped[VideoGenerationTaskRecord] = relationship(
+        "VideoGenerationTaskRecord",
+        back_populates="inputs",
     )
 
 

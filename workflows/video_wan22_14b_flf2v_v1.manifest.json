@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "workflow_id": "video_wan22_14b_flf2v_v1",
+  "display_name": "Wan2.2 14B First-Last Frame Video",
+  "version": "0.1.0",
+  "workflow_file": "video_wan22_14b_flf2v_v1.json",
+  "provider": "comfyui",
+  "mode": "first_last_frame_to_video",
+  "reference_inputs_used": true,
+  "required_input_roles": ["start_frame", "end_frame"],
+  "required_node_types": [],
+  "image_input_bindings": {
+    "start_frame": {
+      "node_id": "start_frame",
+      "input_name": "image"
+    },
+    "end_frame": {
+      "node_id": "end_frame",
+      "input_name": "image"
+    }
+  },
+  "image_input_subfolder_bindings": {
+    "start_frame": {
+      "node_id": "start_frame",
+      "input_name": "subfolder"
+    },
+    "end_frame": {
+      "node_id": "end_frame",
+      "input_name": "subfolder"
+    }
+  },
+  "image_input_type_bindings": {
+    "start_frame": {
+      "node_id": "start_frame",
+      "input_name": "type"
+    },
+    "end_frame": {
+      "node_id": "end_frame",
+      "input_name": "type"
+    }
+  },
+  "parameter_bindings": {
+    "positive_prompt": {
+      "node_id": "positive_prompt",
+      "input_name": "text"
+    },
+    "negative_prompt": {
+      "node_id": "negative_prompt",
+      "input_name": "text"
+    },
+    "width": {
+      "node_id": "video_settings",
+      "input_name": "width"
+    },
+    "height": {
+      "node_id": "video_settings",
+      "input_name": "height"
+    },
+    "duration_seconds": {
+      "node_id": "video_settings",
+      "input_name": "duration_seconds"
+    },
+    "fps": {
+      "node_id": "video_settings",
+      "input_name": "fps"
+    },
+    "seed": {
+      "node_id": "video_settings",
+      "input_name": "seed"
+    },
+    "motion_strength": {
+      "node_id": "video_settings",
+      "input_name": "motion_strength"
+    },
+    "camera_motion": {
+      "node_id": "video_settings",
+      "input_name": "camera_motion"
+    }
+  },
+  "output_node_ids": ["video_output"],
+  "output_file_keys": ["videos", "gifs", "files", "images"],
+  "allowed_output_extensions": ["mp4", "webm", "mov", "gif"]
+}

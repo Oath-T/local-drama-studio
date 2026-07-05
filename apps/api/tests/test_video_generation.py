@@ -7,9 +7,11 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.domain.video_generation import VideoGenerationErrorCode
 from app.infrastructure.database import get_session_factory
 from app.infrastructure.generation.base import (
     GenerationProviderHealth,
+    GenerationProviderRuntimeError,
     ProviderJobStatus,
     ProviderOutputFile,
     ProviderSubmission,
@@ -27,6 +29,8 @@ from tests.test_keyframe_tasks import create_ready_shot_fixture
 
 class StubVideoProvider:
     submitted_workflow: dict[str, object] | None = None
+    uploaded_filenames: list[str] = []
+    fail_upload_role: str | None = None
 
     async def check_health(self) -> GenerationProviderHealth:
         return GenerationProviderHealth(available=True, provider="comfyui", status="online")
@@ -44,7 +48,13 @@ class StubVideoProvider:
         assert filename.startswith("lds_video_")
         assert content
         assert mime_type == "image/png"
-        return ProviderUploadedImage(filename="uploaded.png", subfolder="", input_type="input")
+        if self.fail_upload_role and self.fail_upload_role in filename:
+            raise GenerationProviderRuntimeError(
+                VideoGenerationErrorCode.REFERENCE_UPLOAD_FAILED,
+                "upload failed",
+            )
+        self.uploaded_filenames.append(filename)
+        return ProviderUploadedImage(filename=filename, subfolder="", input_type="input")
 
     async def submit(self, request: VideoProviderRequest) -> ProviderSubmission:
         StubVideoProvider.submitted_workflow = request.workflow
@@ -90,6 +100,9 @@ def upload_video_input(client: TestClient, project_id: str) -> dict[str, object]
 
 
 def enable_video_generation(monkeypatch, workflow_dir: Path | None = None) -> None:
+    StubVideoProvider.submitted_workflow = None
+    StubVideoProvider.uploaded_filenames = []
+    StubVideoProvider.fail_upload_role = None
     if workflow_dir:
         monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
     monkeypatch.setenv("LDS_API_COMFYUI_POLL_INTERVAL_SECONDS", "1")
@@ -141,6 +154,56 @@ def write_video_workflow_files(workflow_dir: Path) -> None:
         """
         {
           "1": {"class_type": "LoadImage", "inputs": {"image": ""}},
+          "2": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},
+          "3": {
+            "class_type": "VideoSettings",
+            "inputs": {"width": 768, "height": 1360, "duration_seconds": 5, "fps": 16, "seed": 1}
+          },
+          "4": {"class_type": "VideoCombine", "inputs": {}}
+        }
+        """,
+        encoding="utf-8",
+    )
+
+
+def write_first_last_video_workflow_files(workflow_dir: Path) -> None:
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    (workflow_dir / "video_flf2v_test.manifest.json").write_text(
+        """
+        {
+          "schema_version": 1,
+          "workflow_id": "video_flf2v_test",
+          "display_name": "Video First Last Test Workflow",
+          "version": "test",
+          "workflow_file": "video_flf2v_test.json",
+          "provider": "comfyui",
+          "mode": "first_last_frame_to_video",
+          "required_input_roles": ["start_frame", "end_frame"],
+          "required_node_types": ["LoadImage", "VideoCombine"],
+          "image_input_bindings": {
+            "start_frame": {"node_id": "1", "input": "image"},
+            "end_frame": {"node_id": "5", "input_name": "image"}
+          },
+          "parameter_bindings": {
+            "positive_prompt": {"node_id": "2", "input_name": "text"},
+            "width": {"node_id": "3", "input_name": "width"},
+            "height": {"node_id": "3", "input_name": "height"},
+            "duration_seconds": {"node_id": "3", "input_name": "duration_seconds"},
+            "fps": {"node_id": "3", "input_name": "fps"},
+            "seed": {"node_id": "3", "input_name": "seed"}
+          },
+          "output_node_ids": ["4"],
+          "output_file_keys": ["videos"],
+          "allowed_output_extensions": ["mp4"]
+        }
+        """,
+        encoding="utf-8",
+    )
+    (workflow_dir / "video_flf2v_test.json").write_text(
+        """
+        {
+          "1": {"class_type": "LoadImage", "inputs": {"image": ""}},
+          "5": {"class_type": "LoadImage", "inputs": {"image": ""}},
           "2": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},
           "3": {
             "class_type": "VideoSettings",
@@ -233,6 +296,8 @@ def test_video_task_upload_and_readiness_reject_missing_workflow(
 
     assert updated.status_code == 200
     assert updated.json()["input_media_asset"]["content_url"].startswith("/api/media/")
+    assert updated.json()["inputs"][0]["role"] == "start_frame"
+    assert updated.json()["inputs"][0]["media_asset"]["content_url"].startswith("/api/media/")
     assert "relative_path" not in str(updated.json())
     assert ready.status_code == 422
     assert "workflow_unavailable" in ready.json()["error"]["details"]["blocking_issues"]
@@ -295,7 +360,7 @@ def test_video_run_completes_saves_video_and_is_idempotent(
     assert output["media_asset"]["content_url"].startswith("/api/media/")
     assert "relative_path" not in str(refreshed)
     assert StubVideoProvider.submitted_workflow is not None
-    assert StubVideoProvider.submitted_workflow["1"]["inputs"]["image"] == "uploaded.png"
+    assert "_start_frame." in StubVideoProvider.submitted_workflow["1"]["inputs"]["image"]
     assert StubVideoProvider.submitted_workflow["2"]["inputs"]["text"] == "雨夜街道逐渐推进"
 
 
@@ -383,3 +448,166 @@ def test_failed_video_run_does_not_lock_task_and_retry_creates_new_run(
     assert run_numbers[first_run["id"]] == 1
     assert run_numbers[retry.json()["run_id"]] == 2
     assert statuses[first_run["id"]] == "failed"
+
+
+def test_first_last_frame_task_requires_end_frame_and_snapshots_inputs(
+    migrated_client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_first_last_video_workflow_files(workflow_dir)
+    enable_video_generation(monkeypatch, workflow_dir)
+    data = create_ready_shot_fixture(migrated_client)
+    start_frame = upload_video_input(migrated_client, data["project_id"])
+    end_frame = upload_video_input(migrated_client, data["project_id"])
+    task = migrated_client.post(
+        f"/api/projects/{data['project_id']}/shots/{data['shot']['id']}/video-tasks",
+        json={
+            "inputs": [{"role": "start_frame", "media_asset_id": start_frame["id"]}],
+        },
+    ).json()
+    patched = migrated_client.patch(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}",
+        json={
+            "prompt": "rainy street from first frame to final frame",
+            "seed": 0,
+            "workflow_id": "video_flf2v_test",
+        },
+    )
+    assert patched.status_code == 200
+
+    missing_end = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/mark-ready"
+    )
+    assert missing_end.status_code == 422
+    assert "missing_end_frame" in missing_end.json()["error"]["details"]["blocking_issues"]
+
+    same_frame = migrated_client.patch(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}",
+        json={
+            "inputs": [
+                {"role": "start_frame", "media_asset_id": start_frame["id"]},
+                {"role": "end_frame", "media_asset_id": start_frame["id"]},
+            ]
+        },
+    )
+    assert same_frame.status_code == 200
+    assert "same_start_and_end_frame" in same_frame.json()["readiness"]["warnings"]
+
+    with_end = migrated_client.patch(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}",
+        json={
+            "inputs": [
+                {"role": "start_frame", "media_asset_id": start_frame["id"]},
+                {"role": "end_frame", "media_asset_id": end_frame["id"]},
+            ]
+        },
+    )
+    assert with_end.status_code == 200
+    ready = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/mark-ready"
+    )
+    assert ready.status_code == 200
+
+    response = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/runs",
+        json={"workflow_id": "video_flf2v_test"},
+    )
+    run_id = response.json()["run_id"]
+    run = migrated_client.get(f"/api/projects/{data['project_id']}/video-runs/{run_id}").json()
+    snapshot = run["submitted_payload_snapshot"]
+
+    assert response.status_code == 202
+    assert snapshot["schema_version"] == 2
+    assert snapshot["workflow_mode"] == "first_last_frame_to_video"
+    assert snapshot["inputs"] == [
+        {"role": "start_frame", "media_asset_id": start_frame["id"]},
+        {"role": "end_frame", "media_asset_id": end_frame["id"]},
+    ]
+    assert len(StubVideoProvider.uploaded_filenames) == 2
+    assert any("_start_frame." in filename for filename in StubVideoProvider.uploaded_filenames)
+    assert any("_end_frame." in filename for filename in StubVideoProvider.uploaded_filenames)
+    assert StubVideoProvider.submitted_workflow is not None
+    assert "_start_frame." in StubVideoProvider.submitted_workflow["1"]["inputs"]["image"]
+    assert "_end_frame." in StubVideoProvider.submitted_workflow["5"]["inputs"]["image"]
+
+
+def test_first_last_frame_runner_does_not_submit_when_role_upload_fails(
+    migrated_client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_first_last_video_workflow_files(workflow_dir)
+    enable_video_generation(monkeypatch, workflow_dir)
+    data = create_ready_shot_fixture(migrated_client)
+    start_frame = upload_video_input(migrated_client, data["project_id"])
+    end_frame = upload_video_input(migrated_client, data["project_id"])
+    task = migrated_client.post(
+        f"/api/projects/{data['project_id']}/shots/{data['shot']['id']}/video-tasks",
+        json={
+            "inputs": [
+                {"role": "start_frame", "media_asset_id": start_frame["id"]},
+                {"role": "end_frame", "media_asset_id": end_frame["id"]},
+            ]
+        },
+    ).json()
+    migrated_client.patch(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}",
+        json={
+            "prompt": "rainy street",
+            "seed": 0,
+            "workflow_id": "video_flf2v_test",
+        },
+    )
+    ready = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/mark-ready"
+    )
+    assert ready.status_code == 200
+    StubVideoProvider.fail_upload_role = "end_frame"
+
+    response = migrated_client.post(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}/runs",
+        json={"workflow_id": "video_flf2v_test"},
+    )
+    run_id = response.json()["run_id"]
+    run = migrated_client.get(f"/api/projects/{data['project_id']}/video-runs/{run_id}").json()
+
+    assert response.status_code == 202
+    assert run["status"] == "failed"
+    assert run["error_code"] == "video_reference_upload_failed"
+    assert StubVideoProvider.submitted_workflow is None
+
+
+def test_video_task_input_validation_is_transactional(
+    migrated_client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    write_video_workflow_files(workflow_dir)
+    enable_video_generation(monkeypatch, workflow_dir)
+    data = create_ready_shot_fixture(migrated_client)
+    media_asset = upload_video_input(migrated_client, data["project_id"])
+    task = migrated_client.post(
+        f"/api/projects/{data['project_id']}/shots/{data['shot']['id']}/video-tasks",
+        json={"inputs": [{"role": "start_frame", "media_asset_id": media_asset["id"]}]},
+    ).json()
+
+    duplicate = migrated_client.patch(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}",
+        json={
+            "inputs": [
+                {"role": "start_frame", "media_asset_id": media_asset["id"]},
+                {"role": "start_frame", "media_asset_id": media_asset["id"]},
+            ]
+        },
+    )
+    refreshed = migrated_client.get(
+        f"/api/projects/{data['project_id']}/video-tasks/{task['id']}"
+    ).json()
+
+    assert duplicate.status_code == 422
+    assert duplicate.json()["error"]["code"] == "video_input_role_duplicate"
+    assert refreshed["inputs"] == task["inputs"]

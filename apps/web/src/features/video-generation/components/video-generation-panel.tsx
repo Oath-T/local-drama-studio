@@ -41,7 +41,14 @@ import {
   videoTaskFormValuesToPayload,
   type VideoTaskFormValues
 } from "../schema";
-import type { VideoOutput, VideoRun, VideoTask, VideoWorkflow } from "../types";
+import type {
+  VideoInputRole,
+  VideoOutput,
+  VideoRun,
+  VideoTask,
+  VideoTaskInputPayload,
+  VideoWorkflow
+} from "../types";
 
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 const NONE = "__none";
@@ -135,14 +142,24 @@ export function VideoGenerationPanel({
     onError: (error) => onMessage({ tone: "error", text: getErrorText(error, "视频任务创建失败") })
   });
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => uploadVideoInputImage(projectId, file),
-    onSuccess: async (result) => {
+    mutationFn: ({ file }: { file: File; role: VideoInputRole }) =>
+      uploadVideoInputImage(projectId, file),
+    onSuccess: async (result, variables) => {
       if (selectedTask) {
-        await updateVideoTask(projectId, selectedTask.id, { input_media_asset_id: result.media_asset.id });
+        await updateVideoTask(projectId, selectedTask.id, {
+          inputs: nextTaskInputs(selectedTask, variables.role, {
+            media_asset_id: result.media_asset.id
+          })
+        });
         await invalidateVideoData(selectedTask.id);
       } else if (shot) {
         const created = await createVideoTask(projectId, shot.id, {
-          input_media_asset_id: result.media_asset.id
+          inputs: [
+            {
+              role: variables.role,
+              media_asset_id: result.media_asset.id
+            }
+          ]
         });
         setSelectedTaskId(created.id);
         await invalidateVideoData(created.id);
@@ -188,14 +205,14 @@ export function VideoGenerationPanel({
               className="sr-only"
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
-                if (file) uploadMutation.mutate(file);
+                if (file) uploadMutation.mutate({ file, role: "start_frame" });
                 event.currentTarget.value = "";
               }}
             />
             <Button type="button" variant="secondary" disabled={uploadMutation.isPending} asChild>
               <span>
                 <Upload className="h-4 w-4" aria-hidden="true" />
-                {videoGenerationCopy.uploadInput}
+                {videoGenerationCopy.uploadStartFrame}
               </span>
             </Button>
           </label>
@@ -212,8 +229,13 @@ export function VideoGenerationPanel({
                 disabled={createMutation.isPending}
                 onUse={() =>
                   createMutation.mutate({
-                    source_keyframe_output_id: output.id,
-                    source_keyframe_task_id: keyframeTaskId
+                    inputs: [
+                      {
+                        role: "start_frame",
+                        source_keyframe_output_id: output.id,
+                        source_keyframe_task_id: keyframeTaskId
+                      }
+                    ]
                   })
                 }
               />
@@ -370,6 +392,21 @@ function VideoTaskEditor({
       onMessage({ tone: "success", text: videoGenerationCopy.deleted });
     }
   });
+  const frameUploadMutation = useMutation({
+    mutationFn: ({ file }: { file: File; role: VideoInputRole }) =>
+      uploadVideoInputImage(projectId, file),
+    onSuccess: async (result, variables) => {
+      const updated = await updateVideoTask(projectId, task.id, {
+        inputs: nextTaskInputs(task, variables.role, {
+          media_asset_id: result.media_asset.id
+        })
+      });
+      await invalidateVideoData(updated.id);
+      onMessage({ tone: "success", text: videoGenerationCopy.saved });
+    },
+    onError: (error) =>
+      onMessage({ tone: "error", text: getErrorText(error, videoGenerationCopy.uploadFailed) })
+  });
 
   const runs = runsQuery.data?.items ?? [];
   const outputs = runs.flatMap((run) => run.outputs.map((output) => ({ run, output })));
@@ -397,21 +434,12 @@ function VideoTaskEditor({
         />
       </div>
 
-      {task.input_media_asset ? (
-        <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border bg-panel p-2">
-          <img
-            src={task.input_media_asset.thumbnail_url ?? task.input_media_asset.content_url}
-            alt=""
-            className="aspect-video w-full rounded object-cover"
-          />
-          <div className="text-xs text-muted">
-            <div className="font-medium text-foreground">{videoGenerationCopy.inputImage}</div>
-            <div>{task.input_media_asset.original_filename}</div>
-          </div>
-        </div>
-      ) : (
-        <StatusMessage tone="neutral">{videoGenerationCopy.blockingIssues.missing_input_image}</StatusMessage>
-      )}
+      <FrameInputSlots
+        task={task}
+        uploadingRole={frameUploadMutation.variables?.role}
+        isUploading={frameUploadMutation.isPending}
+        onUpload={(role, file) => frameUploadMutation.mutate({ role, file })}
+      />
 
       <form className="grid gap-3" onSubmit={form.handleSubmit((values) => updateMutation.mutate(values))}>
         <Field label={videoGenerationCopy.fields.name}>
@@ -507,6 +535,106 @@ function WorkflowStatus({ workflow }: { workflow?: VideoWorkflow }) {
       {workflow.missing_requirements.map((item) => (
         <p key={item}>{videoMissingRequirementText(item)}</p>
       ))}
+    </div>
+  );
+}
+
+function FrameInputSlots({
+  task,
+  uploadingRole,
+  isUploading,
+  onUpload
+}: {
+  task: VideoTask;
+  uploadingRole?: VideoInputRole;
+  isUploading: boolean;
+  onUpload: (role: VideoInputRole, file: File) => void;
+}) {
+  const startInput = inputForRole(task, "start_frame");
+  const endInput = inputForRole(task, "end_frame");
+  return (
+    <section className="grid gap-2 rounded-md border border-border bg-panel p-3">
+      <div>
+        <h4 className="text-xs font-semibold text-foreground">{videoGenerationCopy.frameInputs}</h4>
+        <p className="mt-1 text-xs text-muted">{videoGenerationCopy.frameInputDescription}</p>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        <FrameInputSlot
+          label={videoGenerationCopy.startFrame}
+          taskInput={startInput}
+          role="start_frame"
+          uploadLabel={videoGenerationCopy.uploadStartFrame}
+          isUploading={isUploading && uploadingRole === "start_frame"}
+          onUpload={onUpload}
+        />
+        <FrameInputSlot
+          label={videoGenerationCopy.endFrame}
+          taskInput={endInput}
+          role="end_frame"
+          uploadLabel={videoGenerationCopy.uploadEndFrame}
+          isUploading={isUploading && uploadingRole === "end_frame"}
+          onUpload={onUpload}
+        />
+      </div>
+    </section>
+  );
+}
+
+function FrameInputSlot({
+  label,
+  taskInput,
+  role,
+  uploadLabel,
+  isUploading,
+  onUpload
+}: {
+  label: string;
+  taskInput: VideoTask["inputs"][number] | undefined;
+  role: VideoInputRole;
+  uploadLabel: string;
+  isUploading: boolean;
+  onUpload: (role: VideoInputRole, file: File) => void;
+}) {
+  const media = taskInput?.media_asset ?? null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-background p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-foreground">{label}</span>
+        <label className="inline-flex">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            aria-label={uploadLabel}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) onUpload(role, file);
+              event.currentTarget.value = "";
+            }}
+          />
+          <Button type="button" variant="secondary" size="sm" disabled={isUploading} asChild>
+            <span>
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {uploadLabel}
+            </span>
+          </Button>
+        </label>
+      </div>
+      {media ? (
+        <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
+          <img
+            src={media.thumbnail_url ?? media.content_url}
+            alt=""
+            className="aspect-video w-full rounded object-cover"
+          />
+          <div className="min-w-0 text-xs text-muted">
+            <p className="truncate font-medium text-foreground">{media.original_filename}</p>
+            <p>{media.width && media.height ? `${media.width} × ${media.height}` : media.mime_type}</p>
+          </div>
+        </div>
+      ) : (
+        <StatusMessage tone="neutral">{videoGenerationCopy.noFrameImage}</StatusMessage>
+      )}
     </div>
   );
 }
@@ -668,7 +796,6 @@ function FormError({ children }: { children?: string }) {
 function taskToFormValues(task: VideoTask): VideoTaskFormValues {
   return {
     name: task.name,
-    input_media_asset_id: task.input_media_asset_id,
     prompt: task.prompt ?? "",
     negative_prompt: task.negative_prompt ?? "",
     duration_seconds: String(task.duration_seconds),
@@ -680,6 +807,43 @@ function taskToFormValues(task: VideoTask): VideoTaskFormValues {
     camera_motion: task.camera_motion ?? "",
     workflow_id: task.workflow_id
   };
+}
+
+function inputForRole(task: VideoTask, role: VideoInputRole) {
+  return task.inputs.find((input) => input.role === role);
+}
+
+function nextTaskInputs(
+  task: VideoTask,
+  role: VideoInputRole,
+  nextInput: Omit<VideoTaskInputPayload, "role">
+): VideoTaskInputPayload[] {
+  const byRole = new Map<VideoInputRole, VideoTaskInputPayload>();
+  for (const input of task.inputs) {
+    if (
+      input.media_asset_id ||
+      input.source_keyframe_output_id ||
+      input.source_keyframe_task_id
+    ) {
+      byRole.set(input.role, {
+        role: input.role,
+        media_asset_id: input.media_asset_id,
+        source_keyframe_output_id: input.source_keyframe_output_id,
+        source_keyframe_task_id: input.source_keyframe_task_id
+      });
+    }
+  }
+  byRole.set(role, {
+    role,
+    media_asset_id: nextInput.media_asset_id ?? null,
+    source_keyframe_output_id: nextInput.source_keyframe_output_id ?? null,
+    source_keyframe_task_id: nextInput.source_keyframe_task_id ?? null
+  });
+  return Array.from(byRole.values()).sort((left, right) => roleOrder(left.role) - roleOrder(right.role));
+}
+
+function roleOrder(role: VideoInputRole): number {
+  return role === "start_frame" ? 1 : 2;
 }
 
 function isActiveRun(run: VideoRun): boolean {

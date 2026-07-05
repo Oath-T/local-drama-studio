@@ -50,7 +50,6 @@ const dimension = z.string().transform((value, ctx) => {
 
 export const videoTaskFormSchema = z.object({
   name: z.string().trim().min(1, "请输入任务名称").max(120, "任务名称不能超过 120 个字符"),
-  input_media_asset_id: z.string().nullable(),
   prompt: z.string().trim().min(1, "请输入视频提示词").max(4000, "提示词不能超过 4000 个字符"),
   negative_prompt: z.string().max(2000, "反向提示词不能超过 2000 个字符"),
   duration_seconds: positiveNumber("时长必须大于 0 秒"),
@@ -80,7 +79,6 @@ export function videoTaskFormValuesToPayload(
 ): VideoTaskUpdateInput {
   return {
     name: values.name,
-    input_media_asset_id: values.input_media_asset_id,
     prompt: values.prompt,
     negative_prompt: emptyToNull(values.negative_prompt),
     duration_seconds: values.duration_seconds,

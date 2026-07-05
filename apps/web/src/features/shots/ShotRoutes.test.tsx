@@ -11,6 +11,10 @@ import { keyframeTaskCopy } from "@/features/keyframe-tasks/copy";
 import type { KeyframeTask } from "@/features/keyframe-tasks/types";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
 import { videoGenerationCopy } from "@/features/video-generation/copy";
+import {
+  videoTaskFormSchema,
+  videoTaskFormValuesToPayload
+} from "@/features/video-generation/schema";
 import type { VideoRun, VideoTask, VideoWorkflow } from "@/features/video-generation/types";
 import { shotCopy, shotRecommendationCopy } from "./copy";
 import type { Shot, ShotRecommendationResponse } from "./types";
@@ -478,6 +482,8 @@ const videoWorkflow: VideoWorkflow = {
   workflow_id: "video_i2v_14b_v1",
   display_name: "Video I2V 14B Basic",
   version: "0.1.0",
+  mode: "single_image_to_video",
+  required_input_roles: ["start_frame"],
   available: false,
   missing_requirements: ["workflow_file_missing"],
   reference_inputs_used: true
@@ -503,6 +509,19 @@ const videoTask: VideoTask = {
   camera_motion: null,
   workflow_id: "video_i2v_14b_v1",
   input_media_asset: mediaAsset,
+  inputs: [
+    {
+      id: "video-input-start",
+      role: "start_frame",
+      media_asset_id: mediaAsset.id,
+      source_keyframe_output_id: null,
+      source_keyframe_task_id: null,
+      sort_order: 1,
+      media_asset: mediaAsset,
+      created_at: "2026-06-28T10:00:00+00:00",
+      updated_at: "2026-06-28T10:00:00+00:00"
+    }
+  ],
   readiness: {
     readiness_status: "incomplete",
     blocking_issues: ["workflow_unavailable"],
@@ -513,6 +532,37 @@ const videoTask: VideoTask = {
   created_at: "2026-06-28T10:00:00+00:00",
   updated_at: "2026-06-28T10:00:00+00:00"
 };
+
+function applyVideoTaskPayload(task: VideoTask, payload: Record<string, unknown>): VideoTask {
+  const next = { ...task, ...payload, status: "draft" as const };
+  if (Array.isArray(payload.inputs)) {
+    const inputs = payload.inputs as Array<{
+      role: "start_frame" | "end_frame";
+      media_asset_id?: string | null;
+      source_keyframe_output_id?: string | null;
+      source_keyframe_task_id?: string | null;
+    }>;
+    next.inputs = inputs.map((input, index) => ({
+      id: `video-input-${input.role}`,
+      role: input.role,
+      media_asset_id:
+        input.media_asset_id ?? (input.source_keyframe_output_id ? mediaAsset.id : null),
+      source_keyframe_output_id: input.source_keyframe_output_id ?? null,
+      source_keyframe_task_id: input.source_keyframe_task_id ?? null,
+      sort_order: index + 1,
+      media_asset:
+        input.media_asset_id || input.source_keyframe_output_id ? mediaAsset : null,
+      created_at: "2026-06-28T10:00:00+00:00",
+      updated_at: "2026-06-28T10:00:00+00:00"
+    }));
+    const startInput = next.inputs.find((input) => input.role === "start_frame");
+    next.input_media_asset_id = startInput?.media_asset_id ?? null;
+    next.input_media_asset = startInput?.media_asset ?? null;
+    next.source_keyframe_output_id = startInput?.source_keyframe_output_id ?? null;
+    next.source_keyframe_task_id = startInput?.source_keyframe_task_id ?? null;
+  }
+  return next;
+}
 
 const videoRun: VideoRun = {
   id: videoRunId,
@@ -729,15 +779,19 @@ function mockShotApi(
       return jsonResponse({ items: videoTasks, total: videoTasks.length });
     }
     if (url === `/api/projects/${projectId}/shots/${shotId}/video-tasks` && method === "POST") {
-      const created = { ...videoTask, id: videoTaskId };
+      const payload = body ? JSON.parse(body) : {};
+      const created = applyVideoTaskPayload({ ...videoTask, id: videoTaskId }, payload);
       videoTasks = [created, ...videoTasks];
       return jsonResponse(created, 201);
     }
     if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}` && method === "PATCH") {
       const patch = body ? JSON.parse(body) : {};
-      const updated = { ...(videoTasks[0] ?? videoTask), ...patch, status: "draft" } as VideoTask;
+      const updated = applyVideoTaskPayload(videoTasks[0] ?? videoTask, patch);
       videoTasks = videoTasks.map((item) => (item.id === videoTaskId ? updated : item));
       return jsonResponse(updated);
+    }
+    if (url === `/api/projects/${projectId}/video-inputs/images` && method === "POST") {
+      return jsonResponse({ media_asset: mediaAsset }, 201);
     }
     if (url === `/api/projects/${projectId}/video-tasks/${videoTaskId}` && method === "DELETE") {
       videoTasks = videoTasks.filter((item) => item.id !== videoTaskId);
@@ -1456,6 +1510,100 @@ describe("shot workbench routes", () => {
         )
       ).toBe(true);
     });
+  });
+
+  it("shows role-based video frame inputs and uploads an end frame", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      videoTasks: [videoTask]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    expect(await screen.findByText(videoGenerationCopy.frameInputs)).toBeInTheDocument();
+    expect(screen.getByText(videoGenerationCopy.startFrame)).toBeInTheDocument();
+    expect(screen.getByText(videoGenerationCopy.endFrame)).toBeInTheDocument();
+
+    await user.upload(
+      screen.getByLabelText(videoGenerationCopy.uploadEndFrame),
+      new File(["fake"], "end.png", { type: "image/png" })
+    );
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url.endsWith(`/video-tasks/${videoTaskId}`) &&
+            request.body?.includes('"role":"end_frame"')
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("keeps role inputs separate when saving video task basics", async () => {
+    const payload = videoTaskFormValuesToPayload(
+      videoTaskFormSchema.parse({
+        name: "视频生成任务",
+        prompt: "雨夜街道逐渐推进",
+        negative_prompt: "",
+        duration_seconds: "5",
+        fps: "16",
+        width: "768",
+        height: "1360",
+        seed: "",
+        motion_strength: "",
+        camera_motion: "",
+        workflow_id: "video_i2v_14b_v1"
+      })
+    );
+
+    expect(payload).not.toHaveProperty("input_media_asset_id");
+    expect(payload).not.toHaveProperty("inputs");
+    expect(payload.prompt).toBe("雨夜街道逐渐推进");
+  });
+
+  it("shows first-last workflow missing end frame readiness without blocking manual controls", async () => {
+    const firstLastWorkflow: VideoWorkflow = {
+      ...videoWorkflow,
+      workflow_id: "video_wan22_14b_flf2v_v1",
+      display_name: "Wan2.2 首尾帧视频",
+      mode: "first_last_frame_to_video",
+      required_input_roles: ["start_frame", "end_frame"],
+      available: false,
+      missing_requirements: ["workflow_file_missing"]
+    };
+    const firstLastTask: VideoTask = {
+      ...videoTask,
+      workflow_id: firstLastWorkflow.workflow_id,
+      readiness: {
+        readiness_status: "incomplete",
+        blocking_issues: ["missing_end_frame", "workflow_unavailable"],
+        warnings: []
+      }
+    };
+    mockShotApi({
+      shots: [shotWithReferences],
+      videoTasks: [firstLastTask],
+      videoWorkflows: [firstLastWorkflow]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await userEvent.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+
+    expect(
+      await screen.findByText((text) =>
+        text.includes(videoGenerationCopy.blockingIssues.missing_end_frame)
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((text) =>
+        text.includes(videoGenerationCopy.disabledReasons.workflowUnavailable)
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: videoGenerationCopy.start })).toBeDisabled();
+    expect(screen.getByRole("button", { name: videoGenerationCopy.save })).toBeEnabled();
   });
 
   it("starts a ready video task, renders video output, and selects a version", async () => {

@@ -14,6 +14,7 @@ from app.domain.video_generation import (
     VIDEO_GENERATION_ERROR_MESSAGES,
     VideoGenerationErrorCode,
     VideoGenerationRunStatus,
+    VideoInputRole,
 )
 from app.infrastructure.database import get_session_factory
 from app.infrastructure.generation.base import (
@@ -54,12 +55,8 @@ class VideoGenerationRunner:
                 await self._poll_provider_job(run.id, run.provider_job_id)
                 return
             provider = create_video_generation_provider(self.settings)
-            uploaded = await provider.upload_input_image(
-                filename=self._safe_input_filename(run),
-                content=self._read_input_image(run),
-                mime_type=self._snapshot_input_mime(run),
-            )
-            workflow_payload = self._build_workflow_payload(run.id, uploaded)
+            uploaded_inputs = await self._upload_inputs(provider, run)
+            workflow_payload = self._build_workflow_payload(run.id, uploaded_inputs)
             async with self._semaphore:
                 submission = await provider.submit(
                     VideoProviderRequest(
@@ -137,7 +134,11 @@ class VideoGenerationRunner:
                 return
             await asyncio.sleep(max(1, self.settings.comfyui_poll_interval_seconds))
 
-    def _build_workflow_payload(self, run_id: str, uploaded_input) -> dict[str, object]:
+    def _build_workflow_payload(
+        self,
+        run_id: str,
+        uploaded_inputs: dict[VideoInputRole, object],
+    ) -> dict[str, object]:
         with self.session_factory() as session:
             repository = VideoGenerationRepository(session)
             run = repository.get_run_by_id(run_id)
@@ -149,7 +150,7 @@ class VideoGenerationRunner:
             return VideoGenerationService(
                 repository,
                 settings=self.settings,
-            ).build_provider_workflow(run, uploaded_input)
+            ).build_provider_workflow(run, uploaded_inputs)
 
     def _load_workflow_manifest(self, run_id: str):
         with self.session_factory() as session:
@@ -163,44 +164,67 @@ class VideoGenerationRunner:
             service = VideoGenerationService(repository, settings=self.settings)
             return service.workflow_registry.get_workflow(run.workflow_id)
 
-    def _read_input_image(self, run: VideoGenerationRunRecord) -> bytes:
+    async def _upload_inputs(
+        self,
+        provider,
+        run: VideoGenerationRunRecord,
+    ) -> dict[VideoInputRole, object]:
         snapshot = VideoRunSnapshot.model_validate_json(run.submitted_payload_snapshot)
-        with self.session_factory() as session:
-            media_asset = VideoGenerationRepository(session).get_media_asset(
-                run.project_id,
-                snapshot.input_media_asset_id,
-            )
-            if media_asset is None or media_asset.media_type != MediaType.IMAGE.value:
+        workflow = self._load_workflow_manifest(run.id)
+        uploaded: dict[VideoInputRole, object] = {}
+        inputs = _snapshot_inputs(snapshot)
+        for role in workflow.manifest.required_input_roles:
+            media_asset_id = inputs.get(role)
+            if not media_asset_id:
                 raise GenerationProviderRuntimeError(
                     VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
                     "Input image is unavailable.",
                 )
-            path = self.storage_service.resolve_relative_path(
-                media_asset.relative_path,
-                must_exist=True,
+            content, mime_type, extension = self._read_input_image(run, role, media_asset_id)
+            uploaded[role] = await provider.upload_input_image(
+                filename=self._safe_input_filename(run, role, extension),
+                content=content,
+                mime_type=mime_type,
             )
-            return path.read_bytes()
+        return uploaded
 
-    def _snapshot_input_mime(self, run: VideoGenerationRunRecord) -> str | None:
-        snapshot = VideoRunSnapshot.model_validate_json(run.submitted_payload_snapshot)
+    def _read_input_image(
+        self,
+        run: VideoGenerationRunRecord,
+        role: VideoInputRole,
+        media_asset_id: str,
+    ) -> tuple[bytes, str | None, str]:
         with self.session_factory() as session:
             media_asset = VideoGenerationRepository(session).get_media_asset(
                 run.project_id,
-                snapshot.input_media_asset_id,
+                media_asset_id,
             )
-            return media_asset.mime_type if media_asset else None
+            if media_asset is None or media_asset.media_type != MediaType.IMAGE.value:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
+                    f"{role.value} image is unavailable.",
+                )
+            try:
+                path = self.storage_service.resolve_relative_path(
+                    media_asset.relative_path,
+                    must_exist=True,
+                )
+                content = path.read_bytes()
+            except Exception as exc:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.REFERENCE_UPLOAD_FAILED,
+                    f"{role.value} image could not be prepared.",
+                ) from exc
+            return content, media_asset.mime_type, media_asset.extension
 
-    def _safe_input_filename(self, run: VideoGenerationRunRecord) -> str:
-        snapshot = VideoRunSnapshot.model_validate_json(run.submitted_payload_snapshot)
-        extension = ".png"
-        with self.session_factory() as session:
-            media_asset = VideoGenerationRepository(session).get_media_asset(
-                run.project_id,
-                snapshot.input_media_asset_id,
-            )
-            if media_asset and media_asset.extension:
-                extension = f".{media_asset.extension.lower().lstrip('.')}"
-        return f"lds_video_{run.id}_input{extension}"
+    def _safe_input_filename(
+        self,
+        run: VideoGenerationRunRecord,
+        role: VideoInputRole,
+        extension: str | None,
+    ) -> str:
+        suffix = f".{extension.lower().lstrip('.')}" if extension else ".png"
+        return f"lds_video_{run.id}_{role.value}{suffix}"
 
     def _save_outputs(self, run_id: str, outputs: list[ProviderOutputFile]) -> None:
         if not outputs:
@@ -382,6 +406,14 @@ def _video_code(value) -> VideoGenerationErrorCode:
         return VideoGenerationErrorCode(str(value))
     except ValueError:
         return VideoGenerationErrorCode.COMFYUI_EXECUTION_FAILED
+
+
+def _snapshot_inputs(snapshot: VideoRunSnapshot) -> dict[VideoInputRole, str]:
+    if snapshot.inputs:
+        return {item.role: item.media_asset_id for item in snapshot.inputs}
+    if snapshot.input_media_asset_id:
+        return {VideoInputRole.START_FRAME: snapshot.input_media_asset_id}
+    return {}
 
 
 def utc_now() -> datetime:

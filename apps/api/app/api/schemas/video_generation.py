@@ -7,9 +7,11 @@ from app.api.schemas.character import MediaAssetResponse
 from app.domain.video_generation import (
     VideoGenerationRunStatus,
     VideoGenerationTaskStatus,
+    VideoInputRole,
     VideoTaskBlockingIssue,
     VideoTaskReadinessStatus,
     VideoTaskWarning,
+    VideoWorkflowMode,
 )
 
 
@@ -19,10 +21,30 @@ class VideoTaskReadinessResponse(BaseModel):
     warnings: list[VideoTaskWarning] = Field(default_factory=list)
 
 
+class VideoTaskInputRequest(BaseModel):
+    role: VideoInputRole
+    media_asset_id: str | None = None
+    source_keyframe_output_id: str | None = None
+    source_keyframe_task_id: str | None = None
+
+
+class VideoTaskInputResponse(BaseModel):
+    id: str | None = None
+    role: VideoInputRole
+    media_asset_id: str | None
+    source_keyframe_output_id: str | None = None
+    source_keyframe_task_id: str | None = None
+    sort_order: int
+    media_asset: MediaAssetResponse | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class VideoTaskCreateRequest(BaseModel):
     input_media_asset_id: str | None = None
     source_keyframe_output_id: str | None = None
     source_keyframe_task_id: str | None = None
+    inputs: list[VideoTaskInputRequest] | None = None
 
 
 class VideoTaskUpdateRequest(BaseModel):
@@ -30,6 +52,7 @@ class VideoTaskUpdateRequest(BaseModel):
     input_media_asset_id: str | None = None
     source_keyframe_output_id: str | None = None
     source_keyframe_task_id: str | None = None
+    inputs: list[VideoTaskInputRequest] | None = None
     prompt: str | None = Field(default=None, max_length=4000)
     negative_prompt: str | None = Field(default=None, max_length=2000)
     duration_seconds: float | None = None
@@ -70,6 +93,7 @@ class VideoTaskResponse(BaseModel):
     camera_motion: str | None
     workflow_id: str | None
     input_media_asset: MediaAssetResponse | None
+    inputs: list[VideoTaskInputResponse] = Field(default_factory=list)
     readiness: VideoTaskReadinessResponse
     latest_run_status: VideoGenerationRunStatus | None = None
     selected_output: "VideoOutputResponse | None" = None
@@ -88,6 +112,8 @@ class VideoWorkflowResponse(BaseModel):
     workflow_id: str
     display_name: str
     version: str
+    mode: VideoWorkflowMode
+    required_input_roles: list[VideoInputRole] = Field(default_factory=list)
     available: bool
     missing_requirements: list[str] = Field(default_factory=list)
     reference_inputs_used: bool = True
@@ -107,13 +133,20 @@ class VideoRunCreateResponse(BaseModel):
     status: VideoGenerationRunStatus
 
 
+class VideoRunInputSnapshot(BaseModel):
+    role: VideoInputRole
+    media_asset_id: str
+
+
 class VideoRunSnapshot(BaseModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     video_task_id: str
     shot_id: str
     workflow_id: str
     workflow_version: str
-    input_media_asset_id: str
+    workflow_mode: VideoWorkflowMode | None = None
+    input_media_asset_id: str | None = None
+    inputs: list[VideoRunInputSnapshot] = Field(default_factory=list)
     prompt: str
     negative_prompt: str | None
     duration_seconds: float

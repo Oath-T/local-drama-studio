@@ -26,6 +26,7 @@ from app.infrastructure.models.shot import (
 from app.infrastructure.models.video_generation import (
     VideoGenerationOutputRecord,
     VideoGenerationRunRecord,
+    VideoGenerationTaskInputRecord,
     VideoGenerationTaskRecord,
 )
 from app.infrastructure.models.vision_analysis import VisionAnalysisTaskRecord
@@ -49,5 +50,6 @@ __all__ = [
     "VisionAnalysisTaskRecord",
     "VideoGenerationOutputRecord",
     "VideoGenerationRunRecord",
+    "VideoGenerationTaskInputRecord",
     "VideoGenerationTaskRecord",
 ]

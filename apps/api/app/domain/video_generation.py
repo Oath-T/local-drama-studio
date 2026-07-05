@@ -20,6 +20,22 @@ ACTIVE_VIDEO_RUN_STATUSES = (
 )
 
 
+class VideoInputRole(StrEnum):
+    START_FRAME = "start_frame"
+    END_FRAME = "end_frame"
+
+
+VIDEO_INPUT_ROLE_ORDER = {
+    VideoInputRole.START_FRAME.value: 1,
+    VideoInputRole.END_FRAME.value: 2,
+}
+
+
+class VideoWorkflowMode(StrEnum):
+    SINGLE_IMAGE_TO_VIDEO = "single_image_to_video"
+    FIRST_LAST_FRAME_TO_VIDEO = "first_last_frame_to_video"
+
+
 class VideoTaskReadinessStatus(StrEnum):
     READY = "ready"
     INCOMPLETE = "incomplete"
@@ -28,8 +44,14 @@ class VideoTaskReadinessStatus(StrEnum):
 class VideoTaskBlockingIssue(StrEnum):
     MISSING_NAME = "missing_name"
     MISSING_INPUT_IMAGE = "missing_input_image"
+    MISSING_START_FRAME = "missing_start_frame"
+    MISSING_END_FRAME = "missing_end_frame"
     INPUT_IMAGE_UNAVAILABLE = "input_image_unavailable"
+    START_FRAME_UNAVAILABLE = "start_frame_unavailable"
+    END_FRAME_UNAVAILABLE = "end_frame_unavailable"
     INPUT_IMAGE_NOT_IMAGE = "input_image_not_image"
+    START_FRAME_NOT_IMAGE = "start_frame_not_image"
+    END_FRAME_NOT_IMAGE = "end_frame_not_image"
     MISSING_PROMPT = "missing_prompt"
     INVALID_DURATION = "invalid_duration"
     INVALID_FPS = "invalid_fps"
@@ -37,6 +59,7 @@ class VideoTaskBlockingIssue(StrEnum):
     INVALID_SEED = "invalid_seed"
     WORKFLOW_NOT_SELECTED = "workflow_not_selected"
     WORKFLOW_UNAVAILABLE = "workflow_unavailable"
+    WORKFLOW_REQUIRES_END_FRAME = "workflow_requires_end_frame"
 
 
 class VideoTaskWarning(StrEnum):
@@ -45,6 +68,7 @@ class VideoTaskWarning(StrEnum):
     NO_SEED = "no_seed"
     LOW_RESOLUTION = "low_resolution"
     HIGH_ESTIMATED_RUNTIME = "high_estimated_runtime"
+    SAME_START_AND_END_FRAME = "same_start_and_end_frame"
 
 
 class VideoGenerationErrorCode(StrEnum):
@@ -55,6 +79,8 @@ class VideoGenerationErrorCode(StrEnum):
     VIDEO_INPUT_IMAGE_MISSING = "video_input_image_missing"
     VIDEO_INPUT_IMAGE_UNAVAILABLE = "video_input_image_unavailable"
     VIDEO_INPUT_IMAGE_INVALID = "video_input_image_invalid"
+    VIDEO_INPUT_ROLE_INVALID = "video_input_role_invalid"
+    VIDEO_INPUT_ROLE_DUPLICATE = "video_input_role_duplicate"
     VIDEO_WORKFLOW_NOT_SELECTED = "video_workflow_not_selected"
     VIDEO_WORKFLOW_UNAVAILABLE = "video_workflow_unavailable"
     VIDEO_GENERATION_ALREADY_RUNNING = "video_generation_already_running"
@@ -120,3 +146,10 @@ VIDEO_GENERATION_ERROR_MESSAGES: dict[str, str] = {
     VideoGenerationErrorCode.VIDEO_OUTPUT_NOT_FOUND.value: "视频生成结果不存在或已被删除。",
     VideoGenerationErrorCode.DATABASE_CONFLICT.value: "数据已被其他操作更新，请刷新后重试。",
 }
+
+VIDEO_GENERATION_ERROR_MESSAGES[VideoGenerationErrorCode.VIDEO_INPUT_ROLE_INVALID.value] = (
+    "视频输入类型不可用。"
+)
+VIDEO_GENERATION_ERROR_MESSAGES[VideoGenerationErrorCode.VIDEO_INPUT_ROLE_DUPLICATE.value] = (
+    "视频输入类型重复。"
+)

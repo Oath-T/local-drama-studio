@@ -124,6 +124,8 @@ Object.assign(errorCodeMessages, {
   video_input_image_missing: "请先选择起始图。",
   video_input_image_unavailable: "起始图不存在或已被删除。",
   video_input_image_invalid: "起始图必须是当前项目内的图片媒体。",
+  video_input_role_invalid: "视频输入类型不可用。",
+  video_input_role_duplicate: "视频输入类型重复。",
   video_workflow_not_selected: "请先选择视频工作流。",
   video_workflow_unavailable: "视频工作流当前不可用。",
   video_generation_already_running: "当前任务已有视频生成正在执行。",

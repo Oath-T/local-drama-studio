@@ -10,10 +10,13 @@ from app.api.schemas.video_generation import (
     VideoInputUploadResponse,
     VideoOutputResponse,
     VideoRunCreateResponse,
+    VideoRunInputSnapshot,
     VideoRunListResponse,
     VideoRunResponse,
     VideoRunSnapshot,
     VideoTaskCreateRequest,
+    VideoTaskInputRequest,
+    VideoTaskInputResponse,
     VideoTaskListResponse,
     VideoTaskResponse,
     VideoTaskUpdateRequest,
@@ -25,10 +28,13 @@ from app.core.errors import AppError
 from app.domain.media_asset import MediaType
 from app.domain.video_generation import (
     VIDEO_GENERATION_ERROR_MESSAGES,
+    VIDEO_INPUT_ROLE_ORDER,
     VideoGenerationErrorCode,
     VideoGenerationRunStatus,
     VideoGenerationTaskStatus,
+    VideoInputRole,
     VideoTaskReadinessStatus,
+    VideoWorkflowMode,
 )
 from app.infrastructure.generation.base import GenerationProviderRuntimeError
 from app.infrastructure.generation.factory import create_video_generation_provider
@@ -41,6 +47,7 @@ from app.infrastructure.models.character import MediaAssetRecord
 from app.infrastructure.models.video_generation import (
     VideoGenerationOutputRecord,
     VideoGenerationRunRecord,
+    VideoGenerationTaskInputRecord,
     VideoGenerationTaskRecord,
 )
 from app.repository.video_generation_repository import VideoGenerationRepository
@@ -77,6 +84,8 @@ class VideoGenerationService:
                 workflow_id=workflow.manifest.workflow_id,
                 display_name=workflow.manifest.display_name,
                 version=workflow.manifest.version,
+                mode=workflow.manifest.mode,
+                required_input_roles=workflow.manifest.required_input_roles,
                 available=not self._workflow_missing_requirements(
                     workflow,
                     provider_available=provider_available,
@@ -101,6 +110,8 @@ class VideoGenerationService:
                 self._task_response(
                     task,
                     data.media_assets_by_id.get(task.input_media_asset_id or ""),
+                    data.input_records_by_task_id.get(task.id, []),
+                    data.input_media_assets_by_id,
                     data.latest_run_status_by_task_id.get(task.id),
                     data.selected_outputs_by_task_id.get(task.id),
                     data.selected_media_assets_by_id,
@@ -117,29 +128,28 @@ class VideoGenerationService:
         payload: VideoTaskCreateRequest,
     ) -> VideoTaskResponse:
         self._get_shot(project_id, shot_id)
-        input_media_asset_id = payload.input_media_asset_id
-        if payload.source_keyframe_output_id and not input_media_asset_id:
-            media_asset = self.repository.get_keyframe_output_media_asset(
-                str(project_id),
-                payload.source_keyframe_output_id,
-            )
-            if media_asset is None:
-                raise_video_error(
-                    VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
-                    status.HTTP_404_NOT_FOUND,
-                )
-            input_media_asset_id = media_asset.id
         now = utc_now()
         workflow_id = self._default_workflow_id()
+        task_id = str(uuid4())
+        inputs = self._input_records_from_create_payload(project_id, task_id, payload, now)
+        start_input = _input_by_role(inputs, VideoInputRole.START_FRAME)
         task = VideoGenerationTaskRecord(
-            id=str(uuid4()),
+            id=task_id,
             project_id=str(project_id),
             shot_id=str(shot_id),
             name="视频生成任务",
             status=VideoGenerationTaskStatus.DRAFT.value,
-            input_media_asset_id=input_media_asset_id,
-            source_keyframe_output_id=payload.source_keyframe_output_id,
-            source_keyframe_task_id=payload.source_keyframe_task_id,
+            input_media_asset_id=start_input.media_asset_id if start_input else None,
+            source_keyframe_output_id=(
+                start_input.source_keyframe_output_id
+                if start_input
+                else payload.source_keyframe_output_id
+            ),
+            source_keyframe_task_id=(
+                start_input.source_keyframe_task_id
+                if start_input
+                else payload.source_keyframe_task_id
+            ),
             prompt=None,
             negative_prompt=None,
             duration_seconds=5.0,
@@ -154,7 +164,7 @@ class VideoGenerationService:
             updated_at=now,
         )
         try:
-            created = self.repository.create_task(task)
+            created = self.repository.create_task_with_inputs(task, inputs)
         except SQLAlchemyError:
             raise_video_error(VideoGenerationErrorCode.DATABASE_CONFLICT, status.HTTP_409_CONFLICT)
         media_asset = (
@@ -162,7 +172,10 @@ class VideoGenerationService:
             if created.input_media_asset_id
             else None
         )
-        return self._task_response(created, media_asset, None, None, {})
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in inputs if record.media_asset_id})
+        )
+        return self._task_response(created, media_asset, inputs, input_assets, None, None, {})
 
     def get_task(self, project_id: UUID, task_id: UUID) -> VideoTaskResponse:
         task = self._get_task(project_id, task_id)
@@ -171,7 +184,11 @@ class VideoGenerationService:
             if task.input_media_asset_id
             else None
         )
-        return self._task_response(task, media_asset, None, None, {})
+        input_records = self.repository.list_inputs_for_task(task.id)
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in input_records if record.media_asset_id})
+        )
+        return self._task_response(task, media_asset, input_records, input_assets, None, None, {})
 
     def update_task(
         self,
@@ -181,31 +198,60 @@ class VideoGenerationService:
     ) -> VideoTaskResponse:
         task = self._get_task(project_id, task_id)
         values = self._update_values(payload)
-        if "source_keyframe_output_id" in values and values.get("source_keyframe_output_id"):
-            media_asset = self.repository.get_keyframe_output_media_asset(
-                str(project_id),
-                str(values["source_keyframe_output_id"]),
+        replace_inputs = "inputs" in payload.model_fields_set
+        input_records: list[VideoGenerationTaskInputRecord] | None = None
+        if replace_inputs:
+            input_records = self._input_records_from_requests(
+                project_id,
+                task.id,
+                payload.inputs or [],
+                utc_now(),
             )
-            if media_asset is None:
-                raise_video_error(
-                    VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
-                    status.HTTP_404_NOT_FOUND,
-                )
-            values["input_media_asset_id"] = media_asset.id
-        if "input_media_asset_id" in values and values.get("input_media_asset_id"):
-            media_asset = self.repository.get_media_asset(
-                str(project_id),
-                str(values["input_media_asset_id"]),
+            start_input = _input_by_role(input_records, VideoInputRole.START_FRAME)
+            values["input_media_asset_id"] = start_input.media_asset_id if start_input else None
+            values["source_keyframe_output_id"] = (
+                start_input.source_keyframe_output_id if start_input else None
             )
-            if media_asset is None:
-                raise_video_error(
-                    VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
-                    status.HTTP_404_NOT_FOUND,
+            values["source_keyframe_task_id"] = (
+                start_input.source_keyframe_task_id if start_input else None
+            )
+        else:
+            legacy_input_changed = False
+            if "source_keyframe_output_id" in values and values.get("source_keyframe_output_id"):
+                media_asset = self.repository.get_keyframe_output_media_asset(
+                    str(project_id),
+                    str(values["source_keyframe_output_id"]),
                 )
+                if media_asset is None:
+                    raise_video_error(
+                        VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
+                        status.HTTP_404_NOT_FOUND,
+                    )
+                self._ensure_image_media_asset(media_asset)
+                values["input_media_asset_id"] = media_asset.id
+                legacy_input_changed = True
+            if "input_media_asset_id" in values:
+                legacy_input_changed = True
+                if values.get("input_media_asset_id"):
+                    media_asset = self.repository.get_media_asset(
+                        str(project_id),
+                        str(values["input_media_asset_id"]),
+                    )
+                    if media_asset is None:
+                        raise_video_error(
+                            VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
+                            status.HTTP_404_NOT_FOUND,
+                        )
+                    self._ensure_image_media_asset(media_asset)
+            if legacy_input_changed:
+                input_records = self._legacy_start_input_records(task, values, utc_now())
         values["status"] = VideoGenerationTaskStatus.DRAFT.value
         values["updated_at"] = utc_now()
         try:
-            updated = self.repository.update_task(task, values)
+            if input_records is not None:
+                updated = self.repository.update_task_with_inputs(task, values, input_records)
+            else:
+                updated = self.repository.update_task(task, values)
         except SQLAlchemyError:
             raise_video_error(VideoGenerationErrorCode.DATABASE_CONFLICT, status.HTTP_409_CONFLICT)
         media_asset = (
@@ -213,7 +259,13 @@ class VideoGenerationService:
             if updated.input_media_asset_id
             else None
         )
-        return self._task_response(updated, media_asset, None, None, {})
+        stored_inputs = self.repository.list_inputs_for_task(updated.id)
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in stored_inputs if record.media_asset_id})
+        )
+        return self._task_response(
+            updated, media_asset, stored_inputs, input_assets, None, None, {}
+        )
 
     def delete_task(self, project_id: UUID, task_id: UUID) -> None:
         task = self._get_task(project_id, task_id)
@@ -229,7 +281,11 @@ class VideoGenerationService:
             if task.input_media_asset_id
             else None
         )
-        readiness = self._readiness(task, media_asset)
+        input_records = self.repository.list_inputs_for_task(task.id)
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in input_records if record.media_asset_id})
+        )
+        readiness = self._readiness(task, media_asset, input_records, input_assets)
         if readiness.readiness_status != VideoTaskReadinessStatus.READY:
             raise AppError(
                 code=VideoGenerationErrorCode.VIDEO_TASK_NOT_READY.value,
@@ -243,7 +299,9 @@ class VideoGenerationService:
             task,
             {"status": VideoGenerationTaskStatus.READY.value, "updated_at": utc_now()},
         )
-        return self._task_response(updated, media_asset, None, None, {})
+        return self._task_response(
+            updated, media_asset, input_records, input_assets, None, None, {}
+        )
 
     def mark_draft(self, project_id: UUID, task_id: UUID) -> VideoTaskResponse:
         task = self._get_task(project_id, task_id)
@@ -256,7 +314,13 @@ class VideoGenerationService:
             if updated.input_media_asset_id
             else None
         )
-        return self._task_response(updated, media_asset, None, None, {})
+        input_records = self.repository.list_inputs_for_task(updated.id)
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in input_records if record.media_asset_id})
+        )
+        return self._task_response(
+            updated, media_asset, input_records, input_assets, None, None, {}
+        )
 
     async def create_run(
         self,
@@ -276,7 +340,17 @@ class VideoGenerationService:
             if task.input_media_asset_id
             else None
         )
-        readiness = self._readiness(task, media_asset, forced_workflow=workflow)
+        input_records = self.repository.list_inputs_for_task(task.id)
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in input_records if record.media_asset_id})
+        )
+        readiness = self._readiness(
+            task,
+            media_asset,
+            input_records,
+            input_assets,
+            forced_workflow=workflow,
+        )
         if readiness.readiness_status != VideoTaskReadinessStatus.READY:
             raise AppError(
                 code=VideoGenerationErrorCode.VIDEO_TASK_NOT_READY.value,
@@ -388,7 +462,7 @@ class VideoGenerationService:
     def build_provider_workflow(
         self,
         run: VideoGenerationRunRecord,
-        uploaded_input,
+        uploaded_inputs: dict[VideoInputRole, object],
     ) -> dict[str, object]:
         snapshot = VideoRunSnapshot.model_validate_json(run.submitted_payload_snapshot)
         workflow = self.workflow_registry.get_workflow(snapshot.workflow_id)
@@ -404,7 +478,7 @@ class VideoGenerationService:
                 seed=snapshot.seed,
                 motion_strength=snapshot.motion_strength,
                 camera_motion=snapshot.camera_motion,
-                input_image=uploaded_input,
+                input_images=uploaded_inputs,
             ),
         )
 
@@ -413,7 +487,23 @@ class VideoGenerationService:
         task: VideoGenerationTaskRecord,
         workflow: LoadedVideoWorkflow,
     ) -> VideoRunSnapshot:
-        if not task.input_media_asset_id:
+        input_records = self.repository.list_inputs_for_task(task.id)
+        input_assets = self.repository.get_media_assets_by_ids(
+            sorted({record.media_asset_id for record in input_records if record.media_asset_id})
+        )
+        effective_inputs = self._effective_inputs(task, input_records, input_assets)
+        snapshot_inputs: list[VideoRunInputSnapshot] = []
+        for role in workflow.manifest.required_input_roles:
+            task_input = effective_inputs.get(role)
+            if task_input is None or not task_input.media_asset_id:
+                raise_video_error(
+                    VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_MISSING,
+                    status.HTTP_400_BAD_REQUEST,
+                )
+            snapshot_inputs.append(
+                VideoRunInputSnapshot(role=role, media_asset_id=task_input.media_asset_id)
+            )
+        if not snapshot_inputs:
             raise_video_error(
                 VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_MISSING,
                 status.HTTP_400_BAD_REQUEST,
@@ -426,11 +516,14 @@ class VideoGenerationService:
             )
         seed = task.seed if task.seed is not None else SystemRandom().randint(0, MAX_COMFYUI_SEED)
         return VideoRunSnapshot(
+            schema_version=2,
             video_task_id=task.id,
             shot_id=task.shot_id,
             workflow_id=workflow.manifest.workflow_id,
             workflow_version=workflow.manifest.version,
-            input_media_asset_id=task.input_media_asset_id,
+            workflow_mode=workflow.manifest.mode,
+            input_media_asset_id=snapshot_inputs[0].media_asset_id,
+            inputs=snapshot_inputs,
             prompt=prompt,
             negative_prompt=_normalize_optional(task.negative_prompt),
             duration_seconds=task.duration_seconds,
@@ -497,20 +590,45 @@ class VideoGenerationService:
         self,
         task: VideoGenerationTaskRecord,
         media_asset: MediaAssetRecord | None,
+        input_records: list[VideoGenerationTaskInputRecord] | None = None,
+        input_media_assets: dict[str, MediaAssetRecord] | None = None,
         *,
         forced_workflow: LoadedVideoWorkflow | None = None,
     ):
         workflow_available = False
+        workflow_mode = VideoWorkflowMode.SINGLE_IMAGE_TO_VIDEO
+        required_roles = [VideoInputRole.START_FRAME]
         if task.workflow_id:
             try:
                 workflow = forced_workflow or self.workflow_registry.get_workflow(task.workflow_id)
                 workflow_available = workflow.available_locally
+                workflow_mode = workflow.manifest.mode
+                required_roles = workflow.manifest.required_input_roles
             except GenerationProviderRuntimeError:
                 workflow_available = False
+        effective_inputs = self._effective_inputs(
+            task,
+            input_records or [],
+            input_media_assets or {},
+        )
+        assets_by_role: dict[VideoInputRole, MediaAssetRecord | None] = {}
+        for role, task_input in effective_inputs.items():
+            if task_input.media_asset_id == task.input_media_asset_id:
+                assets_by_role[role] = media_asset
+            else:
+                assets_by_role[role] = (input_media_assets or {}).get(
+                    task_input.media_asset_id or ""
+                )
         return self.readiness_service.calculate(
             task,
             media_asset,
             workflow_available=workflow_available,
+            input_media_asset_ids_by_role={
+                role: task_input.media_asset_id for role, task_input in effective_inputs.items()
+            },
+            input_media_assets_by_role=assets_by_role,
+            required_input_roles=required_roles,
+            workflow_mode=workflow_mode,
         )
 
     def _default_workflow_id(self) -> str | None:
@@ -520,6 +638,8 @@ class VideoGenerationService:
     def _update_values(self, payload: VideoTaskUpdateRequest) -> dict[str, object]:
         values: dict[str, object] = {}
         for field in payload.model_fields_set:
+            if field == "inputs":
+                continue
             values[field] = getattr(payload, field)
         if "name" in values and not _normalize_optional(values["name"]):
             raise_video_error(
@@ -533,6 +653,127 @@ class VideoGenerationService:
         if "camera_motion" in values:
             values["camera_motion"] = _normalize_optional(values["camera_motion"])
         return values
+
+    def _input_records_from_create_payload(
+        self,
+        project_id: UUID,
+        task_id: str,
+        payload: VideoTaskCreateRequest,
+        now: datetime,
+    ) -> list[VideoGenerationTaskInputRecord]:
+        if payload.inputs is not None:
+            return self._input_records_from_requests(project_id, task_id, payload.inputs, now)
+        if (
+            not payload.input_media_asset_id
+            and not payload.source_keyframe_output_id
+            and not payload.source_keyframe_task_id
+        ):
+            return []
+        return self._input_records_from_requests(
+            project_id,
+            task_id,
+            [
+                VideoTaskInputRequest(
+                    role=VideoInputRole.START_FRAME,
+                    media_asset_id=payload.input_media_asset_id,
+                    source_keyframe_output_id=payload.source_keyframe_output_id,
+                    source_keyframe_task_id=payload.source_keyframe_task_id,
+                )
+            ],
+            now,
+        )
+
+    def _input_records_from_requests(
+        self,
+        project_id: UUID,
+        task_id: str,
+        inputs: list[VideoTaskInputRequest],
+        now: datetime,
+    ) -> list[VideoGenerationTaskInputRecord]:
+        seen_roles: set[VideoInputRole] = set()
+        records: list[VideoGenerationTaskInputRecord] = []
+        for item in inputs:
+            if item.role in seen_roles:
+                raise_video_error(
+                    VideoGenerationErrorCode.VIDEO_INPUT_ROLE_DUPLICATE,
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
+            seen_roles.add(item.role)
+            media_asset_id = item.media_asset_id
+            if item.source_keyframe_output_id and not media_asset_id:
+                media_asset = self.repository.get_keyframe_output_media_asset(
+                    str(project_id),
+                    item.source_keyframe_output_id,
+                )
+                if media_asset is None:
+                    raise_video_error(
+                        VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
+                        status.HTTP_404_NOT_FOUND,
+                    )
+                self._ensure_image_media_asset(media_asset)
+                media_asset_id = media_asset.id
+            if media_asset_id:
+                media_asset = self.repository.get_media_asset(str(project_id), media_asset_id)
+                if media_asset is None:
+                    raise_video_error(
+                        VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
+                        status.HTTP_404_NOT_FOUND,
+                    )
+                self._ensure_image_media_asset(media_asset)
+            records.append(
+                VideoGenerationTaskInputRecord(
+                    id=str(uuid4()),
+                    project_id=str(project_id),
+                    task_id=task_id,
+                    role=item.role.value,
+                    media_asset_id=media_asset_id,
+                    source_keyframe_output_id=item.source_keyframe_output_id,
+                    source_keyframe_task_id=item.source_keyframe_task_id,
+                    sort_order=VIDEO_INPUT_ROLE_ORDER[item.role.value],
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        return sorted(records, key=lambda record: (record.sort_order, record.role))
+
+    def _legacy_start_input_records(
+        self,
+        task: VideoGenerationTaskRecord,
+        values: dict[str, object],
+        now: datetime,
+    ) -> list[VideoGenerationTaskInputRecord]:
+        media_asset_id = values.get("input_media_asset_id", task.input_media_asset_id)
+        source_keyframe_output_id = values.get(
+            "source_keyframe_output_id", task.source_keyframe_output_id
+        )
+        source_keyframe_task_id = values.get(
+            "source_keyframe_task_id", task.source_keyframe_task_id
+        )
+        return [
+            VideoGenerationTaskInputRecord(
+                id=str(uuid4()),
+                project_id=task.project_id,
+                task_id=task.id,
+                role=VideoInputRole.START_FRAME.value,
+                media_asset_id=str(media_asset_id) if media_asset_id else None,
+                source_keyframe_output_id=(
+                    str(source_keyframe_output_id) if source_keyframe_output_id else None
+                ),
+                source_keyframe_task_id=(
+                    str(source_keyframe_task_id) if source_keyframe_task_id else None
+                ),
+                sort_order=VIDEO_INPUT_ROLE_ORDER[VideoInputRole.START_FRAME.value],
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+
+    def _ensure_image_media_asset(self, media_asset: MediaAssetRecord) -> None:
+        if media_asset.media_type != MediaType.IMAGE.value:
+            raise_video_error(
+                VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_INVALID,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
 
     def _ensure_project_exists(self, project_id: UUID) -> None:
         if not self.repository.project_exists(str(project_id)):
@@ -571,14 +812,66 @@ class VideoGenerationService:
             )
         return output
 
+    def _effective_inputs(
+        self,
+        task: VideoGenerationTaskRecord,
+        input_records: list[VideoGenerationTaskInputRecord],
+        input_media_assets: dict[str, MediaAssetRecord],
+    ) -> dict[VideoInputRole, VideoGenerationTaskInputRecord]:
+        if input_records:
+            return {
+                VideoInputRole(record.role): record
+                for record in sorted(input_records, key=lambda item: (item.sort_order, item.role))
+            }
+        if not task.input_media_asset_id:
+            return {}
+        return {
+            VideoInputRole.START_FRAME: VideoGenerationTaskInputRecord(
+                id="",
+                project_id=task.project_id,
+                task_id=task.id,
+                role=VideoInputRole.START_FRAME.value,
+                media_asset_id=task.input_media_asset_id,
+                source_keyframe_output_id=task.source_keyframe_output_id,
+                source_keyframe_task_id=task.source_keyframe_task_id,
+                sort_order=VIDEO_INPUT_ROLE_ORDER[VideoInputRole.START_FRAME.value],
+                created_at=task.created_at,
+                updated_at=task.updated_at,
+            )
+        }
+
+    def _input_response(
+        self,
+        task_input: VideoGenerationTaskInputRecord,
+        input_media_assets: dict[str, MediaAssetRecord],
+        legacy_input_media_asset: MediaAssetRecord | None,
+    ) -> VideoTaskInputResponse:
+        media_asset = input_media_assets.get(task_input.media_asset_id or "")
+        if media_asset is None and task_input.media_asset_id:
+            media_asset = legacy_input_media_asset
+        return VideoTaskInputResponse(
+            id=task_input.id or None,
+            role=VideoInputRole(task_input.role),
+            media_asset_id=task_input.media_asset_id,
+            source_keyframe_output_id=task_input.source_keyframe_output_id,
+            source_keyframe_task_id=task_input.source_keyframe_task_id,
+            sort_order=task_input.sort_order,
+            media_asset=_media_asset_response(media_asset),
+            created_at=ensure_utc(task_input.created_at) if task_input.created_at else None,
+            updated_at=ensure_utc(task_input.updated_at) if task_input.updated_at else None,
+        )
+
     def _task_response(
         self,
         task: VideoGenerationTaskRecord,
         input_media_asset: MediaAssetRecord | None,
+        input_records: list[VideoGenerationTaskInputRecord],
+        input_media_assets: dict[str, MediaAssetRecord],
         latest_run_status: str | None,
         selected_output: VideoGenerationOutputRecord | None,
         selected_media_assets: dict[str, MediaAssetRecord],
     ) -> VideoTaskResponse:
+        effective_inputs = self._effective_inputs(task, input_records, input_media_assets)
         return VideoTaskResponse(
             id=task.id,
             project_id=task.project_id,
@@ -601,7 +894,14 @@ class VideoGenerationService:
             input_media_asset=(
                 _media_asset_response(input_media_asset) if input_media_asset else None
             ),
-            readiness=self._readiness(task, input_media_asset),
+            inputs=[
+                self._input_response(task_input, input_media_assets, input_media_asset)
+                for task_input in sorted(
+                    effective_inputs.values(),
+                    key=lambda item: (item.sort_order, item.role),
+                )
+            ],
+            readiness=self._readiness(task, input_media_asset, input_records, input_media_assets),
             latest_run_status=(
                 VideoGenerationRunStatus(latest_run_status) if latest_run_status else None
             ),
@@ -736,6 +1036,13 @@ def _media_asset_response(media_asset: MediaAssetRecord | None) -> MediaAssetRes
         content_url=f"/api/media/{media_asset.id}/content",
         created_at=ensure_utc(media_asset.created_at),
     )
+
+
+def _input_by_role(
+    inputs: list[VideoGenerationTaskInputRecord],
+    role: VideoInputRole,
+) -> VideoGenerationTaskInputRecord | None:
+    return next((item for item in inputs if item.role == role.value), None)
 
 
 def _normalize_optional(value: object) -> str | None:

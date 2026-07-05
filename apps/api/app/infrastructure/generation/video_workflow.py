@@ -4,16 +4,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.core.config import Settings
-from app.domain.video_generation import VideoGenerationErrorCode
+from app.domain.video_generation import VideoGenerationErrorCode, VideoInputRole, VideoWorkflowMode
 from app.infrastructure.generation.base import GenerationProviderRuntimeError, ProviderUploadedImage
 
 
 class VideoWorkflowBinding(BaseModel):
     node_id: str
-    input_name: str
+    input_name: str = Field(validation_alias=AliasChoices("input_name", "input"))
 
 
 class VideoWorkflowManifest(BaseModel):
@@ -23,6 +30,17 @@ class VideoWorkflowManifest(BaseModel):
     version: str = Field(min_length=1, max_length=40)
     workflow_file: str = Field(min_length=1, max_length=200)
     provider: str = "comfyui"
+    mode: VideoWorkflowMode = VideoWorkflowMode.SINGLE_IMAGE_TO_VIDEO
+    required_input_roles: list[VideoInputRole] = Field(
+        default_factory=lambda: [VideoInputRole.START_FRAME]
+    )
+    image_input_bindings: dict[VideoInputRole, VideoWorkflowBinding] = Field(default_factory=dict)
+    image_input_subfolder_bindings: dict[VideoInputRole, VideoWorkflowBinding] = Field(
+        default_factory=dict
+    )
+    image_input_type_bindings: dict[VideoInputRole, VideoWorkflowBinding] = Field(
+        default_factory=dict
+    )
     required_node_types: list[str] = Field(default_factory=list)
     parameter_bindings: dict[str, VideoWorkflowBinding] = Field(default_factory=dict)
     input_image_binding: VideoWorkflowBinding | None = None
@@ -43,6 +61,26 @@ class VideoWorkflowManifest(BaseModel):
         if path.is_absolute() or ".." in path.parts:
             raise ValueError("workflow_file must be a relative filename")
         return value
+
+    @model_validator(mode="after")
+    def normalize_legacy_input_binding(self) -> "VideoWorkflowManifest":
+        if self.input_image_binding and VideoInputRole.START_FRAME not in self.image_input_bindings:
+            self.image_input_bindings[VideoInputRole.START_FRAME] = self.input_image_binding
+        if (
+            self.input_image_subfolder_binding
+            and VideoInputRole.START_FRAME not in self.image_input_subfolder_bindings
+        ):
+            self.image_input_subfolder_bindings[VideoInputRole.START_FRAME] = (
+                self.input_image_subfolder_binding
+            )
+        if (
+            self.input_image_type_binding
+            and VideoInputRole.START_FRAME not in self.image_input_type_bindings
+        ):
+            self.image_input_type_bindings[VideoInputRole.START_FRAME] = (
+                self.input_image_type_binding
+            )
+        return self
 
 
 @dataclass(frozen=True)
@@ -68,7 +106,7 @@ class VideoWorkflowMappingValues:
     seed: int
     motion_strength: float | None
     camera_motion: str | None
-    input_image: ProviderUploadedImage
+    input_images: dict[VideoInputRole, ProviderUploadedImage]
 
 
 class VideoWorkflowRegistry:
@@ -103,17 +141,28 @@ class VideoWorkflowRegistry:
                 "Video workflow file is missing.",
             )
         payload = copy.deepcopy(workflow.workflow)
-        self._apply(payload, workflow.manifest.input_image_binding, values.input_image.filename)
-        self._apply(
-            payload,
-            workflow.manifest.input_image_subfolder_binding,
-            values.input_image.subfolder,
-        )
-        self._apply(
-            payload,
-            workflow.manifest.input_image_type_binding,
-            values.input_image.input_type,
-        )
+        for role in workflow.manifest.required_input_roles:
+            uploaded = values.input_images.get(role)
+            if uploaded is None:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.WORKFLOW_UNAVAILABLE,
+                    "Video workflow input image is missing.",
+                )
+            self._apply(
+                payload,
+                workflow.manifest.image_input_bindings.get(role),
+                uploaded.filename,
+            )
+            self._apply(
+                payload,
+                workflow.manifest.image_input_subfolder_bindings.get(role),
+                uploaded.subfolder,
+            )
+            self._apply(
+                payload,
+                workflow.manifest.image_input_type_bindings.get(role),
+                uploaded.input_type,
+            )
         scalar_values: dict[str, object] = {
             "positive_prompt": values.positive_prompt,
             "negative_prompt": values.negative_prompt or "",
@@ -173,7 +222,21 @@ class VideoWorkflowRegistry:
         manifest: VideoWorkflowManifest,
     ) -> list[str]:
         missing: list[str] = []
+        if (
+            manifest.mode == VideoWorkflowMode.FIRST_LAST_FRAME_TO_VIDEO
+            and VideoInputRole.END_FRAME not in manifest.required_input_roles
+        ):
+            missing.append("workflow_required_role_missing:end_frame")
+        for role in manifest.required_input_roles:
+            if role not in manifest.image_input_bindings:
+                missing.append(f"workflow_input_role_binding_missing:{role.value}")
         bindings = list(manifest.parameter_bindings.items())
+        for role, binding in manifest.image_input_bindings.items():
+            bindings.append((f"image_input:{role.value}", binding))
+        for role, binding in manifest.image_input_subfolder_bindings.items():
+            bindings.append((f"image_input_subfolder:{role.value}", binding))
+        for role, binding in manifest.image_input_type_bindings.items():
+            bindings.append((f"image_input_type:{role.value}", binding))
         optional_bindings = [
             ("input_image", manifest.input_image_binding),
             ("input_image_subfolder", manifest.input_image_subfolder_binding),

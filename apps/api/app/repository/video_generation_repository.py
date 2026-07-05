@@ -12,6 +12,7 @@ from app.infrastructure.models.shot import ShotRecord
 from app.infrastructure.models.video_generation import (
     VideoGenerationOutputRecord,
     VideoGenerationRunRecord,
+    VideoGenerationTaskInputRecord,
     VideoGenerationTaskRecord,
 )
 
@@ -19,7 +20,9 @@ from app.infrastructure.models.video_generation import (
 @dataclass(frozen=True)
 class VideoTaskListData:
     tasks: list[VideoGenerationTaskRecord]
+    input_records_by_task_id: dict[str, list[VideoGenerationTaskInputRecord]]
     media_assets_by_id: dict[str, MediaAssetRecord]
+    input_media_assets_by_id: dict[str, MediaAssetRecord]
     latest_run_status_by_task_id: dict[str, str]
     selected_outputs_by_task_id: dict[str, VideoGenerationOutputRecord]
     selected_media_assets_by_id: dict[str, MediaAssetRecord]
@@ -80,6 +83,21 @@ class VideoGenerationRepository:
             self.session.rollback()
             raise
 
+    def create_task_with_inputs(
+        self,
+        task: VideoGenerationTaskRecord,
+        inputs: list[VideoGenerationTaskInputRecord],
+    ) -> VideoGenerationTaskRecord:
+        try:
+            self.session.add(task)
+            self.session.add_all(inputs)
+            self.session.commit()
+            self.session.refresh(task)
+            return task
+        except Exception:
+            self.session.rollback()
+            raise
+
     def update_task(
         self,
         task: VideoGenerationTaskRecord,
@@ -88,6 +106,31 @@ class VideoGenerationRepository:
         try:
             for key, value in values.items():
                 setattr(task, key, value)
+            self.session.commit()
+            self.session.refresh(task)
+            return task
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def update_task_with_inputs(
+        self,
+        task: VideoGenerationTaskRecord,
+        values: dict[str, object],
+        inputs: list[VideoGenerationTaskInputRecord],
+    ) -> VideoGenerationTaskRecord:
+        try:
+            for key, value in values.items():
+                setattr(task, key, value)
+            existing = self.session.scalars(
+                select(VideoGenerationTaskInputRecord).where(
+                    VideoGenerationTaskInputRecord.task_id == task.id
+                )
+            ).all()
+            for record in existing:
+                self.session.delete(record)
+            self.session.flush()
+            self.session.add_all(inputs)
             self.session.commit()
             self.session.refresh(task)
             return task
@@ -141,6 +184,17 @@ class VideoGenerationRepository:
             sorted({task.input_media_asset_id for task in tasks if task.input_media_asset_id})
         )
         task_ids = [task.id for task in tasks]
+        input_records_by_task_id = self.list_inputs_for_tasks(task_ids)
+        input_media_assets_by_id = self.get_media_assets_by_ids(
+            sorted(
+                {
+                    record.media_asset_id
+                    for records in input_records_by_task_id.values()
+                    for record in records
+                    if record.media_asset_id
+                }
+            )
+        )
         latest_run_status = self.latest_run_status_by_task_ids(task_ids)
         selected_outputs = self.selected_outputs_by_task_ids(task_ids)
         selected_media_assets = self.get_media_assets_by_ids(
@@ -148,12 +202,42 @@ class VideoGenerationRepository:
         )
         return VideoTaskListData(
             tasks=tasks,
+            input_records_by_task_id=input_records_by_task_id,
             media_assets_by_id=media_assets_by_id,
+            input_media_assets_by_id=input_media_assets_by_id,
             latest_run_status_by_task_id=latest_run_status,
             selected_outputs_by_task_id=selected_outputs,
             selected_media_assets_by_id=selected_media_assets,
             total=total,
         )
+
+    def list_inputs_for_tasks(
+        self,
+        task_ids: list[str],
+    ) -> dict[str, list[VideoGenerationTaskInputRecord]]:
+        if not task_ids:
+            return {}
+        records = list(
+            self.session.scalars(
+                select(VideoGenerationTaskInputRecord)
+                .where(VideoGenerationTaskInputRecord.task_id.in_(task_ids))
+                .order_by(
+                    VideoGenerationTaskInputRecord.task_id.asc(),
+                    VideoGenerationTaskInputRecord.sort_order.asc(),
+                    VideoGenerationTaskInputRecord.role.asc(),
+                    VideoGenerationTaskInputRecord.id.asc(),
+                )
+            ).all()
+        )
+        grouped: dict[str, list[VideoGenerationTaskInputRecord]] = {
+            task_id: [] for task_id in task_ids
+        }
+        for record in records:
+            grouped.setdefault(record.task_id, []).append(record)
+        return grouped
+
+    def list_inputs_for_task(self, task_id: str) -> list[VideoGenerationTaskInputRecord]:
+        return self.list_inputs_for_tasks([task_id]).get(task_id, [])
 
     def get_media_assets_by_ids(self, ids: list[str]) -> dict[str, MediaAssetRecord]:
         if not ids:

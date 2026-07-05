@@ -2,25 +2,35 @@ import type { MediaAsset } from "@/features/characters/types";
 
 export type VideoTaskStatus = "draft" | "ready";
 export type VideoRunStatus = "queued" | "running" | "completed" | "failed" | "interrupted";
+export type VideoInputRole = "start_frame" | "end_frame";
+export type VideoWorkflowMode = "single_image_to_video" | "first_last_frame_to_video";
 export type VideoTaskReadinessStatus = "ready" | "incomplete";
 export type VideoTaskBlockingIssue =
   | "missing_name"
   | "missing_input_image"
+  | "missing_start_frame"
+  | "missing_end_frame"
   | "input_image_unavailable"
+  | "start_frame_unavailable"
+  | "end_frame_unavailable"
   | "input_image_not_image"
+  | "start_frame_not_image"
+  | "end_frame_not_image"
   | "missing_prompt"
   | "invalid_duration"
   | "invalid_fps"
   | "invalid_dimensions"
   | "invalid_seed"
   | "workflow_not_selected"
-  | "workflow_unavailable";
+  | "workflow_unavailable"
+  | "workflow_requires_end_frame";
 export type VideoTaskWarning =
   | "no_negative_prompt"
   | "no_camera_motion"
   | "no_seed"
   | "low_resolution"
-  | "high_estimated_runtime";
+  | "high_estimated_runtime"
+  | "same_start_and_end_frame";
 
 export interface VideoGenerationCapability {
   available: boolean;
@@ -50,6 +60,18 @@ export interface VideoOutput {
   created_at: string;
 }
 
+export interface VideoTaskInput {
+  id: string | null;
+  role: VideoInputRole;
+  media_asset_id: string | null;
+  source_keyframe_output_id: string | null;
+  source_keyframe_task_id: string | null;
+  sort_order: number;
+  media_asset: MediaAsset | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export interface VideoTask {
   id: string;
   project_id: string;
@@ -70,6 +92,7 @@ export interface VideoTask {
   camera_motion: string | null;
   workflow_id: string | null;
   input_media_asset: MediaAsset | null;
+  inputs: VideoTaskInput[];
   readiness: VideoTaskReadiness;
   latest_run_status: VideoRunStatus | null;
   selected_output: VideoOutput | null;
@@ -86,6 +109,14 @@ export interface VideoTaskCreateInput {
   input_media_asset_id?: string | null;
   source_keyframe_output_id?: string | null;
   source_keyframe_task_id?: string | null;
+  inputs?: VideoTaskInputPayload[] | null;
+}
+
+export interface VideoTaskInputPayload {
+  role: VideoInputRole;
+  media_asset_id?: string | null;
+  source_keyframe_output_id?: string | null;
+  source_keyframe_task_id?: string | null;
 }
 
 export interface VideoTaskUpdateInput {
@@ -93,6 +124,7 @@ export interface VideoTaskUpdateInput {
   input_media_asset_id?: string | null;
   source_keyframe_output_id?: string | null;
   source_keyframe_task_id?: string | null;
+  inputs?: VideoTaskInputPayload[] | null;
   prompt?: string | null;
   negative_prompt?: string | null;
   duration_seconds?: number | null;
@@ -109,6 +141,8 @@ export interface VideoWorkflow {
   workflow_id: string;
   display_name: string;
   version: string;
+  mode: VideoWorkflowMode;
+  required_input_roles: VideoInputRole[];
   available: boolean;
   missing_requirements: string[];
   reference_inputs_used: boolean;
@@ -129,12 +163,14 @@ export interface VideoRunCreateResponse {
 }
 
 export interface VideoRunSnapshot {
-  schema_version: 1;
+  schema_version: 1 | 2;
   video_task_id: string;
   shot_id: string;
   workflow_id: string;
   workflow_version: string;
-  input_media_asset_id: string;
+  workflow_mode?: VideoWorkflowMode | null;
+  input_media_asset_id: string | null;
+  inputs?: Array<{ role: VideoInputRole; media_asset_id: string }>;
   prompt: string;
   negative_prompt: string | null;
   duration_seconds: number;
