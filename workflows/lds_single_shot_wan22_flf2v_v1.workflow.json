@@ -1,0 +1,396 @@
+{
+  "last_node_id": 90,
+  "last_link_id": 21,
+  "nodes": [
+    {
+      "id": 80,
+      "type": "LoadImage",
+      "title": "加载起始帧 start_frame",
+      "pos": [80, 80],
+      "size": { "0": 315, "1": 314 },
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "IMAGE", "type": "IMAGE", "links": [8], "slot_index": 0 },
+        { "name": "MASK", "type": "MASK", "links": null, "slot_index": 1 }
+      ],
+      "properties": { "Node name for S&R": "LoadImage" },
+      "widgets_values": ["lds_start_frame_placeholder.png", "image"],
+      "_meta": { "title": "加载起始帧 start_frame" }
+    },
+    {
+      "id": 89,
+      "type": "LoadImage",
+      "title": "加载结束帧 end_frame",
+      "pos": [80, 440],
+      "size": { "0": 315, "1": 314 },
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "IMAGE", "type": "IMAGE", "links": [9], "slot_index": 0 },
+        { "name": "MASK", "type": "MASK", "links": null, "slot_index": 1 }
+      ],
+      "properties": { "Node name for S&R": "LoadImage" },
+      "widgets_values": ["lds_end_frame_placeholder.png", "image"],
+      "_meta": { "title": "加载结束帧 end_frame" }
+    },
+    {
+      "id": 72,
+      "type": "CLIPLoader",
+      "title": "加载 CLIP 文本编码器",
+      "pos": [500, 80],
+      "size": { "0": 360, "1": 110 },
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "CLIP", "type": "CLIP", "links": [3, 4], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "CLIPLoader" },
+      "widgets_values": ["umt5_xxl_fp8_e4m3fn_scaled.safetensors", "wan", "default"],
+      "_meta": { "title": "加载 CLIP 文本编码器" }
+    },
+    {
+      "id": 76,
+      "type": "UNETLoader",
+      "title": "加载 Wan2.2 高噪声模型",
+      "pos": [500, 240],
+      "size": { "0": 410, "1": 90 },
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "MODEL", "type": "MODEL", "links": [1], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "UNETLoader" },
+      "widgets_values": ["wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors", "default"],
+      "_meta": { "title": "加载 Wan2.2 高噪声模型" }
+    },
+    {
+      "id": 73,
+      "type": "ModelSamplingSD3",
+      "title": "高噪声模型采样设置",
+      "pos": [950, 240],
+      "size": { "0": 300, "1": 82 },
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        { "name": "model", "type": "MODEL", "link": 1 }
+      ],
+      "outputs": [
+        { "name": "MODEL", "type": "MODEL", "links": [10], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "ModelSamplingSD3" },
+      "widgets_values": [8],
+      "_meta": { "title": "高噪声模型采样设置" }
+    },
+    {
+      "id": 77,
+      "type": "UNETLoader",
+      "title": "加载 Wan2.2 低噪声模型",
+      "pos": [500, 380],
+      "size": { "0": 410, "1": 90 },
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "MODEL", "type": "MODEL", "links": [2], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "UNETLoader" },
+      "widgets_values": ["wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors", "default"],
+      "_meta": { "title": "加载 Wan2.2 低噪声模型" }
+    },
+    {
+      "id": 74,
+      "type": "ModelSamplingSD3",
+      "title": "低噪声模型采样设置",
+      "pos": [950, 380],
+      "size": { "0": 300, "1": 82 },
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        { "name": "model", "type": "MODEL", "link": 2 }
+      ],
+      "outputs": [
+        { "name": "MODEL", "type": "MODEL", "links": [14], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "ModelSamplingSD3" },
+      "widgets_values": [8],
+      "_meta": { "title": "低噪声模型采样设置" }
+    },
+    {
+      "id": 79,
+      "type": "VAELoader",
+      "title": "加载 Wan VAE",
+      "pos": [500, 520],
+      "size": { "0": 360, "1": 70 },
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "VAE", "type": "VAE", "links": [7, 19], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "VAELoader" },
+      "widgets_values": ["wan_2.1_vae.safetensors"],
+      "_meta": { "title": "加载 Wan VAE" }
+    },
+    {
+      "id": 90,
+      "type": "CLIPTextEncode",
+      "title": "正向提示词 motion_prompt",
+      "pos": [500, 720],
+      "size": { "0": 500, "1": 180 },
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        { "name": "clip", "type": "CLIP", "link": 4 }
+      ],
+      "outputs": [
+        { "name": "CONDITIONING", "type": "CONDITIONING", "links": [5], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "CLIPTextEncode" },
+      "widgets_values": [
+        "slow cinematic push-in, subtle handheld motion, dramatic lighting, consistent subject and scene"
+      ],
+      "_meta": { "title": "正向提示词 motion_prompt" }
+    },
+    {
+      "id": 78,
+      "type": "CLIPTextEncode",
+      "title": "反向提示词 negative_prompt",
+      "pos": [500, 950],
+      "size": { "0": 500, "1": 220 },
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        { "name": "clip", "type": "CLIP", "link": 3 }
+      ],
+      "outputs": [
+        { "name": "CONDITIONING", "type": "CONDITIONING", "links": [6], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "CLIPTextEncode" },
+      "widgets_values": [
+        "low quality, blurry, distorted face, bad hands, extra fingers, text, watermark, logo, anime, cartoon, deformed body, inconsistent character, inconsistent clothing, flickering, camera jump"
+      ],
+      "_meta": { "title": "反向提示词 negative_prompt" }
+    },
+    {
+      "id": 81,
+      "type": "WanFirstLastFrameToVideo",
+      "title": "Wan 首尾帧视频条件",
+      "pos": [1320, 350],
+      "size": { "0": 420, "1": 340 },
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        { "name": "positive", "type": "CONDITIONING", "link": 5 },
+        { "name": "negative", "type": "CONDITIONING", "link": 6 },
+        { "name": "vae", "type": "VAE", "link": 7 },
+        { "name": "start_image", "type": "IMAGE", "link": 8 },
+        { "name": "end_image", "type": "IMAGE", "link": 9 }
+      ],
+      "outputs": [
+        { "name": "positive", "type": "CONDITIONING", "links": [11, 15], "slot_index": 0 },
+        { "name": "negative", "type": "CONDITIONING", "links": [12, 16], "slot_index": 1 },
+        { "name": "latent", "type": "LATENT", "links": [13], "slot_index": 2 }
+      ],
+      "properties": { "Node name for S&R": "WanFirstLastFrameToVideo" },
+      "widgets_values": [640, 640, 33, 1],
+      "_meta": { "title": "Wan 首尾帧视频条件" }
+    },
+    {
+      "id": 84,
+      "type": "KSamplerAdvanced",
+      "title": "高噪声阶段采样",
+      "pos": [1840, 240],
+      "size": { "0": 360, "1": 420 },
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        { "name": "model", "type": "MODEL", "link": 10 },
+        { "name": "positive", "type": "CONDITIONING", "link": 11 },
+        { "name": "negative", "type": "CONDITIONING", "link": 12 },
+        { "name": "latent_image", "type": "LATENT", "link": 13 }
+      ],
+      "outputs": [
+        { "name": "LATENT", "type": "LATENT", "links": [17], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "KSamplerAdvanced" },
+      "widgets_values": ["enable", 12345, 20, 4, "euler", "simple", 0, 10, "enable"],
+      "_meta": { "title": "高噪声阶段采样" }
+    },
+    {
+      "id": 87,
+      "type": "KSamplerAdvanced",
+      "title": "低噪声阶段采样",
+      "pos": [2300, 240],
+      "size": { "0": 360, "1": 420 },
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        { "name": "model", "type": "MODEL", "link": 14 },
+        { "name": "positive", "type": "CONDITIONING", "link": 15 },
+        { "name": "negative", "type": "CONDITIONING", "link": 16 },
+        { "name": "latent_image", "type": "LATENT", "link": 17 }
+      ],
+      "outputs": [
+        { "name": "LATENT", "type": "LATENT", "links": [18], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "KSamplerAdvanced" },
+      "widgets_values": ["disable", 0, 20, 4, "euler", "simple", 10, 10000, "disable"],
+      "_meta": { "title": "低噪声阶段采样" }
+    },
+    {
+      "id": 85,
+      "type": "VAEDecode",
+      "title": "VAE 解码",
+      "pos": [2760, 320],
+      "size": { "0": 260, "1": 90 },
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        { "name": "samples", "type": "LATENT", "link": 18 },
+        { "name": "vae", "type": "VAE", "link": 19 }
+      ],
+      "outputs": [
+        { "name": "IMAGE", "type": "IMAGE", "links": [20], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "VAEDecode" },
+      "widgets_values": [],
+      "_meta": { "title": "VAE 解码" }
+    },
+    {
+      "id": 86,
+      "type": "CreateVideo",
+      "title": "创建视频",
+      "pos": [3100, 300],
+      "size": { "0": 320, "1": 120 },
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        { "name": "images", "type": "IMAGE", "link": 20 }
+      ],
+      "outputs": [
+        { "name": "video", "type": "VIDEO", "links": [21], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "CreateVideo" },
+      "widgets_values": [16, 8],
+      "_meta": { "title": "创建视频" }
+    },
+    {
+      "id": 83,
+      "type": "SaveVideo",
+      "title": "保存视频",
+      "pos": [3480, 280],
+      "size": { "0": 360, "1": 150 },
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        { "name": "video", "type": "VIDEO", "link": 21 }
+      ],
+      "outputs": [],
+      "properties": { "Node name for S&R": "SaveVideo" },
+      "widgets_values": ["lds_shot_video", "auto", "auto"],
+      "_meta": { "title": "保存视频" }
+    }
+  ],
+  "links": [
+    [1, 76, 0, 73, 0, "MODEL"],
+    [2, 77, 0, 74, 0, "MODEL"],
+    [3, 72, 0, 78, 0, "CLIP"],
+    [4, 72, 0, 90, 0, "CLIP"],
+    [5, 90, 0, 81, 0, "CONDITIONING"],
+    [6, 78, 0, 81, 1, "CONDITIONING"],
+    [7, 79, 0, 81, 2, "VAE"],
+    [8, 80, 0, 81, 3, "IMAGE"],
+    [9, 89, 0, 81, 4, "IMAGE"],
+    [10, 73, 0, 84, 0, "MODEL"],
+    [11, 81, 0, 84, 1, "CONDITIONING"],
+    [12, 81, 1, 84, 2, "CONDITIONING"],
+    [13, 81, 2, 84, 3, "LATENT"],
+    [14, 74, 0, 87, 0, "MODEL"],
+    [15, 81, 0, 87, 1, "CONDITIONING"],
+    [16, 81, 1, 87, 2, "CONDITIONING"],
+    [17, 84, 0, 87, 3, "LATENT"],
+    [18, 87, 0, 85, 0, "LATENT"],
+    [19, 79, 0, 85, 1, "VAE"],
+    [20, 85, 0, 86, 0, "IMAGE"],
+    [21, 86, 0, 83, 0, "VIDEO"]
+  ],
+  "groups": [
+    {
+      "title": "模块 1：输入首尾帧",
+      "bounding": [40, 30, 400, 760],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "模块 2：模型加载",
+      "bounding": [460, 30, 820, 600],
+      "color": "#536d3d",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "模块 3：提示词编码",
+      "bounding": [460, 660, 580, 560],
+      "color": "#7a5b39",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "模块 4：Wan 首尾帧视频条件",
+      "bounding": [1280, 300, 500, 430],
+      "color": "#6a4c7d",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "模块 5：双阶段采样",
+      "bounding": [1800, 190, 900, 520],
+      "color": "#7b4d4d",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "模块 6：解码与视频保存",
+      "bounding": [2720, 230, 1180, 260],
+      "color": "#4d627b",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.65,
+      "offset": [0, 0]
+    },
+    "lds_notes": [
+      "可视化编辑版，仅用于导入 ComfyUI UI 查看和调整。",
+      "后端 API 调用仍使用 workflows/video_wan22_14b_flf2v_v1.json。",
+      "length 是帧数，不是秒数；平台侧规则为 duration_seconds * fps + 1。",
+      "seed 只控制高噪声阶段；低噪声阶段保持 add_noise=disable。"
+    ]
+  },
+  "version": 0.4
+}
