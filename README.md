@@ -153,6 +153,8 @@ GET    /api/projects/{project_id}/video-tasks/{task_id}/runs
 POST   /api/projects/{project_id}/video-outputs/{output_id}/select
 DELETE /api/projects/{project_id}/video-outputs/{output_id}/select
 
+GET    /api/projects/{project_id}/generation-tasks
+
 GET    /api/system/capabilities
 GET    /api/projects/{project_id}/vision-analysis/tasks/{task_id}
 POST   /api/projects/{project_id}/characters/{character_id}/looks/{look_id}/references/{reference_id}/analysis/tasks
@@ -197,13 +199,17 @@ Open `http://localhost:5173`.
 Routes:
 
 - `/projects`: project list.
-- `/projects/:projectId`: project detail.
+- `/projects/:projectId`: project overview.
+- `/projects/:projectId/assets`: project asset library hub.
 - `/projects/:projectId/characters`: project character library.
 - `/projects/:projectId/characters/:characterId`: character detail, looks, and reference images.
 - `/projects/:projectId/scenes`: project scene library.
 - `/projects/:projectId/scenes/:sceneId`: scene detail, states, and reference images.
 - `/projects/:projectId/shots`: project shot workbench.
 - `/projects/:projectId/shots/:shotId`: project shot workbench with a selected shot.
+- `/projects/:projectId/generation`: project generation center.
+- `/projects/:projectId/media`: project media library placeholder.
+- `/projects/:projectId/settings`: project settings placeholder.
 
 ## Alembic
 

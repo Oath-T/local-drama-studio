@@ -1521,6 +1521,7 @@ describe("shot workbench routes", () => {
     renderRoute(`/projects/${projectId}/shots/${shotId}`);
 
     await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: "查看 / 编辑" }));
     expect(await screen.findByText(videoGenerationCopy.frameInputs)).toBeInTheDocument();
     expect(screen.getByText(videoGenerationCopy.startFrame)).toBeInTheDocument();
     expect(screen.getByText(videoGenerationCopy.endFrame)).toBeInTheDocument();
@@ -1591,6 +1592,7 @@ describe("shot workbench routes", () => {
     renderRoute(`/projects/${projectId}/shots/${shotId}`);
 
     await userEvent.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await userEvent.click(await screen.findByRole("button", { name: "查看 / 编辑" }));
 
     expect(
       await screen.findByText((text) =>
@@ -1658,6 +1660,7 @@ describe("shot workbench routes", () => {
     renderRoute(`/projects/${projectId}/shots/${shotId}`);
 
     await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: "查看 / 编辑" }));
     expect(await screen.findByText(/v0\.2\.0/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: videoGenerationCopy.start })).toBeDisabled();
 
@@ -1721,6 +1724,7 @@ describe("shot workbench routes", () => {
     const { container } = renderRoute(`/projects/${projectId}/shots/${shotId}`);
 
     await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: "查看 / 编辑" }));
     expect(await screen.findByText(videoGenerationCopy.outputGallery)).toBeInTheDocument();
     expect(document.querySelector("video")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: videoGenerationCopy.start }));

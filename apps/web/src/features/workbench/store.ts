@@ -1,6 +1,15 @@
 import { create } from "zustand";
 
-export type WorkbenchSection = "projects" | "characters" | "scenes" | "shots" | "tasks";
+export type WorkbenchSection =
+  | "projects"
+  | "overview"
+  | "assets"
+  | "characters"
+  | "scenes"
+  | "shots"
+  | "tasks"
+  | "media"
+  | "settings";
 
 interface WorkbenchState {
   sidebarCollapsed: boolean;

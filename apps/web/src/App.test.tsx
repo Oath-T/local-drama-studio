@@ -161,6 +161,85 @@ function mockProjectApi(initialProjects: Project[] = []) {
       return jsonResponse(project, 201);
     }
 
+    const sceneListMatch = url.match(/^\/api\/projects\/([^/]+)\/scenes$/);
+    if (sceneListMatch && method === "GET") {
+      return jsonResponse({ items: [], total: 0 });
+    }
+
+    const shotListMatch = url.match(/^\/api\/projects\/([^/]+)\/shots$/);
+    if (shotListMatch && method === "GET") {
+      return jsonResponse({
+        items: [
+          {
+            id: "77777777-7777-4777-8777-777777777777",
+            project_id: shotListMatch[1],
+            name: "开场镜头",
+            order_index: 1,
+            story_description: null,
+            visual_description: "城市夜景",
+            dialogue: null,
+            action_summary: null,
+            duration_seconds: 3,
+            shot_scale: "wide",
+            camera_height: "eye_level",
+            custom_camera_height: null,
+            camera_angle: "front",
+            custom_camera_angle: null,
+            composition_type: "centered",
+            custom_composition: null,
+            camera_movement: "static",
+            custom_camera_movement: null,
+            focal_subject: null,
+            mood_description: null,
+            scene_id: null,
+            scene_state_id: null,
+            scene: null,
+            scene_state: null,
+            notes: null,
+            readiness_status: "basic_ready",
+            missing_items: [],
+            character_count: 1,
+            reference_count: 2,
+            characters: [],
+            references: [],
+            created_at: "2026-06-28T10:00:00+00:00",
+            updated_at: "2026-06-28T11:00:00+00:00"
+          }
+        ],
+        total: 1
+      });
+    }
+
+    const generationTaskListMatch = url.match(/^\/api\/projects\/([^/]+)\/generation-tasks$/);
+    if (generationTaskListMatch && method === "GET") {
+      const projectId = generationTaskListMatch[1];
+      return jsonResponse({
+        items: [
+          {
+            task_type: "video",
+            project_id: projectId,
+            task_id: "88888888-8888-4888-8888-888888888888",
+            task_name: "首尾帧视频",
+            task_status: "ready",
+            readiness_status: null,
+            shot_id: "77777777-7777-4777-8777-777777777777",
+            shot_name: "开场镜头",
+            workflow_id: "video_wan22_14b_flf2v_v1",
+            latest_run_id: "99999999-9999-4999-8999-999999999999",
+            latest_run_number: 1,
+            latest_run_status: "completed",
+            run_count: 1,
+            output_count: 1,
+            has_outputs: true,
+            has_selected_output: true,
+            created_at: "2026-06-28T10:00:00+00:00",
+            updated_at: "2026-06-28T12:00:00+00:00"
+          }
+        ],
+        total: 1
+      });
+    }
+
     const characterListMatch = url.match(/^\/api\/projects\/([^/]+)\/characters$/);
     if (characterListMatch && method === "GET") {
       return jsonResponse({ items: [baseCharacter], total: 1 });
@@ -324,12 +403,30 @@ describe("App", () => {
     renderApp(`/projects/${baseProject.id}`);
 
     expect(await screen.findByRole("heading", { name: "逆袭归来" })).toBeInTheDocument();
-    expect(screen.getByText("写实电影质感")).toBeInTheDocument();
-    expect(screen.getAllByText("角色库").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("场景库").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "打开场景库" })).toHaveAttribute(
+    expect(screen.getAllByText("项目总览").length).toBeGreaterThan(0);
+    expect(screen.getByText("关键帧任务")).toBeInTheDocument();
+    expect(screen.getByText("视频任务")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入生成中心" })).toHaveAttribute(
       "href",
-      `/projects/${baseProject.id}/scenes`
+      `/projects/${baseProject.id}/generation`
+    );
+    expect(
+      screen
+        .getAllByRole("link", { name: /场景库/ })
+        .some((link) => link.getAttribute("href") === `/projects/${baseProject.id}/scenes`)
+    ).toBe(true);
+  });
+
+  it("renders the generation center with project task summaries", async () => {
+    mockProjectApi([baseProject]);
+    renderApp(`/projects/${baseProject.id}/generation`);
+
+    expect(await screen.findByRole("heading", { name: /生成中心/ })).toBeInTheDocument();
+    expect(await screen.findByText("首尾帧视频")).toBeInTheDocument();
+    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "打开镜头" })).toHaveAttribute(
+      "href",
+      `/projects/${baseProject.id}/shots/77777777-7777-4777-8777-777777777777`
     );
   });
 

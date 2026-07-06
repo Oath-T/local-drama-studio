@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.characters import media_router
 from app.api.characters import router as characters_router
+from app.api.generation_tasks import router as generation_tasks_router
 from app.api.health import router as health_router
 from app.api.keyframe_generation import router as keyframe_generation_router
 from app.api.keyframe_tasks import router as keyframe_tasks_router
@@ -22,6 +23,7 @@ api_router.include_router(shots_router)
 api_router.include_router(keyframe_tasks_router)
 api_router.include_router(keyframe_generation_router)
 api_router.include_router(video_generation_router)
+api_router.include_router(generation_tasks_router)
 api_router.include_router(shot_recommendations_router)
 api_router.include_router(vision_analysis_router)
 api_router.include_router(system_router)

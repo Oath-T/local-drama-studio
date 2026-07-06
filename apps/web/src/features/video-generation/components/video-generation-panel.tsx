@@ -1,10 +1,17 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Download, ExternalLink, Play, Plus, RefreshCw, RotateCcw, Save, Star, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Download, Edit, ExternalLink, Play, Plus, RefreshCw, RotateCcw, Save, Star, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -67,6 +74,7 @@ export function VideoGenerationPanel({
 }) {
   const queryClient = useQueryClient();
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState("");
   const tasksQuery = useQuery({
     queryKey: shot ? shotKeys.videoTasks(projectId, shot.id) : ["video-tasks", "none"],
     queryFn: () => fetchVideoTasks(projectId, shot?.id || ""),
@@ -96,6 +104,7 @@ export function VideoGenerationPanel({
 
   const tasks = tasksQuery.data?.items ?? [];
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
+  const editingTask = tasks.find((task) => task.id === editingTaskId) ?? null;
   const selectedKeyframeOutputs = useMemo(
     () =>
       keyframeRunQueries.flatMap((query) =>
@@ -137,6 +146,7 @@ export function VideoGenerationPanel({
       createVideoTask(projectId, shot?.id || "", payload),
     onSuccess: async (task) => {
       setSelectedTaskId(task.id);
+      setEditingTaskId(task.id);
       await invalidateVideoData(task.id);
       onMessage({ tone: "success", text: videoGenerationCopy.created });
     },
@@ -252,30 +262,47 @@ export function VideoGenerationPanel({
         />
       ) : (
         <>
-          <Select value={selectedTask?.id ?? NONE} onValueChange={(value) => setSelectedTaskId(value === NONE ? "" : value)}>
-            <SelectTrigger aria-label="选择视频任务"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {tasks.map((task) => (
-                <SelectItem key={task.id} value={task.id}>{task.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedTask && (
-            <VideoTaskEditor
-              projectId={projectId}
-              task={selectedTask}
-              workflows={workflowsQuery.data?.items ?? []}
-              workflowsLoading={workflowsQuery.isLoading}
-              workflowsError={workflowsQuery.isError}
-              providerOnline={
-                capabilitiesQuery.data?.video_generation?.available === true &&
-                capabilitiesQuery.data.video_generation.status === "online"
-              }
-              onMessage={onMessage}
-              invalidateVideoData={invalidateVideoData}
-              onDeleted={() => setSelectedTaskId("")}
-            />
-          )}
+          <div className="grid gap-3">
+            {tasks.map((task) => (
+              <VideoTaskSummaryCard
+                key={task.id}
+                task={task}
+                onOpen={() => {
+                  setSelectedTaskId(task.id);
+                  setEditingTaskId(task.id);
+                }}
+              />
+            ))}
+          </div>
+          <Dialog open={Boolean(editingTask)} onOpenChange={(open) => !open && setEditingTaskId("")}>
+            <DialogContent className="max-w-[920px]">
+              <DialogHeader>
+                <DialogTitle>{videoGenerationCopy.edit}</DialogTitle>
+                <DialogDescription>
+                  保存、标记就绪、开始生成、运行记录和视频输出都在这里处理。
+                </DialogDescription>
+              </DialogHeader>
+              {editingTask && (
+                <VideoTaskEditor
+                  projectId={projectId}
+                  task={editingTask}
+                  workflows={workflowsQuery.data?.items ?? []}
+                  workflowsLoading={workflowsQuery.isLoading}
+                  workflowsError={workflowsQuery.isError}
+                  providerOnline={
+                    capabilitiesQuery.data?.video_generation?.available === true &&
+                    capabilitiesQuery.data.video_generation.status === "online"
+                  }
+                  onMessage={onMessage}
+                  invalidateVideoData={invalidateVideoData}
+                  onDeleted={() => {
+                    setSelectedTaskId("");
+                    setEditingTaskId("");
+                  }}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </section>
@@ -306,6 +333,69 @@ function KeyframeOutputButton({
       )}
       <span className="text-xs text-foreground">{videoGenerationCopy.useKeyframeOutput}</span>
     </button>
+  );
+}
+
+function VideoTaskSummaryCard({
+  task,
+  onOpen
+}: {
+  task: VideoTask;
+  onOpen: () => void;
+}) {
+  const ready = task.status === "ready" && task.readiness.readiness_status === "ready";
+  const activeRun = task.latest_run_status === "queued" || task.latest_run_status === "running";
+  const startFrame = inputForRole(task, "start_frame");
+  const endFrame = inputForRole(task, "end_frame");
+  return (
+    <article className="rounded-md border border-border bg-background p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={task.status === "ready" ? "success" : "default"}>
+              {videoGenerationCopy.status[task.status]}
+            </Badge>
+            <Badge tone={ready ? "success" : "primary"}>
+              {videoGenerationCopy.readiness[task.readiness.readiness_status]}
+            </Badge>
+            {task.latest_run_status && (
+              <Badge
+                tone={
+                  activeRun
+                    ? "primary"
+                    : task.latest_run_status === "completed"
+                      ? "success"
+                      : "default"
+                }
+              >
+                {videoGenerationCopy.runStatus[task.latest_run_status]}
+              </Badge>
+            )}
+            {task.selected_output && <Badge tone="success">{videoGenerationCopy.selected}</Badge>}
+          </div>
+          <h4 className="mt-2 truncate text-sm font-semibold text-foreground">{task.name}</h4>
+          <p className="mt-1 line-clamp-2 text-xs text-muted">
+            {task.prompt || "尚未填写视频提示词"}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+            <span>{task.duration_seconds}s</span>
+            <span>{task.fps} fps</span>
+            <span>
+              {task.width}×{task.height}
+            </span>
+            <span>{task.workflow_id || "未选择工作流"}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+            <span>{startFrame?.media_asset ? "起始帧已选" : "缺少起始帧"}</span>
+            <span>{endFrame?.media_asset ? "结束帧已选" : "结束帧未选"}</span>
+          </div>
+        </div>
+        <Button type="button" variant="secondary" onClick={onOpen}>
+          <Edit className="h-4 w-4" aria-hidden="true" />
+          查看 / 编辑
+        </Button>
+      </div>
+    </article>
   );
 }
 

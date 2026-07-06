@@ -27,12 +27,24 @@ const sectionCopy = {
   tasks: {
     eyebrow: locale.nav.tasks,
     title: locale.nav.tasks,
-    emptyTitle: locale.empty.tasksTitle,
-    emptyDescription: locale.empty.tasksDescription
+    emptyTitle: "请先选择项目",
+    emptyDescription: "生成中心按项目管理，不会读取最近项目或隐藏状态来猜测当前项目。"
+  },
+  media: {
+    eyebrow: "媒体库",
+    title: "媒体库",
+    emptyTitle: "请先选择项目",
+    emptyDescription: "媒体库按项目管理，请先从项目列表进入一个项目。"
+  },
+  settings: {
+    eyebrow: "设置",
+    title: "设置",
+    emptyTitle: "请先选择项目",
+    emptyDescription: "项目设置按项目管理，请先从项目列表进入一个项目。"
   }
 };
 
-type PlaceholderSection = Exclude<WorkbenchSection, "projects">;
+type PlaceholderSection = Exclude<WorkbenchSection, "projects" | "overview" | "assets">;
 
 export function WorkbenchPage({ section }: { section: PlaceholderSection }) {
   const copy = sectionCopy[section];

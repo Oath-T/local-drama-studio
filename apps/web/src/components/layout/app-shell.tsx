@@ -1,11 +1,14 @@
 import {
+  Boxes,
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
   Clapperboard,
+  Film,
   Images,
   LayoutList,
   ListChecks,
+  Settings,
   UserRound
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -27,12 +30,68 @@ const navItems: Array<{
   label: string;
   path: string;
   icon: LucideIcon;
+  projectPath?: (projectId: string) => string;
+  indent?: boolean;
 }> = [
   { id: "projects", label: copy.nav.projects, path: "/projects", icon: BriefcaseBusiness },
-  { id: "characters", label: copy.nav.characters, path: "/characters", icon: UserRound },
-  { id: "scenes", label: copy.nav.scenes, path: "/scenes", icon: Images },
-  { id: "shots", label: copy.nav.shots, path: "/shots", icon: Clapperboard },
-  { id: "tasks", label: copy.nav.tasks, path: "/tasks", icon: ListChecks }
+  {
+    id: "overview",
+    label: "项目总览",
+    path: "/projects",
+    icon: LayoutList,
+    projectPath: (projectId) => `/projects/${projectId}`
+  },
+  {
+    id: "assets",
+    label: "资产库",
+    path: "/projects",
+    icon: Boxes,
+    projectPath: (projectId) => `/projects/${projectId}/assets`
+  },
+  {
+    id: "characters",
+    label: "角色库",
+    path: "/characters",
+    icon: UserRound,
+    projectPath: (projectId) => `/projects/${projectId}/characters`,
+    indent: true
+  },
+  {
+    id: "scenes",
+    label: "场景库",
+    path: "/scenes",
+    icon: Images,
+    projectPath: (projectId) => `/projects/${projectId}/scenes`,
+    indent: true
+  },
+  {
+    id: "shots",
+    label: "镜头工作台",
+    path: "/shots",
+    icon: Clapperboard,
+    projectPath: (projectId) => `/projects/${projectId}/shots`
+  },
+  {
+    id: "tasks",
+    label: "生成中心",
+    path: "/tasks",
+    icon: ListChecks,
+    projectPath: (projectId) => `/projects/${projectId}/generation`
+  },
+  {
+    id: "media",
+    label: "媒体库",
+    path: "/media",
+    icon: Film,
+    projectPath: (projectId) => `/projects/${projectId}/media`
+  },
+  {
+    id: "settings",
+    label: "设置",
+    path: "/settings",
+    icon: Settings,
+    projectPath: (projectId) => `/projects/${projectId}/settings`
+  }
 ];
 
 export function AppShell({ children }: AppShellProps) {
@@ -48,7 +107,17 @@ export function AppShell({ children }: AppShellProps) {
       ? "scenes"
       : location.pathname.includes("/shots")
         ? "shots"
-    : navItems.find((item) => location.pathname.startsWith(item.path))?.id;
+        : location.pathname.includes("/generation") || location.pathname.startsWith("/tasks")
+          ? "tasks"
+          : location.pathname.includes("/media") || location.pathname.startsWith("/media")
+            ? "media"
+            : location.pathname.includes("/settings") || location.pathname.startsWith("/settings")
+              ? "settings"
+              : location.pathname.includes("/assets")
+                ? "assets"
+                : currentProjectId
+                  ? "overview"
+                  : navItems.find((item) => location.pathname.startsWith(item.path))?.id;
 
   return (
     <div className="flex h-screen min-h-[768px] overflow-hidden bg-background text-foreground">
@@ -92,12 +161,8 @@ export function AppShell({ children }: AppShellProps) {
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => {
                   const path =
-                    item.id === "characters" && currentProjectId
-                      ? `/projects/${currentProjectId}/characters`
-                      : item.id === "scenes" && currentProjectId
-                        ? `/projects/${currentProjectId}/scenes`
-                        : item.id === "shots" && currentProjectId
-                          ? `/projects/${currentProjectId}/shots`
+                    item.projectPath && currentProjectId
+                      ? item.projectPath(currentProjectId)
                       : item.path;
                   navigate(path);
                 }}
@@ -106,6 +171,7 @@ export function AppShell({ children }: AppShellProps) {
                   isActive
                     ? "bg-primarySoft text-foreground"
                     : "text-muted hover:bg-panelRaised hover:text-foreground",
+                  item.indent && !sidebarCollapsed && "pl-8",
                   sidebarCollapsed && "justify-center px-0"
                 )}
               >
