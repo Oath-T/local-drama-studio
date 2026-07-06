@@ -36,6 +36,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
+import { KeyframeInheritedAssetSummary } from "@/features/asset-summaries/components/asset-summary-cards";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
 import { KeyframeGenerationSection } from "@/features/keyframe-generation/components/keyframe-generation-section";
@@ -330,6 +331,9 @@ function TaskCard({
         <Button type="button" variant="secondary" size="icon" title={keyframeTaskCopy.edit} onClick={onEdit}>
           <Edit className="h-4 w-4" aria-hidden="true" />
         </Button>
+      </div>
+      <div className="mt-3">
+        <KeyframeInheritedAssetSummary task={task} />
       </div>
       <IssueList task={task} />
       <div className="mt-3 flex flex-wrap gap-1">

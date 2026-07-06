@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
+import { assetSummaryKeys } from "@/features/asset-summaries/api";
+import { SceneAssetSummaryCard } from "@/features/asset-summaries/components/asset-summary-cards";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
 import {
@@ -232,6 +234,8 @@ export function SceneDetailPage() {
                 <Metric label="类型" value={sceneCopy.sceneType[sceneQuery.data.scene_type]} />
               </div>
             </section>
+
+            <SceneAssetSummaryCard projectId={projectId} sceneId={sceneId} />
 
             <section className="grid min-h-[520px] gap-4 lg:grid-cols-[300px_1fr]">
               <aside className="rounded-md border border-border bg-panel p-3">
@@ -606,6 +610,9 @@ async function invalidateSceneScope(
     queryClient.invalidateQueries({ queryKey: sceneKeys.lists(projectId) }),
     queryClient.invalidateQueries({ queryKey: sceneKeys.detail(projectId, sceneId) }),
     queryClient.invalidateQueries({ queryKey: sceneKeys.states(projectId, sceneId) }),
+    queryClient.invalidateQueries({
+      queryKey: assetSummaryKeys.scene(projectId, sceneId)
+    }),
     stateId
       ? queryClient.invalidateQueries({ queryKey: sceneKeys.references(projectId, sceneId, stateId) })
       : Promise.resolve()

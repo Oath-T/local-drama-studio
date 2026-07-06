@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
+import { VideoShotContextSummary } from "@/features/asset-summaries/components/asset-summary-cards";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
 import { fetchKeyframeRuns } from "@/features/keyframe-generation/api";
@@ -285,6 +286,7 @@ export function VideoGenerationPanel({
               {editingTask && (
                 <VideoTaskEditor
                   projectId={projectId}
+                  shot={shot}
                   task={editingTask}
                   workflows={workflowsQuery.data?.items ?? []}
                   workflowsLoading={workflowsQuery.isLoading}
@@ -401,6 +403,7 @@ function VideoTaskSummaryCard({
 
 function VideoTaskEditor({
   projectId,
+  shot,
   task,
   workflows,
   workflowsLoading,
@@ -411,6 +414,7 @@ function VideoTaskEditor({
   onDeleted
 }: {
   projectId: string;
+  shot: Shot;
   task: VideoTask;
   workflows: VideoWorkflow[];
   workflowsLoading: boolean;
@@ -528,6 +532,8 @@ function VideoTaskEditor({
           }
         />
       </div>
+
+      <VideoShotContextSummary shot={shot} task={task} />
 
       <FrameInputSlots
         task={task}

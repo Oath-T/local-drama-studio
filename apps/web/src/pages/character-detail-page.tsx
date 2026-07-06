@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
+import { assetSummaryKeys } from "@/features/asset-summaries/api";
+import { CharacterAssetSummaryCard } from "@/features/asset-summaries/components/asset-summary-cards";
 import {
   characterKeys,
   deleteCharacter,
@@ -229,6 +231,8 @@ export function CharacterDetailPage() {
                 />
               </div>
             </section>
+
+            <CharacterAssetSummaryCard projectId={projectId} characterId={characterId} />
 
             <section className="grid min-h-[520px] gap-4 lg:grid-cols-[280px_1fr]">
               <aside className="rounded-md border border-border bg-panel p-3">
@@ -593,6 +597,9 @@ async function invalidateCharacterScope(
     queryClient.invalidateQueries({ queryKey: characterKeys.lists(projectId) }),
     queryClient.invalidateQueries({ queryKey: characterKeys.detail(projectId, characterId) }),
     queryClient.invalidateQueries({ queryKey: characterKeys.looks(projectId, characterId) }),
+    queryClient.invalidateQueries({
+      queryKey: assetSummaryKeys.character(projectId, characterId)
+    }),
     lookId
       ? queryClient.invalidateQueries({
           queryKey: characterKeys.references(projectId, characterId, lookId)

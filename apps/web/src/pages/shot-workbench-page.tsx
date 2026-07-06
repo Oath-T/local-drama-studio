@@ -22,6 +22,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
+import { assetSummaryKeys } from "@/features/asset-summaries/api";
+import { ShotAssetSummaryCard } from "@/features/asset-summaries/components/asset-summary-cards";
 import { characterKeys, fetchCharacters, fetchLooks, fetchReferences } from "@/features/characters/api";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
@@ -190,6 +192,9 @@ export function ShotWorkbenchPage() {
         : Promise.resolve(),
       nextShotId
         ? queryClient.invalidateQueries({ queryKey: shotKeys.references(projectId, nextShotId) })
+        : Promise.resolve(),
+      nextShotId
+        ? queryClient.invalidateQueries({ queryKey: assetSummaryKeys.shot(projectId, nextShotId) })
         : Promise.resolve(),
       nextShotId
         ? queryClient.invalidateQueries({ queryKey: shotKeys.recommendations(projectId, nextShotId) })
@@ -771,6 +776,7 @@ function ReferencePanel({
   return (
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
       <div className="grid gap-4">
+        <ShotAssetSummaryCard projectId={projectId} shotId={shot.id} />
         <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-background p-1 text-xs">
           {(["smart", "keyframes", "character", "scene", "selected"] as const).map((tab) => (
             <button
