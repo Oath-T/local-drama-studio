@@ -22,6 +22,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
+import { AssetPickerDialog } from "@/features/asset-picker/components/asset-picker-dialog";
+import { assetPickerCopy } from "@/features/asset-picker/copy";
+import type { PickerOptionItem } from "@/features/asset-picker/types";
 import { assetSummaryKeys } from "@/features/asset-summaries/api";
 import { ShotAssetSummaryCard } from "@/features/asset-summaries/components/asset-summary-cards";
 import { characterKeys, fetchCharacters, fetchLooks, fetchReferences } from "@/features/characters/api";
@@ -429,6 +432,7 @@ function ShotEditorPanel({
     defaultValues: defaultShotFormValues()
   });
   const selectedSceneId = form.watch("scene_id");
+  const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const cameraHeight = form.watch("camera_height");
   const cameraAngle = form.watch("camera_angle");
   const composition = form.watch("composition_type");
@@ -492,6 +496,23 @@ function ShotEditorPanel({
     form.setValue("scene_state_id", actual);
   }
 
+  function handleScenePickerConfirm(item: PickerOptionItem) {
+    const nextSceneId = item.id;
+    const willClearRefs = hasSceneRefs(shotReferencesQuery.data?.items ?? []) && nextSceneId !== shot?.scene_id;
+    if (willClearRefs && !window.confirm(shotCopy.sceneReferenceClearWarning)) {
+      return;
+    }
+    form.setValue("scene_id", nextSceneId);
+    form.setValue("scene_state_id", "");
+    updateMutation.mutate(
+      formValuesToPayload({
+        ...form.getValues(),
+        scene_id: nextSceneId,
+        scene_state_id: ""
+      })
+    );
+  }
+
   if (loading) {
     return <Skeleton className="min-h-[620px]" />;
   }
@@ -549,6 +570,7 @@ function ShotEditorPanel({
         <SectionTitle>{shotCopy.sections.scene}</SectionTitle>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label={shotCopy.fields.scene}>
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
             <Select value={selectedSceneId || NONE} onValueChange={handleSceneChange}>
               <SelectTrigger aria-label={shotCopy.fields.scene}><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -556,9 +578,23 @@ function ShotEditorPanel({
                 {scenes.map((scene) => <SelectItem key={scene.id} value={scene.id}>{scene.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Button type="button" variant="secondary" onClick={() => setScenePickerOpen(true)}>
+              {assetPickerCopy.chooseScene}
+            </Button>
+            </div>
             {scenesLoading && <FieldHint>{shotCopy.loadingOptions}</FieldHint>}
             {scenesError && <FieldHint tone="error">{shotCopy.scenesLoadFailed}</FieldHint>}
             {!scenesLoading && !scenesError && scenes.length === 0 && <FieldHint>{shotCopy.noScenes}</FieldHint>}
+            <AssetPickerDialog
+              open={scenePickerOpen}
+              onOpenChange={setScenePickerOpen}
+              projectId={projectId}
+              scope="shot"
+              assetType="scene"
+              shotId={shot.id}
+              title={assetPickerCopy.chooseScene}
+              onConfirm={handleScenePickerConfirm}
+            />
           </Field>
           <Field label={shotCopy.fields.sceneState}>
             <Select value={selectedStateId || NONE} onValueChange={handleStateChange} disabled={stateSelectDisabled}>
@@ -626,6 +662,7 @@ function ShotCharactersEditor({
 }) {
   const [characterId, setCharacterId] = useState("");
   const [lookId, setLookId] = useState("");
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const looksQuery = useQuery({
     queryKey: characterId ? characterKeys.looks(projectId, characterId) : ["looks", "none"],
     queryFn: () => fetchLooks(projectId, characterId),
@@ -648,10 +685,16 @@ function ShotCharactersEditor({
     onSuccess: async () => invalidateShotData(shot.id)
   });
 
+  function handleCharacterPickerConfirm(item: PickerOptionItem) {
+    const defaultLookId =
+      typeof item.metadata.default_look_id === "string" ? item.metadata.default_look_id : null;
+    onAdd(item.id, defaultLookId);
+  }
+
   return (
     <div className="mt-6 grid gap-3 border-t border-border pt-4">
       <SectionTitle>{shotCopy.sections.characters}</SectionTitle>
-      <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+      <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
         <Select value={characterId || NONE} onValueChange={(value) => { setCharacterId(value === NONE ? "" : value); setLookId(""); }}>
           <SelectTrigger aria-label={shotCopy.fields.character}><SelectValue placeholder={shotCopy.fields.character} /></SelectTrigger>
           <SelectContent>
@@ -670,7 +713,20 @@ function ShotCharactersEditor({
           <Plus className="h-4 w-4" aria-hidden="true" />
           添加
         </Button>
+        <Button type="button" variant="secondary" onClick={() => setCharacterPickerOpen(true)}>
+          {assetPickerCopy.chooseCharacter}
+        </Button>
       </div>
+      <AssetPickerDialog
+        open={characterPickerOpen}
+        onOpenChange={setCharacterPickerOpen}
+        projectId={projectId}
+        scope="shot"
+        assetType="character"
+        shotId={shot.id}
+        title={assetPickerCopy.chooseCharacter}
+        onConfirm={handleCharacterPickerConfirm}
+      />
       {charactersLoading && <FieldHint>{shotCopy.loadingOptions}</FieldHint>}
       {charactersError && <FieldHint tone="error">{shotCopy.charactersLoadFailed}</FieldHint>}
       {!charactersLoading && !charactersError && characters.length === 0 && <FieldHint>{shotCopy.noCharacters}</FieldHint>}

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import App from "@/App";
+import { assetPickerCopy } from "@/features/asset-picker/copy";
 import type { Character, CharacterLook, CharacterReference, MediaAsset } from "@/features/characters/types";
 import { keyframeGenerationCopy } from "@/features/keyframe-generation/copy";
 import type { KeyframeRun, KeyframeWorkflow, SystemCapabilities } from "@/features/keyframe-generation/types";
@@ -962,6 +963,70 @@ function mockShotApi(
     ) {
       return emptyResponse();
     }
+    if (url.startsWith(`/api/projects/${projectId}/assets/picker-options`)) {
+      const parsed = new URL(url, "http://test.local");
+      const assetType = parsed.searchParams.get("asset_type");
+      if (assetType === "character") {
+        const items = characters.map((item) => ({
+          id: item.id,
+          type: "character",
+          name: item.name,
+          description: item.description,
+          thumbnail_url: item.default_look?.primary_reference?.media_asset.thumbnail_url ?? null,
+          content_url: item.default_look?.primary_reference?.media_asset.content_url ?? null,
+          badges: item.id === characterId ? ["已绑定"] : ["身份基准图"],
+          source: { kind: "character", label: "人物库" },
+          is_selected: currentShot().characters.some((shotCharacter) => shotCharacter.character_id === item.id),
+          is_adopted: false,
+          metadata: {
+            default_look_id: item.default_look?.id ?? null,
+            reference_count: item.reference_count
+          }
+        }));
+        return jsonResponse({ items, total: items.length });
+      }
+      if (assetType === "scene") {
+        const items = scenes.map((item) => ({
+          id: item.id,
+          type: "scene",
+          name: item.name,
+          description: item.description,
+          thumbnail_url: item.cover_reference?.media_asset.thumbnail_url ?? null,
+          content_url: item.cover_reference?.media_asset.content_url ?? null,
+          badges: item.id === currentShot().scene_id ? ["当前使用"] : ["空间结构参考图"],
+          source: { kind: "scene", label: "场景库" },
+          is_selected: item.id === currentShot().scene_id,
+          is_adopted: false,
+          metadata: {
+            default_state_id: item.default_state?.id ?? null,
+            reference_count: item.reference_count
+          }
+        }));
+        return jsonResponse({ items, total: items.length });
+      }
+      if (assetType === "frame_image") {
+        const items = [
+          {
+            id: mediaAsset.id,
+            type: "frame_image",
+            name: mediaAsset.original_filename,
+            description: "关键帧输出",
+            thumbnail_url: mediaAsset.thumbnail_url,
+            content_url: mediaAsset.content_url,
+            badges: ["关键帧输出"],
+            source: { kind: "keyframe_output", label: "关键帧输出" },
+            is_selected: false,
+            is_adopted: false,
+            metadata: {
+              media_asset_id: mediaAsset.id,
+              keyframe_output_id: keyframeOutputId,
+              keyframe_task_id: keyframeTaskId
+            }
+          }
+        ];
+        return jsonResponse({ items, total: items.length });
+      }
+    }
     if (url.includes("/recommendations?limit=5")) {
       if (options.failRecommendations) {
         return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
@@ -1058,6 +1123,47 @@ describe("shot workbench routes", () => {
     await user.click(screen.getByRole("button", { name: "保存镜头" }));
 
     expect(requests.some((request) => request.method === "PATCH" && request.body?.includes("雨夜入场"))).toBe(true);
+  });
+
+  it("adds a shot character through the asset picker", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({ characters: [character, secondCharacter] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: assetPickerCopy.chooseCharacter }));
+    await user.click(await screen.findByRole("button", { name: /Second Character/ }));
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/shots/${shotId}/characters`) &&
+            request.body?.includes(secondCharacterId)
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("updates the shot scene through the asset picker without choosing a state", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({ scenes: [scene, secondScene] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: assetPickerCopy.chooseScene }));
+    await user.click(await screen.findByRole("button", { name: /Warehouse/ }));
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      const request = requests.find(
+        (item) => item.method === "PATCH" && item.url === `/api/projects/${projectId}/shots/${shotId}`
+      );
+      expect(request).toBeTruthy();
+      const payload = JSON.parse(request?.body ?? "{}");
+      expect(payload.scene_id).toBe(secondSceneId);
+      expect(payload.scene_state_id).toBeNull();
+    });
   });
 
   it("submits empty duration as null and allows positive duration", async () => {
@@ -1538,6 +1644,51 @@ describe("shot workbench routes", () => {
             request.method === "PATCH" &&
             request.url.endsWith(`/video-tasks/${videoTaskId}`) &&
             request.body?.includes('"role":"end_frame"')
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("selects video start and end frames through the asset picker", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      videoTasks: [videoTask],
+      keyframeTasks: [keyframeTask],
+      keyframeRuns: [keyframeRun]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: "查看 / 编辑" }));
+    const pickerButtons = await screen.findAllByRole("button", { name: "从资产选择" });
+
+    await user.click(pickerButtons[0]);
+    await user.click(await screen.findByRole("button", { name: /reference\.png/ }));
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    const refreshedPickerButtons = await screen.findAllByRole("button", { name: "从资产选择" });
+    await user.click(refreshedPickerButtons[1]);
+    await user.click(await screen.findByRole("button", { name: /reference\.png/ }));
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url.endsWith(`/video-tasks/${videoTaskId}`) &&
+            request.body?.includes('"role":"start_frame"') &&
+            request.body?.includes(keyframeOutputId)
+        )
+      ).toBe(true);
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url.endsWith(`/video-tasks/${videoTaskId}`) &&
+            request.body?.includes('"role":"end_frame"') &&
+            request.body?.includes(keyframeOutputId)
         )
       ).toBe(true);
     });

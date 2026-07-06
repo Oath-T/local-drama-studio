@@ -18,6 +18,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
+import { AssetPickerDialog } from "@/features/asset-picker/components/asset-picker-dialog";
+import { assetPickerCopy } from "@/features/asset-picker/copy";
+import type { PickerOptionItem } from "@/features/asset-picker/types";
 import { VideoShotContextSummary } from "@/features/asset-summaries/components/asset-summary-cards";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
@@ -507,6 +510,28 @@ function VideoTaskEditor({
       onMessage({ tone: "error", text: getErrorText(error, videoGenerationCopy.uploadFailed) })
   });
 
+  async function handleFrameAssetSelect(role: VideoInputRole, item: PickerOptionItem) {
+    const keyframeOutputId =
+      typeof item.metadata.keyframe_output_id === "string" ? item.metadata.keyframe_output_id : null;
+    const keyframeTaskId =
+      typeof item.metadata.keyframe_task_id === "string" ? item.metadata.keyframe_task_id : null;
+    const mediaAssetId =
+      typeof item.metadata.media_asset_id === "string" ? item.metadata.media_asset_id : item.id;
+    try {
+      const updated = await updateVideoTask(projectId, task.id, {
+        inputs: nextTaskInputs(task, role, {
+          media_asset_id: keyframeOutputId ? null : mediaAssetId,
+          source_keyframe_output_id: keyframeOutputId,
+          source_keyframe_task_id: keyframeTaskId
+        })
+      });
+      await invalidateVideoData(updated.id);
+      onMessage({ tone: "success", text: videoGenerationCopy.saved });
+    } catch (error) {
+      onMessage({ tone: "error", text: getErrorText(error, "视频任务保存失败") });
+    }
+  }
+
   const runs = runsQuery.data?.items ?? [];
   const outputs = runs.flatMap((run) => run.outputs.map((output) => ({ run, output })));
   const canStart = disabledReasons.length === 0 && !startMutation.isPending;
@@ -536,10 +561,15 @@ function VideoTaskEditor({
       <VideoShotContextSummary shot={shot} task={task} />
 
       <FrameInputSlots
+        projectId={projectId}
+        shotId={shot.id}
         task={task}
         uploadingRole={frameUploadMutation.variables?.role}
         isUploading={frameUploadMutation.isPending}
         onUpload={(role, file) => frameUploadMutation.mutate({ role, file })}
+        onSelectAsset={(role, item) => {
+          void handleFrameAssetSelect(role, item);
+        }}
       />
 
       <form className="grid gap-3" onSubmit={form.handleSubmit((values) => updateMutation.mutate(values))}>
@@ -641,15 +671,21 @@ function WorkflowStatus({ workflow }: { workflow?: VideoWorkflow }) {
 }
 
 function FrameInputSlots({
+  projectId,
+  shotId,
   task,
   uploadingRole,
   isUploading,
-  onUpload
+  onUpload,
+  onSelectAsset
 }: {
+  projectId: string;
+  shotId: string;
   task: VideoTask;
   uploadingRole?: VideoInputRole;
   isUploading: boolean;
   onUpload: (role: VideoInputRole, file: File) => void;
+  onSelectAsset: (role: VideoInputRole, item: PickerOptionItem) => void;
 }) {
   const startInput = inputForRole(task, "start_frame");
   const endInput = inputForRole(task, "end_frame");
@@ -661,20 +697,26 @@ function FrameInputSlots({
       </div>
       <div className="grid gap-2 md:grid-cols-2">
         <FrameInputSlot
+          projectId={projectId}
+          shotId={shotId}
           label={videoGenerationCopy.startFrame}
           taskInput={startInput}
           role="start_frame"
           uploadLabel={videoGenerationCopy.uploadStartFrame}
           isUploading={isUploading && uploadingRole === "start_frame"}
           onUpload={onUpload}
+          onSelectAsset={onSelectAsset}
         />
         <FrameInputSlot
+          projectId={projectId}
+          shotId={shotId}
           label={videoGenerationCopy.endFrame}
           taskInput={endInput}
           role="end_frame"
           uploadLabel={videoGenerationCopy.uploadEndFrame}
           isUploading={isUploading && uploadingRole === "end_frame"}
           onUpload={onUpload}
+          onSelectAsset={onSelectAsset}
         />
       </div>
     </section>
@@ -682,25 +724,38 @@ function FrameInputSlots({
 }
 
 function FrameInputSlot({
+  projectId,
+  shotId,
   label,
   taskInput,
   role,
   uploadLabel,
   isUploading,
-  onUpload
+  onUpload,
+  onSelectAsset
 }: {
+  projectId: string;
+  shotId: string;
   label: string;
   taskInput: VideoTask["inputs"][number] | undefined;
   role: VideoInputRole;
   uploadLabel: string;
   isUploading: boolean;
   onUpload: (role: VideoInputRole, file: File) => void;
+  onSelectAsset: (role: VideoInputRole, item: PickerOptionItem) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const media = taskInput?.media_asset ?? null;
+  const pickerTitle =
+    role === "start_frame" ? assetPickerCopy.chooseStartFrame : assetPickerCopy.chooseEndFrame;
   return (
     <div className="grid gap-2 rounded-md border border-border bg-background p-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-foreground">{label}</span>
+        <div className="flex flex-wrap justify-end gap-1">
+        <Button type="button" variant="secondary" size="sm" onClick={() => setPickerOpen(true)}>
+          从资产选择
+        </Button>
         <label className="inline-flex">
           <input
             type="file"
@@ -720,7 +775,20 @@ function FrameInputSlot({
             </span>
           </Button>
         </label>
+        </div>
       </div>
+      <p className="text-xs leading-5 text-muted">{assetPickerCopy.frameDescription}</p>
+      <AssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        projectId={projectId}
+        scope="shot"
+        assetType="frame_image"
+        shotId={shotId}
+        title={pickerTitle}
+        description={assetPickerCopy.frameDescription}
+        onConfirm={(item) => onSelectAsset(role, item)}
+      />
       {media ? (
         <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
           <img

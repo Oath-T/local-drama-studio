@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.asset_picker import router as asset_picker_router
 from app.api.asset_summaries import router as asset_summaries_router
 from app.api.characters import media_router
 from app.api.characters import router as characters_router
@@ -22,6 +23,7 @@ api_router.include_router(characters_router)
 api_router.include_router(scenes_router)
 api_router.include_router(shots_router)
 api_router.include_router(asset_summaries_router)
+api_router.include_router(asset_picker_router)
 api_router.include_router(keyframe_tasks_router)
 api_router.include_router(keyframe_generation_router)
 api_router.include_router(video_generation_router)

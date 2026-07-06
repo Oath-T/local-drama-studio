@@ -125,6 +125,7 @@ DELETE /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}
 POST   /api/projects/{project_id}/shots/{shot_id}/references/{shot_reference_id}/move
 
 GET    /api/projects/{project_id}/shots/{shot_id}/recommendations
+GET    /api/projects/{project_id}/assets/picker-options
 GET    /api/projects/{project_id}/characters/{character_id}/asset-summary
 GET    /api/projects/{project_id}/scenes/{scene_id}/asset-summary
 GET    /api/projects/{project_id}/shots/{shot_id}/asset-summary
