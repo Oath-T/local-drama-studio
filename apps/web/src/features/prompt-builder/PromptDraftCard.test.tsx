@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -75,6 +75,89 @@ describe("PromptDraftCard", () => {
     expect(screen.getByText(/NO_CAMERA_MOTION/)).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "复制提示词" })[0]);
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(draft.context_summary_zh);
+  });
+
+  it("does not show task creation actions before a draft exists", () => {
+    mockDraftApi();
+
+    renderWithClient(
+      <PromptDraftCard
+        projectId={projectId}
+        shotId={shotId}
+        onCreateFirstFrameTask={vi.fn()}
+        onCreateEndFrameTask={vi.fn()}
+        onCreateVideoTask={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText("从当前草稿创建任务")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "创建首帧任务" })).not.toBeInTheDocument();
+  });
+
+  it("confirms before creating tasks and keeps generation available", async () => {
+    const user = userEvent.setup();
+    mockDraftApi();
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let resolveCreate: () => void = () => undefined;
+    const onCreateFirstFrameTask = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCreate = resolve;
+        })
+    );
+    const onCreateEndFrameTask = vi.fn().mockResolvedValue(undefined);
+    const onCreateVideoTask = vi.fn().mockResolvedValue(undefined);
+
+    renderWithClient(
+      <PromptDraftCard
+        projectId={projectId}
+        shotId={shotId}
+        onCreateFirstFrameTask={onCreateFirstFrameTask}
+        onCreateEndFrameTask={onCreateEndFrameTask}
+        onCreateVideoTask={onCreateVideoTask}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
+    expect(await screen.findByText("从当前草稿创建任务")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建首帧任务" }));
+
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("首帧关键帧任务草稿"));
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("当前草稿还有 1 条上下文提示"));
+    expect(onCreateFirstFrameTask).toHaveBeenCalledWith(draft);
+    expect(screen.getByRole("button", { name: "正在创建..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "创建尾帧任务" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "创建视频任务草稿" })).toBeDisabled();
+
+    resolveCreate();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "创建首帧任务" })).not.toBeDisabled()
+    );
+    await user.click(screen.getByRole("button", { name: "创建尾帧任务" }));
+    await user.click(screen.getByRole("button", { name: "创建视频任务草稿" }));
+    expect(onCreateEndFrameTask).toHaveBeenCalledWith(draft);
+    expect(onCreateVideoTask).toHaveBeenCalledWith(draft);
+    expect(screen.getByRole("button", { name: "重新生成草稿" })).toBeEnabled();
+  });
+
+  it("does not create a task when confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    mockDraftApi();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const onCreateFirstFrameTask = vi.fn();
+
+    renderWithClient(
+      <PromptDraftCard
+        projectId={projectId}
+        shotId={shotId}
+        onCreateFirstFrameTask={onCreateFirstFrameTask}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
+    await user.click(await screen.findByRole("button", { name: "创建首帧任务" }));
+
+    expect(onCreateFirstFrameTask).not.toHaveBeenCalled();
   });
 
   it("sends style preset and one-time override settings", async () => {

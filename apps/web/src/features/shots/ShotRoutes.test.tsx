@@ -42,6 +42,8 @@ const keyframeOutputId = "24242424-2424-4242-8242-242424242424";
 const videoTaskId = "26262626-2626-4262-8262-262626262626";
 const videoRunId = "27272727-2727-4272-8272-272727272727";
 const videoOutputId = "28282828-2828-4282-8282-282828282828";
+const createdKeyframeTaskId = "20202020-2020-4202-8202-202020202020";
+const createdEndKeyframeTaskId = "20202020-2020-4202-8202-202020202021";
 
 const mediaAsset: MediaAsset = {
   id: "99999999-9999-4999-8999-999999999999",
@@ -57,6 +59,18 @@ const mediaAsset: MediaAsset = {
   thumbnail_url: "/api/media/99999999-9999-4999-8999-999999999999/thumbnail",
   content_url: "/api/media/99999999-9999-4999-8999-999999999999/content",
   created_at: "2026-06-28T10:00:00+00:00"
+};
+
+const promptDraft = {
+  source_shot_updated_at: "2026-07-08T00:00:00+00:00",
+  applied_style: "cinematic_short_drama",
+  context_summary_zh: "当前镜头包含人物和场景上下文。",
+  first_frame_prompt_en: "first frame prompt from draft",
+  end_frame_prompt_en: "end frame prompt from draft",
+  motion_prompt_en: "motion prompt from draft",
+  negative_prompt_en: "negative prompt from draft",
+  camera_motion: "slow push-in",
+  warnings: [{ code: "NO_CAMERA_MOTION", message: "缺少镜头运动描述。", severity: "info" }]
 };
 
 const characterReference: CharacterReference = {
@@ -733,6 +747,7 @@ function mockShotApi(
   const requests: Array<{ url: string; method: string; body?: string }> = [];
   let shots = options.shots ?? [shot];
   let keyframeTasks = options.keyframeTasks ?? [];
+  let createdKeyframeCount = 0;
   let keyframeRuns = options.keyframeRuns ?? [];
   let videoTasks = options.videoTasks ?? [];
   let videoRuns = options.videoRuns ?? [];
@@ -772,6 +787,9 @@ function mockShotApi(
       const created = { ...shot, id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "镜头 1" };
       shots = [created];
       return jsonResponse(created, 201);
+    }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/prompt-draft` && method === "POST") {
+      return jsonResponse(promptDraft);
     }
     if (url === `/api/projects/${projectId}/keyframe-workflows` && method === "GET") {
       if (options.failWorkflows) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
@@ -853,20 +871,33 @@ function mockShotApi(
       return jsonResponse({ items: keyframeTasks, total: keyframeTasks.length });
     }
     if (url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks` && method === "POST") {
-      const created = { ...keyframeTask, id: "20202020-2020-4202-8202-202020202020" };
+      const payload = body ? JSON.parse(body) : {};
+      const createdIds = [createdKeyframeTaskId, createdEndKeyframeTaskId];
+      const created = {
+        ...keyframeTask,
+        id: createdIds[createdKeyframeCount] ?? `20202020-2020-4202-8202-${202020202022 + createdKeyframeCount}`,
+        ...payload
+      };
+      createdKeyframeCount += 1;
       keyframeTasks = [created, ...keyframeTasks];
       return jsonResponse(created, 201);
     }
-    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` && method === "GET") {
-      return jsonResponse(keyframeTasks.find((item) => item.id === keyframeTaskId) ?? keyframeTask);
+    const keyframeTaskUrlMatch = url.match(
+      new RegExp(`^/api/projects/${projectId}/keyframe-tasks/([^/]+)$`)
+    );
+    if (keyframeTaskUrlMatch && method === "GET") {
+      const taskId = keyframeTaskUrlMatch[1];
+      return jsonResponse(keyframeTasks.find((item) => item.id === taskId) ?? keyframeTask);
     }
-    if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` && method === "PATCH") {
+    if (keyframeTaskUrlMatch && method === "PATCH") {
       if (options.failKeyframeUpdate) {
         return jsonResponse({ error: { code: "KEYFRAME_TASK_NOT_READY", message: "not ready" } }, 400);
       }
+      const taskId = keyframeTaskUrlMatch[1];
       const patch = body ? JSON.parse(body) : {};
-      const updated = { ...(keyframeTasks[0] ?? keyframeTask), ...patch, status: "draft" } as KeyframeTask;
-      keyframeTasks = keyframeTasks.map((item) => (item.id === keyframeTaskId ? updated : item));
+      const source = keyframeTasks.find((item) => item.id === taskId) ?? keyframeTask;
+      const updated = { ...source, ...patch, status: "draft" } as KeyframeTask;
+      keyframeTasks = keyframeTasks.map((item) => (item.id === taskId ? updated : item));
       return jsonResponse(updated);
     }
     if (url === `/api/projects/${projectId}/keyframe-tasks/${keyframeTaskId}` && method === "DELETE") {
@@ -1681,6 +1712,125 @@ describe("shot workbench routes", () => {
         )
       ).toBe(true);
     });
+  });
+
+  it("creates first-frame, end-frame, and video task drafts from a prompt draft", async () => {
+    const user = userEvent.setup();
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { requests } = mockShotApi({ shots: [shotWithReferences] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: "生成提示词草稿" }));
+    await user.click(await screen.findByRole("button", { name: "创建首帧任务" }));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url === `/api/projects/${projectId}/keyframe-tasks/${createdKeyframeTaskId}`
+        )
+      ).toBe(true)
+    );
+    const firstFrameCreate = requests.find(
+      (request) =>
+        request.method === "POST" &&
+        request.url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks`
+    );
+    const firstFramePatch = requests.find(
+      (request) =>
+        request.method === "PATCH" &&
+        request.url === `/api/projects/${projectId}/keyframe-tasks/${createdKeyframeTaskId}`
+    );
+    expect(JSON.parse(firstFrameCreate?.body ?? "{}")).toMatchObject({
+      name: expect.stringContaining("首帧草稿"),
+      copy_current_references: true
+    });
+    expect(JSON.parse(firstFramePatch?.body ?? "{}")).toMatchObject({
+      prompt_zh: promptDraft.context_summary_zh,
+      prompt_en: promptDraft.first_frame_prompt_en,
+      negative_prompt: promptDraft.negative_prompt_en
+    });
+    expect(await screen.findByText("已创建首帧任务草稿，请在关键帧任务区域检查。")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "创建尾帧任务" }));
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url === `/api/projects/${projectId}/keyframe-tasks/${createdEndKeyframeTaskId}`
+        )
+      ).toBe(true)
+    );
+    const endFramePatch = requests.find(
+      (request) =>
+        request.method === "PATCH" &&
+        request.url === `/api/projects/${projectId}/keyframe-tasks/${createdEndKeyframeTaskId}`
+    );
+    expect(JSON.parse(endFramePatch?.body ?? "{}")).toMatchObject({
+      prompt_en: promptDraft.end_frame_prompt_en,
+      negative_prompt: promptDraft.negative_prompt_en
+    });
+
+    await user.click(screen.getByRole("button", { name: "创建视频任务草稿" }));
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url === `/api/projects/${projectId}/video-tasks/${videoTaskId}`
+        )
+      ).toBe(true)
+    );
+    const videoPatch = requests.find(
+      (request) =>
+        request.method === "PATCH" &&
+        request.url === `/api/projects/${projectId}/video-tasks/${videoTaskId}`
+    );
+    expect(JSON.parse(videoPatch?.body ?? "{}")).toMatchObject({
+      name: expect.stringContaining("视频草稿"),
+      prompt: promptDraft.motion_prompt_en,
+      negative_prompt: promptDraft.negative_prompt_en,
+      camera_motion: promptDraft.camera_motion,
+      duration_seconds: 3
+    });
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("当前草稿还有 1 条上下文提示"));
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "POST" &&
+          (request.url.includes("/mark-ready") || request.url.endsWith("/runs"))
+      )
+    ).toBe(false);
+  });
+
+  it("keeps a created task and shows a safe error when prompt patching fails", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { requests } = mockShotApi({ shots: [shotWithReferences], failKeyframeUpdate: true });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: "生成提示词草稿" }));
+    await user.click(await screen.findByRole("button", { name: "创建首帧任务" }));
+
+    expect(
+      await screen.findByText("任务草稿已创建，但提示词填充失败，请在任务中手动检查。")
+    ).toBeInTheDocument();
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "POST" &&
+          request.url === `/api/projects/${projectId}/shots/${shotId}/keyframe-tasks`
+      )
+    ).toBe(true);
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "PATCH" &&
+          request.url === `/api/projects/${projectId}/keyframe-tasks/${createdKeyframeTaskId}`
+      )
+    ).toBe(true);
   });
 
   it("edits keyframe task parameters, blocks invalid dimensions, and submits seed zero", async () => {

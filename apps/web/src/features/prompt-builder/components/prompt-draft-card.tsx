@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Clipboard, FileText, RefreshCw, RotateCcw, Wand2 } from "lucide-react";
+import { Clipboard, FileText, Plus, RefreshCw, RotateCcw, Wand2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,9 @@ interface PromptDraftCardProps {
   shotId: string;
   target?: PromptDraftTarget;
   onDraft?: (draft: PromptDraftResponse) => void;
+  onCreateFirstFrameTask?: (draft: PromptDraftResponse) => void | Promise<void>;
+  onCreateEndFrameTask?: (draft: PromptDraftResponse) => void | Promise<void>;
+  onCreateVideoTask?: (draft: PromptDraftResponse) => void | Promise<void>;
 }
 
 const styleOptions: PromptDraftStyle[] = [
@@ -51,10 +54,16 @@ export function PromptDraftCard({
   projectId,
   shotId,
   target = "all",
-  onDraft
+  onDraft,
+  onCreateFirstFrameTask,
+  onCreateEndFrameTask,
+  onCreateVideoTask
 }: PromptDraftCardProps) {
   const [draft, setDraft] = useState<PromptDraftResponse | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [creatingTaskType, setCreatingTaskType] = useState<
+    "first_frame" | "end_frame" | "video" | null
+  >(null);
   const [style, setStyle] = useState<PromptDraftStyle>("cinematic_short_drama");
   const [overrides, setOverrides] =
     useState<Record<keyof PromptDraftOverrides, string>>(emptyOverrides);
@@ -81,6 +90,31 @@ export function PromptDraftCard({
 
   function updateOverride(field: keyof PromptDraftOverrides, value: string) {
     setOverrides((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleCreateTask(type: "first_frame" | "end_frame" | "video") {
+    if (!draft) {
+      return;
+    }
+    const callback =
+      type === "first_frame"
+        ? onCreateFirstFrameTask
+        : type === "end_frame"
+          ? onCreateEndFrameTask
+          : onCreateVideoTask;
+    if (!callback) {
+      return;
+    }
+    const confirmed = window.confirm(createConfirmMessage(type, draft.warnings.length));
+    if (!confirmed) {
+      return;
+    }
+    setCreatingTaskType(type);
+    try {
+      await callback(draft);
+    } finally {
+      setCreatingTaskType(null);
+    }
   }
 
   return (
@@ -223,6 +257,39 @@ export function PromptDraftCard({
               onCopy={copyText}
             />
           )}
+          {(onCreateFirstFrameTask || onCreateEndFrameTask || onCreateVideoTask) && (
+            <div className="grid gap-2 rounded-md border border-border bg-panel p-3">
+              <div className="text-xs font-semibold text-muted">
+                {promptBuilderCopy.createTaskSection}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {onCreateFirstFrameTask && (
+                  <CreateTaskButton
+                    label={promptBuilderCopy.createFirstFrameTask}
+                    busy={creatingTaskType === "first_frame"}
+                    disabled={Boolean(creatingTaskType)}
+                    onClick={() => void handleCreateTask("first_frame")}
+                  />
+                )}
+                {onCreateEndFrameTask && (
+                  <CreateTaskButton
+                    label={promptBuilderCopy.createEndFrameTask}
+                    busy={creatingTaskType === "end_frame"}
+                    disabled={Boolean(creatingTaskType)}
+                    onClick={() => void handleCreateTask("end_frame")}
+                  />
+                )}
+                {onCreateVideoTask && (
+                  <CreateTaskButton
+                    label={promptBuilderCopy.createVideoTaskDraft}
+                    busy={creatingTaskType === "video"}
+                    disabled={Boolean(creatingTaskType)}
+                    onClick={() => void handleCreateTask("video")}
+                  />
+                )}
+              </div>
+            </div>
+          )}
           <div className="rounded-md border border-border bg-panel p-2">
             <div className="text-xs font-semibold text-muted">{promptBuilderCopy.warnings}</div>
             {draft.warnings.length > 0 ? (
@@ -244,6 +311,25 @@ export function PromptDraftCard({
         </p>
       )}
     </section>
+  );
+}
+
+function CreateTaskButton({
+  label,
+  busy,
+  disabled,
+  onClick
+}: {
+  label: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button type="button" size="sm" variant="secondary" onClick={onClick} disabled={disabled}>
+      <Plus className="h-4 w-4" aria-hidden="true" />
+      {busy ? promptBuilderCopy.creatingTask : label}
+    </Button>
   );
 }
 
@@ -304,4 +390,19 @@ function compactOverrides(
     return undefined;
   }
   return Object.fromEntries(entries) as PromptDraftOverrides;
+}
+
+function createConfirmMessage(
+  type: "first_frame" | "end_frame" | "video",
+  warningCount: number
+) {
+  const base =
+    type === "first_frame"
+      ? promptBuilderCopy.confirmFirstFrameTask
+      : type === "end_frame"
+        ? promptBuilderCopy.confirmEndFrameTask
+        : promptBuilderCopy.confirmVideoTask;
+  return warningCount > 0
+    ? `${base}\n${promptBuilderCopy.warningConfirmLine(warningCount)}`
+    : base;
 }

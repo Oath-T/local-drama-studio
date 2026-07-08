@@ -45,5 +45,22 @@ export const promptBuilderCopy = {
   fillFirstFrame: "填入首帧提示词",
   fillEndFrame: "填入尾帧提示词",
   firstFrameFilled: "已填入首帧提示词草稿，请检查后手动保存任务。",
-  endFrameFilled: "已填入尾帧提示词草稿，请检查后手动保存任务。"
+  endFrameFilled: "已填入尾帧提示词草稿，请检查后手动保存任务。",
+  createTaskSection: "从当前草稿创建任务",
+  createFirstFrameTask: "创建首帧任务",
+  createEndFrameTask: "创建尾帧任务",
+  createVideoTaskDraft: "创建视频任务草稿",
+  creatingTask: "正在创建...",
+  firstFrameTaskCreated: "已创建首帧任务草稿，请在关键帧任务区域检查。",
+  endFrameTaskCreated: "已创建尾帧任务草稿，请在关键帧任务区域检查。",
+  videoTaskCreated: "已创建视频任务草稿，请在视频任务区域选择首尾帧并检查参数。",
+  taskCreateFailed: "任务草稿创建失败，请稍后重试。",
+  taskPatchFailed: "任务草稿已创建，但提示词填充失败，请在任务中手动检查。",
+  confirmFirstFrameTask:
+    "将基于当前 Prompt 草稿创建一个首帧关键帧任务草稿。\n不会自动标记就绪，也不会开始生成。",
+  confirmEndFrameTask:
+    "将基于当前 Prompt 草稿创建一个尾帧关键帧任务草稿。\n不会自动标记就绪，也不会开始生成。",
+  confirmVideoTask:
+    "将基于当前 Prompt 草稿创建一个视频任务草稿。\n不会自动选择首尾帧，不会标记就绪，也不会开始生成。",
+  warningConfirmLine: (count: number) => `当前草稿还有 ${count} 条上下文提示，仍可继续创建。`
 };

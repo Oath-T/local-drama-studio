@@ -31,12 +31,17 @@ import { characterKeys, fetchCharacters, fetchLooks, fetchReferences } from "@/f
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
 import type { Character, CharacterLook } from "@/features/characters/types";
+import { generationTaskKeys } from "@/features/generation-tasks/api";
+import { createKeyframeTask, updateKeyframeTask } from "@/features/keyframe-tasks/api";
 import { fetchProject, projectKeys } from "@/features/projects/api";
 import { fetchSceneReferences, fetchScenes, fetchSceneStates, sceneKeys } from "@/features/scenes/api";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
 import { KeyframeTaskPanel } from "@/features/keyframe-tasks/components/keyframe-task-panel";
 import { PromptDraftCard } from "@/features/prompt-builder/components/prompt-draft-card";
+import { promptBuilderCopy } from "@/features/prompt-builder/copy";
+import type { PromptDraftResponse } from "@/features/prompt-builder/types";
 import { ShotRecommendationPanel } from "@/features/shots/components/shot-recommendation-panel";
+import { createVideoTask, updateVideoTask } from "@/features/video-generation/api";
 import {
   addShotCharacter,
   addShotReference,
@@ -205,6 +210,27 @@ export function ShotWorkbenchPage() {
         : Promise.resolve(),
       nextShotId
         ? queryClient.invalidateQueries({ queryKey: shotKeys.keyframeTasks(projectId, nextShotId) })
+        : Promise.resolve(),
+      nextShotId
+        ? queryClient.invalidateQueries({ queryKey: shotKeys.videoTasks(projectId, nextShotId) })
+        : Promise.resolve(),
+      queryClient.invalidateQueries({ queryKey: generationTaskKeys.lists(projectId) })
+    ]);
+  }
+
+  async function invalidateCreatedTaskData(shotId: string, taskId: string, taskType: "keyframe" | "video") {
+    await Promise.all([
+      invalidateShotData(shotId),
+      queryClient.invalidateQueries({
+        queryKey:
+          taskType === "keyframe"
+            ? shotKeys.keyframeTask(projectId, taskId)
+            : shotKeys.videoTask(projectId, taskId)
+      }),
+      taskType === "keyframe"
+        ? queryClient.invalidateQueries({
+            queryKey: shotKeys.keyframeTaskReferences(projectId, taskId)
+          })
         : Promise.resolve()
     ]);
   }
@@ -325,6 +351,7 @@ export function ShotWorkbenchPage() {
               characters={charactersQuery.data?.items ?? []}
               onMessage={setMessage}
               invalidateShotData={invalidateShotData}
+              invalidateCreatedTaskData={invalidateCreatedTaskData}
             />
           </div>
         )}
@@ -864,13 +891,19 @@ function ReferencePanel({
   shot,
   characters,
   onMessage,
-  invalidateShotData
+  invalidateShotData,
+  invalidateCreatedTaskData
 }: {
   projectId: string;
   shot?: Shot;
   characters: Character[];
   onMessage: (message: { tone: "success" | "error"; text: string } | null) => void;
   invalidateShotData: (shotId?: string) => Promise<void>;
+  invalidateCreatedTaskData: (
+    shotId: string,
+    taskId: string,
+    taskType: "keyframe" | "video"
+  ) => Promise<void>;
 }) {
   const [selectedShotCharacterId, setSelectedShotCharacterId] = useState("");
   const [characterPurpose, setCharacterPurpose] = useState<CharacterReferencePurpose>("identity");
@@ -912,6 +945,88 @@ function ReferencePanel({
     mutationFn: ({ id, orderIndex }: { id: string; orderIndex: number }) => moveShotReference(projectId, shot?.id || "", id, orderIndex),
     onSuccess: async () => invalidateShotData(shot?.id)
   });
+
+  async function createKeyframeTaskFromDraft(
+    draft: PromptDraftResponse,
+    frame: "first" | "end"
+  ) {
+    if (!shot) {
+      return;
+    }
+    let taskId = "";
+    try {
+      const created = await createKeyframeTask(projectId, shot.id, {
+        name: `${frame === "first" ? "首帧草稿" : "尾帧草稿"} - ${shotTaskLabel(shot)}`,
+        copy_current_references: true
+      });
+      taskId = created.id;
+    } catch (error) {
+      onMessage({
+        tone: "error",
+        text: getErrorText(error, promptBuilderCopy.taskCreateFailed)
+      });
+      return;
+    }
+
+    try {
+      const updated = await updateKeyframeTask(projectId, taskId, {
+        prompt_zh: draft.context_summary_zh,
+        prompt_en:
+          frame === "first" ? draft.first_frame_prompt_en : draft.end_frame_prompt_en,
+        negative_prompt: draft.negative_prompt_en
+      });
+      await invalidateCreatedTaskData(shot.id, updated.id, "keyframe");
+      setActiveTab("keyframes");
+      onMessage({
+        tone: "success",
+        text:
+          frame === "first"
+            ? promptBuilderCopy.firstFrameTaskCreated
+            : promptBuilderCopy.endFrameTaskCreated
+      });
+    } catch {
+      await invalidateCreatedTaskData(shot.id, taskId, "keyframe");
+      setActiveTab("keyframes");
+      onMessage({ tone: "error", text: promptBuilderCopy.taskPatchFailed });
+    }
+  }
+
+  async function createVideoTaskFromDraft(draft: PromptDraftResponse) {
+    if (!shot) {
+      return;
+    }
+    let taskId = "";
+    try {
+      const created = await createVideoTask(projectId, shot.id, {});
+      taskId = created.id;
+    } catch (error) {
+      onMessage({
+        tone: "error",
+        text: getErrorText(error, promptBuilderCopy.taskCreateFailed)
+      });
+      return;
+    }
+
+    try {
+      const updated = await updateVideoTask(projectId, taskId, {
+        name: `视频草稿 - ${shotTaskLabel(shot)}`,
+        prompt: draft.motion_prompt_en,
+        negative_prompt: draft.negative_prompt_en,
+        camera_motion: draft.camera_motion,
+        duration_seconds:
+          typeof shot.duration_seconds === "number" && shot.duration_seconds > 0
+            ? shot.duration_seconds
+            : undefined
+      });
+      await invalidateCreatedTaskData(shot.id, updated.id, "video");
+      setActiveTab("keyframes");
+      onMessage({ tone: "success", text: promptBuilderCopy.videoTaskCreated });
+    } catch {
+      await invalidateCreatedTaskData(shot.id, taskId, "video");
+      setActiveTab("keyframes");
+      onMessage({ tone: "error", text: promptBuilderCopy.taskPatchFailed });
+    }
+  }
 
   function handleReferencePickerConfirm(item: PickerOptionItem) {
     const referenceType = pickerMetadataString(item, "reference_type");
@@ -955,7 +1070,13 @@ function ReferencePanel({
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
       <div className="grid gap-4">
         <ShotAssetSummaryCard projectId={projectId} shotId={shot.id} />
-        <PromptDraftCard projectId={projectId} shotId={shot.id} />
+        <PromptDraftCard
+          projectId={projectId}
+          shotId={shot.id}
+          onCreateFirstFrameTask={(draft) => createKeyframeTaskFromDraft(draft, "first")}
+          onCreateEndFrameTask={(draft) => createKeyframeTaskFromDraft(draft, "end")}
+          onCreateVideoTask={createVideoTaskFromDraft}
+        />
         <Button type="button" variant="secondary" onClick={() => setReferencePickerOpen(true)}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {assetPickerCopy.chooseReferenceImage}
@@ -1248,6 +1369,10 @@ function formValuesToPayload(values: ShotFormValues): ShotInput {
 
 function hasSceneRefs(references: ShotReference[]) {
   return references.some((reference) => reference.reference_type === "scene");
+}
+
+function shotTaskLabel(shot: Shot) {
+  return shot.name.trim() || `镜头 ${shot.order_index}`;
 }
 
 function pickerMetadataString(item: PickerOptionItem, key: string): string | null {
