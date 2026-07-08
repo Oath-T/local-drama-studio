@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   hasKeyframePromptConflict,
@@ -11,15 +11,16 @@ import {
   videoFieldsFromPromptDraft
 } from "./apply";
 import { PromptDraftCard } from "./components/prompt-draft-card";
-import type { PromptDraftResponse } from "./types";
+import type { PromptDraftRequest, PromptDraftResponse } from "./types";
 
 const projectId = "11111111-1111-4111-8111-111111111111";
 const shotId = "22222222-2222-4222-8222-222222222222";
 
 const draft: PromptDraftResponse = {
   source_shot_updated_at: "2026-07-08T00:00:00+00:00",
+  applied_style: "cinematic_short_drama",
   context_summary_zh: "当前镜头包含 1 位人物：男主。场景为办公楼门口。",
-  first_frame_prompt_en: "cinematic short drama still frame, male lead at entrance",
+  first_frame_prompt_en: "cinematic short drama first frame, male lead at entrance",
   end_frame_prompt_en: "same character, same outfit, continuity from first frame",
   motion_prompt_en: "smooth cinematic short drama motion, slow push-in",
   negative_prompt_en: "low quality, blurry, inconsistent character",
@@ -34,13 +35,14 @@ function renderWithClient(ui: ReactNode) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
-function mockDraftApi(fail = false) {
+function mockDraftApi(options: { fail?: boolean; onBody?: (body: PromptDraftRequest) => void } = {}) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url =
       typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (url.endsWith(`/api/projects/${projectId}/shots/${shotId}/prompt-draft`)) {
       expect(init?.method).toBe("POST");
-      if (fail) {
+      options.onBody?.(JSON.parse(String(init?.body)) as PromptDraftRequest);
+      if (options.fail) {
         return jsonResponse({ error: { code: "PROMPT_FAILED", message: "failed" } }, 500);
       }
       return jsonResponse(draft);
@@ -75,9 +77,54 @@ describe("PromptDraftCard", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(draft.context_summary_zh);
   });
 
+  it("sends style preset and one-time override settings", async () => {
+    const user = userEvent.setup();
+    const bodies: PromptDraftRequest[] = [];
+    mockDraftApi({ onBody: (body) => bodies.push(body) });
+
+    renderWithClient(<PromptDraftCard projectId={projectId} shotId={shotId} />);
+
+    await user.click(screen.getByRole("combobox", { name: "风格预设" }));
+    await user.click(await screen.findByRole("option", { name: "雨夜霓虹" }));
+    await user.type(screen.getByLabelText("首帧动作补充"), "抬头看向雨夜大门");
+    await user.type(screen.getByLabelText("尾帧动作补充"), "走进霓虹雨幕");
+    await user.type(screen.getByLabelText("视频运动补充"), "从犹豫转为向前迈步");
+    await user.type(screen.getByLabelText("镜头运动补充"), "慢速推进，轻微手持");
+    await user.type(screen.getByLabelText("画面风格补充"), "冷蓝色雨夜反光");
+    await user.type(screen.getByLabelText("情绪氛围补充"), "压抑转为坚定");
+    await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
+
+    expect(await screen.findByText("镜头上下文")).toBeInTheDocument();
+    expect(bodies[0]).toMatchObject({
+      style: "rain_night_neon",
+      overrides: {
+        start_action: "抬头看向雨夜大门",
+        end_action: "走进霓虹雨幕",
+        motion_direction: "从犹豫转为向前迈步",
+        camera_motion: "慢速推进，轻微手持",
+        visual_style: "冷蓝色雨夜反光",
+        mood: "压抑转为坚定"
+      }
+    });
+  });
+
+  it("clears override settings before regenerating", async () => {
+    const user = userEvent.setup();
+    const bodies: PromptDraftRequest[] = [];
+    mockDraftApi({ onBody: (body) => bodies.push(body) });
+
+    renderWithClient(<PromptDraftCard projectId={projectId} shotId={shotId} />);
+    await user.type(screen.getByLabelText("首帧动作补充"), "临时动作");
+    await user.click(screen.getByRole("button", { name: "清空覆盖项" }));
+    await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
+
+    expect(await screen.findByText("镜头上下文")).toBeInTheDocument();
+    expect(bodies[0].overrides).toBeUndefined();
+  });
+
   it("shows a safe Chinese error without breaking the card", async () => {
     const user = userEvent.setup();
-    mockDraftApi(true);
+    mockDraftApi({ fail: true });
 
     renderWithClient(<PromptDraftCard projectId={projectId} shotId={shotId} />);
     await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
@@ -88,9 +135,13 @@ describe("PromptDraftCard", () => {
 });
 
 describe("prompt draft field mapping", () => {
-  it("maps keyframe fields and detects overwrite conflicts", () => {
+  it("maps first and end keyframe fields and detects overwrite conflicts", () => {
     expect(keyframeFieldsFromPromptDraft(draft)).toEqual({
       prompt_en: draft.first_frame_prompt_en,
+      negative_prompt: draft.negative_prompt_en
+    });
+    expect(keyframeFieldsFromPromptDraft(draft, "end")).toEqual({
+      prompt_en: draft.end_frame_prompt_en,
       negative_prompt: draft.negative_prompt_en
     });
     expect(hasKeyframePromptConflict({ prompt_en: "", negative_prompt: "" })).toBe(false);

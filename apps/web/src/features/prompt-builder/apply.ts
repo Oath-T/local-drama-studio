@@ -5,10 +5,11 @@ import type {
 } from "./types";
 
 export function keyframeFieldsFromPromptDraft(
-  draft: PromptDraftResponse
+  draft: PromptDraftResponse,
+  frame: "first" | "end" = "first"
 ): KeyframePromptDraftFields {
   return {
-    prompt_en: draft.first_frame_prompt_en,
+    prompt_en: frame === "end" ? draft.end_frame_prompt_en : draft.first_frame_prompt_en,
     negative_prompt: draft.negative_prompt_en
   };
 }

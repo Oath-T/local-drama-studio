@@ -1,6 +1,7 @@
 export const promptBuilderCopy = {
   title: "Prompt / 上下文草稿",
-  description: "根据镜头人物、场景、状态和参考图生成可编辑草稿，不会自动保存或开始生成。",
+  description:
+    "根据镜头人物、场景、状态和参考图生成可编辑草稿，不会自动保存或开始生成。",
   generate: "生成提示词草稿",
   generating: "正在生成...",
   regenerate: "重新生成草稿",
@@ -22,5 +23,27 @@ export const promptBuilderCopy = {
   videoFilled: "已填入视频运动提示词草稿，请检查后手动保存任务。",
   noDraft: "还没有生成提示词草稿。",
   noWarnings: "当前没有明显缺失项。",
-  safeNote: "仅生成草稿，不会修改镜头、任务或生成记录。"
+  safeNote: "仅生成草稿，不会修改镜头、任务或生成记录。",
+  generationSettings: "生成设置",
+  stylePreset: "风格预设",
+  clearOverrides: "清空覆盖项",
+  startActionOverride: "首帧动作补充",
+  endActionOverride: "尾帧动作补充",
+  motionDirectionOverride: "视频运动补充",
+  cameraMotionOverride: "镜头运动补充",
+  visualStyleOverride: "画面风格补充",
+  moodOverride: "情绪氛围补充",
+  overridePlaceholder: "仅影响本次草稿生成，不会自动保存",
+  styleLabels: {
+    cinematic_short_drama: "短剧电影感",
+    ultra_realistic: "超写实",
+    rain_night_neon: "雨夜霓虹",
+    office_drama: "职场压迫感",
+    emotional_closeup: "情绪特写",
+    action_tension: "动作紧张感"
+  },
+  fillFirstFrame: "填入首帧提示词",
+  fillEndFrame: "填入尾帧提示词",
+  firstFrameFilled: "已填入首帧提示词草稿，请检查后手动保存任务。",
+  endFrameFilled: "已填入尾帧提示词草稿，请检查后手动保存任务。"
 };

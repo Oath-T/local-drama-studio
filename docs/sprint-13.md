@@ -74,6 +74,19 @@ Stable codes include:
 - `WEAK_END_FRAME_SIGNAL`
 - `NO_CAMERA_MOTION`
 
+## Sprint 13.1 Extension
+
+Sprint 13.1 adds request-scoped quality controls on top of this read-only builder:
+
+- Fixed style presets for short drama, ultra-realistic, rainy neon night, office drama,
+  emotional close-up, and action tension.
+- One-time overrides for start action, end action, motion direction, camera motion,
+  visual style, and mood.
+- Separate first-frame and end-frame fill actions for keyframe tasks.
+
+These controls remain non-persistent. They do not modify shots, tasks, runs, outputs,
+assets, ComfyUI workflows, providers, or manifests. See `docs/sprint-13-1.md`.
+
 ## Explicit Non-Goals
 
 Sprint 13 does not implement LLM calls, OpenAI calls, local model calls, vision model calls, prompt persistence, prompt versioning, automatic task saving, automatic mark-ready, automatic generation, new ComfyUI workflows, runner/provider changes, workflow JSON changes, manifest changes, database migrations, subtitles, dubbing, music, editing, or automatic directing.

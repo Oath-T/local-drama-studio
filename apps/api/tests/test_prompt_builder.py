@@ -195,6 +195,7 @@ def test_prompt_draft_returns_stable_complete_context(migrated_client: TestClien
     assert first.json() == second.json()
     payload = first.json()
     assert "generated_at" not in payload
+    assert payload["applied_style"] == "cinematic_short_drama"
     assert "男主" in payload["context_summary_zh"]
     assert "办公楼门口" in payload["context_summary_zh"]
     assert "cinematic short drama" in payload["first_frame_prompt_en"]
@@ -230,6 +231,54 @@ def test_prompt_draft_empty_context_returns_safe_warnings(migrated_client: TestC
     assert "WEAK_END_FRAME_SIGNAL" in codes
     assert "NO_CAMERA_MOTION" in codes
     assert payload["camera_motion"] == "subtle cinematic camera movement, stable framing"
+
+
+def test_prompt_draft_uses_overrides_and_style_without_writing(
+    migrated_client: TestClient,
+) -> None:
+    project = create_project(migrated_client, "Override Context")
+    shot = migrated_client.post(
+        f"/api/projects/{project['id']}/shots",
+        json={"name": "Override Shot"},
+    ).json()
+    before = table_counts()
+    body = {
+        "style": "rain_night_neon",
+        "overrides": {
+            "start_action": "the lead turns toward the rain-soaked doorway",
+            "end_action": "the lead steps into the neon rain with a resolved stare",
+            "motion_direction": "move from hesitation into a decisive forward step",
+            "camera_motion": "slow cinematic push-in with gentle handheld sway",
+            "visual_style": "cold blue neon reflections on wet pavement",
+            "mood": "suppressed anger becoming determination",
+        },
+    }
+
+    first = migrated_client.post(
+        f"/api/projects/{project['id']}/shots/{shot['id']}/prompt-draft",
+        json=body,
+    )
+    second = migrated_client.post(
+        f"/api/projects/{project['id']}/shots/{shot['id']}/prompt-draft",
+        json=body,
+    )
+
+    assert first.status_code == 200
+    assert first.json() == second.json()
+    payload = first.json()
+    codes = {item["code"] for item in payload["warnings"]}
+    assert payload["applied_style"] == "rain_night_neon"
+    assert "the lead turns toward the rain-soaked doorway" in payload["first_frame_prompt_en"]
+    assert "the lead steps into the neon rain" in payload["end_frame_prompt_en"]
+    assert "move from hesitation into a decisive forward step" in payload["motion_prompt_en"]
+    assert payload["camera_motion"] == "slow cinematic push-in with gentle handheld sway"
+    assert "rainy night neon atmosphere" in payload["first_frame_prompt_en"]
+    assert "cold blue neon reflections" in payload["motion_prompt_en"]
+    assert "suppressed anger becoming determination" in payload["end_frame_prompt_en"]
+    assert "OVERRIDE_USED" in codes
+    assert "STYLE_PRESET_USED" in codes
+    assert "WEAK_END_FRAME_SIGNAL" not in codes
+    assert table_counts() == before
 
 
 def test_prompt_draft_cross_project_access_fails(migrated_client: TestClient) -> None:

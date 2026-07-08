@@ -17,11 +17,21 @@ from app.repository.prompt_context_repository import (
     PromptContextReferenceData,
     PromptContextRepository,
 )
+from app.service.prompt_style_presets import get_style_preset
 
 DEFAULT_NEGATIVE_PROMPT_EN = (
     "low quality, blurry, distorted face, bad hands, extra fingers, text, watermark, "
     "logo, anime, cartoon, deformed body, inconsistent character, inconsistent clothing, "
     "flickering, camera jump"
+)
+
+OVERRIDE_FIELDS = (
+    "start_action",
+    "end_action",
+    "motion_direction",
+    "camera_motion",
+    "visual_style",
+    "mood",
 )
 
 SHOT_SCALE_LABELS = {
@@ -130,16 +140,18 @@ class PromptDraftService:
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        warnings = self._warnings(data)
+        warnings = self._warnings(data, payload)
+        preset = get_style_preset(payload.style)
         negative_prompt = DEFAULT_NEGATIVE_PROMPT_EN if payload.include_negative_prompt else ""
         return PromptDraftResponse(
             source_shot_updated_at=ensure_utc(data.shot.updated_at),
+            applied_style=preset.style,
             context_summary_zh=self._context_summary_zh(data),
-            first_frame_prompt_en=self._first_frame_prompt(data),
-            end_frame_prompt_en=self._end_frame_prompt(data),
-            motion_prompt_en=self._motion_prompt(data),
+            first_frame_prompt_en=self._first_frame_prompt(data, payload),
+            end_frame_prompt_en=self._end_frame_prompt(data, payload),
+            motion_prompt_en=self._motion_prompt(data, payload),
             negative_prompt_en=negative_prompt,
-            camera_motion=self._camera_motion(data.shot),
+            camera_motion=self._camera_motion(data.shot, payload),
             warnings=warnings,
         )
 
@@ -171,45 +183,72 @@ class PromptDraftService:
             f"镜头画面：{visual}。镜头动作：{action}。情绪氛围：{mood}。"
         )
 
-    def _first_frame_prompt(self, data: PromptContextData) -> str:
+    def _first_frame_prompt(self, data: PromptContextData, payload: PromptDraftRequest) -> str:
+        preset = get_style_preset(payload.style)
+        start_action = override_value(payload, "start_action")
         parts = [
-            "cinematic short drama still frame",
+            "cinematic short drama first frame",
             "vertical 9:16 composition",
             self._shot_camera_text(data.shot),
             self._scene_prompt_text(data),
             self._character_prompt_text(data.characters),
-            phrase("current action", data.shot.action_summary),
-            phrase("facial and emotional mood", data.shot.mood_description),
+            phrase("first frame action", start_action or data.shot.action_summary),
+            phrase(
+                "facial and emotional mood",
+                override_value(payload, "mood") or data.shot.mood_description,
+            ),
             phrase("visual description", data.shot.visual_description),
             phrase("focal subject", data.shot.focal_subject),
-            "realistic live-action look",
+            preset.frame_fragment,
+            phrase("visual style", override_value(payload, "visual_style")),
         ]
         return join_prompt(parts)
 
-    def _end_frame_prompt(self, data: PromptContextData) -> str:
+    def _end_frame_prompt(self, data: PromptContextData, payload: PromptDraftRequest) -> str:
+        preset = get_style_preset(payload.style)
+        end_action = override_value(payload, "end_action")
         parts = [
             "cinematic short drama end frame",
             "same character, same face, same outfit, same scene",
-            "continuity from the first frame",
+            "strong continuity from the first frame",
+            "clear emotion transition while preserving identity",
             self._scene_prompt_text(data),
             self._character_prompt_text(data.characters),
-            phrase("ending action beat", data.shot.action_summary),
-            phrase("emotional change", data.shot.mood_description),
+            phrase("ending action beat", end_action or data.shot.action_summary),
+            phrase(
+                "emotional change",
+                override_value(payload, "mood") or data.shot.mood_description,
+            ),
             phrase("final visual state", data.shot.visual_description),
             phrase("focal subject", data.shot.focal_subject),
+            preset.frame_fragment,
+            phrase("visual style", override_value(payload, "visual_style")),
             "avoid face change, avoid outfit change, stable identity continuity",
         ]
         return join_prompt(parts)
 
-    def _motion_prompt(self, data: PromptContextData) -> str:
+    def _motion_prompt(self, data: PromptContextData, payload: PromptDraftRequest) -> str:
+        preset = get_style_preset(payload.style)
         parts = [
             "smooth cinematic short drama motion",
-            self._camera_motion(data.shot),
+            self._camera_motion(data.shot, payload),
             self._character_motion_text(data.characters),
+            phrase("motion direction", override_value(payload, "motion_direction")),
             phrase("main action change", data.shot.action_summary),
-            phrase("emotional transition", data.shot.mood_description),
+            phrase(
+                "emotional transition",
+                override_value(payload, "mood") or data.shot.mood_description,
+            ),
             self._environment_motion_text(data),
-            "keep same face, keep same outfit, avoid camera jump, stable framing",
+            preset.motion_fragment,
+            phrase("visual style", override_value(payload, "visual_style")),
+            "smooth transition between first and end frame",
+            "stable facial expression continuity",
+            "natural environmental motion",
+            (
+                "keep same face, keep same outfit, avoid flicker, avoid jump cut, "
+                "avoid camera jump, stable framing"
+            ),
         ]
         return join_prompt(parts)
 
@@ -308,7 +347,10 @@ class PromptDraftService:
         ]
         return join_prompt(parts) or "subtle atmospheric movement"
 
-    def _camera_motion(self, shot: ShotRecord) -> str:
+    def _camera_motion(self, shot: ShotRecord, payload: PromptDraftRequest | None = None) -> str:
+        override = override_value(payload, "camera_motion") if payload else None
+        if override:
+            return override
         if shot.camera_movement == "custom" and clean(shot.custom_camera_movement):
             return str(shot.custom_camera_movement).strip()
         label = CAMERA_MOVEMENT_LABELS.get(shot.camera_movement)
@@ -316,8 +358,14 @@ class PromptDraftService:
             return label
         return "subtle cinematic camera movement, stable framing"
 
-    def _warnings(self, data: PromptContextData) -> list[PromptDraftWarning]:
+    def _warnings(
+        self, data: PromptContextData, payload: PromptDraftRequest
+    ) -> list[PromptDraftWarning]:
         warnings: list[PromptDraftWarning] = []
+        if has_overrides(payload):
+            warnings.append(warning("OVERRIDE_USED", "已使用本次生成覆盖项。", "info"))
+        if payload.style != "cinematic_short_drama":
+            warnings.append(warning("STYLE_PRESET_USED", "已使用风格预设。", "info"))
         if not data.characters:
             warnings.append(warning("NO_CHARACTERS", "镜头还没有参与人物。"))
         for item in data.characters:
@@ -344,7 +392,7 @@ class PromptDraftService:
             warnings.append(warning("SHOT_VISUAL_DESCRIPTION_MISSING", "缺少画面描述。"))
         if not clean(data.shot.action_summary):
             warnings.append(warning("SHOT_ACTION_MISSING", "缺少动作描述。"))
-        if not any(
+        if not override_value(payload, "end_action") and not any(
             clean(value)
             for value in [
                 data.shot.action_summary,
@@ -382,6 +430,17 @@ def unique_warnings(warnings: list[PromptDraftWarning]) -> list[PromptDraftWarni
         seen.add(item.code)
         result.append(item)
     return result
+
+
+def has_overrides(payload: PromptDraftRequest) -> bool:
+    return any(override_value(payload, field) for field in OVERRIDE_FIELDS)
+
+
+def override_value(payload: PromptDraftRequest | None, field: str) -> str | None:
+    if payload is None or payload.overrides is None:
+        return None
+    value = getattr(payload.overrides, field)
+    return clean(value) or None
 
 
 def label_or_custom(value: str | None, custom: str | None, labels: dict[str, str]) -> str:

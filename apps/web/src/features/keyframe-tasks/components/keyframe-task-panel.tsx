@@ -432,27 +432,31 @@ function KeyframeTaskEditorDialog({
       })
   });
   const promptDraftMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (frame: "first" | "end") =>
       buildPromptDraft(projectId, shot.id, {
         target: "keyframe",
         style: "cinematic_short_drama",
         language: "en",
         include_negative_prompt: true
-      }),
-    onSuccess: (draft) => {
+      }).then((draft) => ({ draft, frame })),
+    onSuccess: ({ draft, frame }) => {
       if (
         hasKeyframePromptConflict(form.getValues()) &&
         !window.confirm(promptBuilderCopy.overwriteConfirm)
       ) {
         return;
       }
-      const values = keyframeFieldsFromPromptDraft(draft);
+      const values = keyframeFieldsFromPromptDraft(draft, frame);
       form.setValue("prompt_en", values.prompt_en, { shouldDirty: true, shouldTouch: true });
       form.setValue("negative_prompt", values.negative_prompt, {
         shouldDirty: true,
         shouldTouch: true
       });
-      onMessage({ tone: "success", text: promptBuilderCopy.keyframeFilled });
+      onMessage({
+        tone: "success",
+        text:
+          frame === "end" ? promptBuilderCopy.endFrameFilled : promptBuilderCopy.firstFrameFilled
+      });
     },
     onError: (error) =>
       onMessage({
@@ -627,17 +631,30 @@ function KeyframeTaskEditorDialog({
               </div>
               <p className="mt-1 text-xs text-muted">{promptBuilderCopy.safeNote}</p>
             </div>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => promptDraftMutation.mutate()}
-              disabled={promptDraftMutation.isPending}
-            >
-              <Copy className="h-4 w-4" aria-hidden="true" />
-              {promptDraftMutation.isPending
-                ? promptBuilderCopy.generating
-                : promptBuilderCopy.fillKeyframe}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => promptDraftMutation.mutate("first")}
+                disabled={promptDraftMutation.isPending}
+              >
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                {promptDraftMutation.isPending
+                  ? promptBuilderCopy.generating
+                  : promptBuilderCopy.fillFirstFrame}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => promptDraftMutation.mutate("end")}
+                disabled={promptDraftMutation.isPending}
+              >
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                {promptDraftMutation.isPending
+                  ? promptBuilderCopy.generating
+                  : promptBuilderCopy.fillEndFrame}
+              </Button>
+            </div>
           </div>
           <Field label={keyframeTaskCopy.fields.promptZh}>
             <Textarea rows={5} {...form.register("prompt_zh")} />

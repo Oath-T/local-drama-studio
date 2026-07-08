@@ -176,7 +176,7 @@ Shot recommendations are computed from current shot parameters and asset metadat
 
 The unified Asset Picker is read-only and currently supports project or shot-scoped selection for characters, scenes, frame images, character looks, scene states, and shot-context reference images. Actual changes still go through the existing shot, shot-reference, keyframe-task, or video-task APIs.
 
-The Prompt / Context Builder is read-only and rule-based. It builds editable prompt drafts from the current shot context, does not call LLMs or vision models, does not save Prompt Draft records, and does not trigger ComfyUI. Keyframe and video task panels can fill their existing form fields from the draft, but users must still save and start generation manually.
+The Prompt / Context Builder is read-only and rule-based. It builds editable prompt drafts from the current shot context, does not call LLMs or vision models, does not save Prompt Draft records, and does not trigger ComfyUI. Keyframe and video task panels can fill their existing form fields from the draft, but users must still save and start generation manually. Sprint 13.1 adds request-scoped style presets and one-time action, motion, camera, visual-style, and mood overrides; these controls are not persisted.
 
 Vision analysis is user-triggered per reference image. Suggestions are stored separately from official metadata and must be accepted through the dedicated review flow before they change reference metadata. The API starts without an OpenAI key; manual editing remains available.
 
