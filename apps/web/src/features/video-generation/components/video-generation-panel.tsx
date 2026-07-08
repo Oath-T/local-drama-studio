@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Download, Edit, ExternalLink, Play, Plus, RefreshCw, RotateCcw, Save, Star, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Download, Edit, ExternalLink, Play, Plus, RefreshCw, RotateCcw, Save, Star, Trash2, Upload, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 
@@ -28,6 +28,9 @@ import { fetchKeyframeRuns } from "@/features/keyframe-generation/api";
 import { fetchSystemCapabilities } from "@/features/keyframe-generation/api";
 import type { KeyframeOutput } from "@/features/keyframe-generation/types";
 import { fetchKeyframeTasks } from "@/features/keyframe-tasks/api";
+import { buildPromptDraft } from "@/features/prompt-builder/api";
+import { hasVideoPromptConflict, videoFieldsFromPromptDraft } from "@/features/prompt-builder/apply";
+import { promptBuilderCopy } from "@/features/prompt-builder/copy";
 import type { Shot } from "@/features/shots/types";
 import { shotKeys } from "@/features/shots/api";
 import { ApiClientError } from "@/lib/api-client";
@@ -463,6 +466,39 @@ function VideoTaskEditor({
     },
     onError: (error) => onMessage({ tone: "error", text: getErrorText(error, "视频任务保存失败") })
   });
+  const promptDraftMutation = useMutation({
+    mutationFn: () =>
+      buildPromptDraft(projectId, shot.id, {
+        target: "video",
+        style: "cinematic_short_drama",
+        language: "en",
+        include_negative_prompt: true
+      }),
+    onSuccess: (draft) => {
+      if (
+        hasVideoPromptConflict(form.getValues()) &&
+        !window.confirm(promptBuilderCopy.overwriteConfirm)
+      ) {
+        return;
+      }
+      const values = videoFieldsFromPromptDraft(draft);
+      form.setValue("prompt", values.prompt, { shouldDirty: true, shouldTouch: true });
+      form.setValue("negative_prompt", values.negative_prompt, {
+        shouldDirty: true,
+        shouldTouch: true
+      });
+      form.setValue("camera_motion", values.camera_motion, {
+        shouldDirty: true,
+        shouldTouch: true
+      });
+      onMessage({ tone: "success", text: promptBuilderCopy.videoFilled });
+    },
+    onError: (error) =>
+      onMessage({
+        tone: "error",
+        text: promptBuilderCopy.loadFailed
+      })
+  });
   const readyMutation = useMutation({
     mutationFn: () => markVideoTaskReady(projectId, task.id),
     onSuccess: async (updated) => {
@@ -577,6 +613,25 @@ function VideoTaskEditor({
           <Input {...form.register("name")} />
           <FormError>{form.formState.errors.name?.message}</FormError>
         </Field>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background p-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">
+              {promptBuilderCopy.generateFromShot}
+            </div>
+            <p className="mt-1 text-xs text-muted">{promptBuilderCopy.safeNote}</p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => promptDraftMutation.mutate()}
+            disabled={promptDraftMutation.isPending}
+          >
+            <Wand2 className="h-4 w-4" aria-hidden="true" />
+            {promptDraftMutation.isPending
+              ? promptBuilderCopy.generating
+              : promptBuilderCopy.fillVideo}
+          </Button>
+        </div>
         <Field label={videoGenerationCopy.fields.prompt}>
           <Textarea rows={4} {...form.register("prompt")} />
           <FormError>{form.formState.errors.prompt?.message}</FormError>

@@ -27,6 +27,8 @@ export const shotKeys = {
     [...shotKeys.detail(projectId, shotId), "references"] as const,
   recommendations: (projectId: string, shotId: string) =>
     [...shotKeys.detail(projectId, shotId), "recommendations"] as const,
+  promptDraft: (projectId: string, shotId: string) =>
+    [...shotKeys.detail(projectId, shotId), "prompt-draft"] as const,
   keyframeTasks: (projectId: string, shotId: string) =>
     [...shotKeys.detail(projectId, shotId), "keyframe-tasks"] as const,
   keyframeTask: (projectId: string, taskId: string) =>

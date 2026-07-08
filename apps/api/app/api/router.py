@@ -9,6 +9,7 @@ from app.api.health import router as health_router
 from app.api.keyframe_generation import router as keyframe_generation_router
 from app.api.keyframe_tasks import router as keyframe_tasks_router
 from app.api.projects import router as projects_router
+from app.api.prompt_builder import router as prompt_builder_router
 from app.api.scenes import router as scenes_router
 from app.api.shot_recommendations import router as shot_recommendations_router
 from app.api.shots import router as shots_router
@@ -22,6 +23,7 @@ api_router.include_router(projects_router)
 api_router.include_router(characters_router)
 api_router.include_router(scenes_router)
 api_router.include_router(shots_router)
+api_router.include_router(prompt_builder_router)
 api_router.include_router(asset_summaries_router)
 api_router.include_router(asset_picker_router)
 api_router.include_router(keyframe_tasks_router)

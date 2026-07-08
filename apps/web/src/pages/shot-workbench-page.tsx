@@ -35,6 +35,7 @@ import { fetchProject, projectKeys } from "@/features/projects/api";
 import { fetchSceneReferences, fetchScenes, fetchSceneStates, sceneKeys } from "@/features/scenes/api";
 import type { Scene, SceneReference, SceneState } from "@/features/scenes/types";
 import { KeyframeTaskPanel } from "@/features/keyframe-tasks/components/keyframe-task-panel";
+import { PromptDraftCard } from "@/features/prompt-builder/components/prompt-draft-card";
 import { ShotRecommendationPanel } from "@/features/shots/components/shot-recommendation-panel";
 import {
   addShotCharacter,
@@ -954,6 +955,7 @@ function ReferencePanel({
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
       <div className="grid gap-4">
         <ShotAssetSummaryCard projectId={projectId} shotId={shot.id} />
+        <PromptDraftCard projectId={projectId} shotId={shot.id} />
         <Button type="button" variant="secondary" onClick={() => setReferencePickerOpen(true)}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {assetPickerCopy.chooseReferenceImage}

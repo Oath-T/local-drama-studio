@@ -43,6 +43,9 @@ import { KeyframeInheritedAssetSummary } from "@/features/asset-summaries/compon
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
 import { KeyframeGenerationSection } from "@/features/keyframe-generation/components/keyframe-generation-section";
+import { buildPromptDraft } from "@/features/prompt-builder/api";
+import { keyframeFieldsFromPromptDraft, hasKeyframePromptConflict } from "@/features/prompt-builder/apply";
+import { promptBuilderCopy } from "@/features/prompt-builder/copy";
 import { shotKeys } from "@/features/shots/api";
 import { shotCopy } from "@/features/shots/copy";
 import { VideoGenerationPanel } from "@/features/video-generation/components/video-generation-panel";
@@ -428,6 +431,35 @@ function KeyframeTaskEditorDialog({
         text: getErrorText(error, keyframeTaskCopy.saveFailed)
       })
   });
+  const promptDraftMutation = useMutation({
+    mutationFn: () =>
+      buildPromptDraft(projectId, shot.id, {
+        target: "keyframe",
+        style: "cinematic_short_drama",
+        language: "en",
+        include_negative_prompt: true
+      }),
+    onSuccess: (draft) => {
+      if (
+        hasKeyframePromptConflict(form.getValues()) &&
+        !window.confirm(promptBuilderCopy.overwriteConfirm)
+      ) {
+        return;
+      }
+      const values = keyframeFieldsFromPromptDraft(draft);
+      form.setValue("prompt_en", values.prompt_en, { shouldDirty: true, shouldTouch: true });
+      form.setValue("negative_prompt", values.negative_prompt, {
+        shouldDirty: true,
+        shouldTouch: true
+      });
+      onMessage({ tone: "success", text: promptBuilderCopy.keyframeFilled });
+    },
+    onError: (error) =>
+      onMessage({
+        tone: "error",
+        text: promptBuilderCopy.loadFailed
+      })
+  });
   const addReferenceMutation = useMutation({
     mutationFn: (payload: {
       shotReferenceId: string;
@@ -587,6 +619,25 @@ function KeyframeTaskEditorDialog({
               <Input aria-label={keyframeTaskCopy.fields.outputCount} inputMode="numeric" {...form.register("output_count")} />
               <FormError>{form.formState.errors.output_count?.message}</FormError>
             </Field>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background p-3">
+            <div>
+              <div className="text-sm font-medium text-foreground">
+                {promptBuilderCopy.generateFromShot}
+              </div>
+              <p className="mt-1 text-xs text-muted">{promptBuilderCopy.safeNote}</p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => promptDraftMutation.mutate()}
+              disabled={promptDraftMutation.isPending}
+            >
+              <Copy className="h-4 w-4" aria-hidden="true" />
+              {promptDraftMutation.isPending
+                ? promptBuilderCopy.generating
+                : promptBuilderCopy.fillKeyframe}
+            </Button>
           </div>
           <Field label={keyframeTaskCopy.fields.promptZh}>
             <Textarea rows={5} {...form.register("prompt_zh")} />
