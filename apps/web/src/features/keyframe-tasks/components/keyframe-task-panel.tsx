@@ -36,6 +36,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { Textarea } from "@/components/ui/textarea";
+import { AssetPickerDialog } from "@/features/asset-picker/components/asset-picker-dialog";
+import { assetPickerCopy } from "@/features/asset-picker/copy";
+import type { PickerOptionItem } from "@/features/asset-picker/types";
 import { KeyframeInheritedAssetSummary } from "@/features/asset-summaries/components/asset-summary-cards";
 import { ConfirmDeleteDialog } from "@/features/characters/components/confirm-delete-dialog";
 import { Badge } from "@/features/characters/components/status-badge";
@@ -393,6 +396,7 @@ function KeyframeTaskEditorDialog({
     defaultValues: taskToFormValues(task)
   });
   const [selectedShotReferenceId, setSelectedShotReferenceId] = useState(NONE);
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const selectedShotReference = useMemo(
     () => shot.references.find((reference) => reference.id === selectedShotReferenceId),
     [selectedShotReferenceId, shot.references]
@@ -425,10 +429,13 @@ function KeyframeTaskEditorDialog({
       })
   });
   const addReferenceMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: {
+      shotReferenceId: string;
+      purpose: KeyframeTaskReferencePurpose;
+    }) =>
       addKeyframeTaskReference(projectId, task?.id || "", {
-        shot_reference_id: selectedShotReferenceId,
-        purpose: selectedPurpose
+        shot_reference_id: payload.shotReferenceId,
+        purpose: payload.purpose
       }),
     onSuccess: async (updated) => {
       await invalidateTaskData(updated.id);
@@ -503,6 +510,19 @@ function KeyframeTaskEditorDialog({
     setSelectedShotReferenceId(value);
     const reference = shot.references.find((item) => item.id === value);
     setSelectedPurpose((reference?.purpose as KeyframeTaskReferencePurpose | undefined) ?? "general");
+  }
+
+  function handlePickerReferenceConfirm(item: PickerOptionItem) {
+    const shotReferenceId = pickerMetadataString(item, "shot_reference_id");
+    const purpose = pickerMetadataString(item, "purpose") ?? "general";
+    if (!shotReferenceId) {
+      onMessage({ tone: "error", text: "只能加入当前镜头已绑定的参考图。" });
+      return;
+    }
+    addReferenceMutation.mutate({
+      shotReferenceId,
+      purpose: purpose as KeyframeTaskReferencePurpose
+    });
   }
 
   const canAddReference = selectedShotReferenceId !== NONE && !addReferenceMutation.isPending;
@@ -654,7 +674,12 @@ function KeyframeTaskEditorDialog({
               </Select>
               <Button
                 type="button"
-                onClick={() => addReferenceMutation.mutate()}
+                onClick={() =>
+                  addReferenceMutation.mutate({
+                    shotReferenceId: selectedShotReferenceId,
+                    purpose: selectedPurpose
+                  })
+                }
                 disabled={!canAddReference}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
@@ -662,6 +687,27 @@ function KeyframeTaskEditorDialog({
               </Button>
             </div>
           )}
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" onClick={() => setReferencePickerOpen(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              {assetPickerCopy.chooseTaskReference}
+            </Button>
+          </div>
+          <AssetPickerDialog
+            open={referencePickerOpen}
+            onOpenChange={setReferencePickerOpen}
+            projectId={projectId}
+            scope="shot"
+            assetType="reference_image"
+            shotId={shot.id}
+            taskId={task.id}
+            source="shot_context"
+            title={assetPickerCopy.chooseTaskReference}
+            description={assetPickerCopy.taskReferenceDescription}
+            disabledMessage={assetPickerCopy.disabledTaskReference}
+            isItemDisabled={(item) => !pickerMetadataString(item, "shot_reference_id")}
+            onConfirm={handlePickerReferenceConfirm}
+          />
         </section>
 
         <section className="grid gap-3 border-t border-border pt-4">
@@ -865,4 +911,9 @@ function shotReferenceLabel(reference: ShotReference) {
 
 function getErrorText(error: unknown, fallback: string) {
   return error instanceof ApiClientError ? error.message : fallback;
+}
+
+function pickerMetadataString(item: PickerOptionItem, key: string): string | null {
+  const value = item.metadata[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

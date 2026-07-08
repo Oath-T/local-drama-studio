@@ -433,6 +433,7 @@ function ShotEditorPanel({
   });
   const selectedSceneId = form.watch("scene_id");
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
+  const [sceneStatePickerOpen, setSceneStatePickerOpen] = useState(false);
   const cameraHeight = form.watch("camera_height");
   const cameraAngle = form.watch("camera_angle");
   const composition = form.watch("composition_type");
@@ -509,6 +510,26 @@ function ShotEditorPanel({
         ...form.getValues(),
         scene_id: nextSceneId,
         scene_state_id: ""
+      })
+    );
+  }
+
+  function handleSceneStatePickerConfirm(item: PickerOptionItem) {
+    if (!shot?.scene_id) {
+      onMessage({ tone: "error", text: "请先选择场景，再选择场景状态" });
+      return;
+    }
+    const nextStateId = item.id;
+    const willClearRefs =
+      hasSceneRefs(shotReferencesQuery.data?.items ?? []) && nextStateId !== shot.scene_state_id;
+    if (willClearRefs && !window.confirm(shotCopy.sceneReferenceClearWarning)) {
+      return;
+    }
+    form.setValue("scene_state_id", nextStateId);
+    updateMutation.mutate(
+      formValuesToPayload({
+        ...form.getValues(),
+        scene_state_id: nextStateId
       })
     );
   }
@@ -597,16 +618,44 @@ function ShotEditorPanel({
             />
           </Field>
           <Field label={shotCopy.fields.sceneState}>
-            <Select value={selectedStateId || NONE} onValueChange={handleStateChange} disabled={stateSelectDisabled}>
-              <SelectTrigger aria-label={shotCopy.fields.sceneState}><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>未选择</SelectItem>
-                {stateOptions.map((state) => <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+              <Select value={selectedStateId || NONE} onValueChange={handleStateChange} disabled={stateSelectDisabled}>
+                <SelectTrigger aria-label={shotCopy.fields.sceneState}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>未选择</SelectItem>
+                  {stateOptions.map((state) => <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  if (!selectedSceneId) {
+                    onMessage({ tone: "error", text: "请先选择场景，再选择场景状态" });
+                    return;
+                  }
+                  setSceneStatePickerOpen(true);
+                }}
+              >
+                {assetPickerCopy.chooseSceneState}
+              </Button>
+            </div>
             {selectedSceneId && statesQuery.isLoading && <FieldHint>{shotCopy.loadingOptions}</FieldHint>}
             {selectedSceneId && statesQuery.isError && <FieldHint tone="error">{shotCopy.statesLoadFailed}</FieldHint>}
             {selectedSceneId && statesQuery.isSuccess && stateOptions.length === 0 && <FieldHint>{shotCopy.noSceneStates}</FieldHint>}
+            {selectedSceneId && (
+              <AssetPickerDialog
+                open={sceneStatePickerOpen}
+                onOpenChange={setSceneStatePickerOpen}
+                projectId={projectId}
+                scope="shot"
+                assetType="scene_state"
+                shotId={shot.id}
+                sceneId={selectedSceneId}
+                title={assetPickerCopy.chooseSceneState}
+                onConfirm={handleSceneStatePickerConfirm}
+              />
+            )}
           </Field>
         </div>
 
@@ -663,6 +712,7 @@ function ShotCharactersEditor({
   const [characterId, setCharacterId] = useState("");
   const [lookId, setLookId] = useState("");
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  const [lookPickerShotCharacter, setLookPickerShotCharacter] = useState<ShotCharacter | null>(null);
   const looksQuery = useQuery({
     queryKey: characterId ? characterKeys.looks(projectId, characterId) : ["looks", "none"],
     queryFn: () => fetchLooks(projectId, characterId),
@@ -689,6 +739,16 @@ function ShotCharactersEditor({
     const defaultLookId =
       typeof item.metadata.default_look_id === "string" ? item.metadata.default_look_id : null;
     onAdd(item.id, defaultLookId);
+  }
+
+  function handleLookPickerConfirm(item: PickerOptionItem) {
+    if (!lookPickerShotCharacter) {
+      return;
+    }
+    updateMutation.mutate({
+      item: lookPickerShotCharacter,
+      patch: { look_id: item.id }
+    });
   }
 
   return (
@@ -745,6 +805,14 @@ function ShotCharactersEditor({
                   <div className="text-xs text-muted">{item.look_name || "未指定造型"}</div>
                 </div>
                 <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    title={assetPickerCopy.chooseCharacterLook}
+                    onClick={() => setLookPickerShotCharacter(item)}
+                  >
+                    {assetPickerCopy.chooseCharacterLook}
+                  </Button>
                   <Button type="button" variant="secondary" size="icon" title="上移" disabled={item.order_index <= 1} onClick={() => moveMutation.mutate({ id: item.id, orderIndex: item.order_index - 1 })}><ArrowUp className="h-4 w-4" aria-hidden="true" /></Button>
                   <Button type="button" variant="secondary" size="icon" title="下移" disabled={item.order_index >= shot.characters.length} onClick={() => moveMutation.mutate({ id: item.id, orderIndex: item.order_index + 1 })}><ArrowDown className="h-4 w-4" aria-hidden="true" /></Button>
                   <ConfirmDeleteDialog
@@ -766,6 +834,24 @@ function ShotCharactersEditor({
               </label>
             </article>
           ))}
+          {lookPickerShotCharacter && (
+            <AssetPickerDialog
+              open={Boolean(lookPickerShotCharacter)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setLookPickerShotCharacter(null);
+                }
+              }}
+              projectId={projectId}
+              scope="shot"
+              assetType="character_look"
+              shotId={shot.id}
+              characterId={lookPickerShotCharacter.character_id}
+              shotCharacterId={lookPickerShotCharacter.id}
+              title={assetPickerCopy.chooseCharacterLook}
+              onConfirm={handleLookPickerConfirm}
+            />
+          )}
         </div>
       )}
     </div>
@@ -789,6 +875,7 @@ function ReferencePanel({
   const [characterPurpose, setCharacterPurpose] = useState<CharacterReferencePurpose>("identity");
   const [scenePurpose, setScenePurpose] = useState<SceneReferencePurpose>("environment");
   const [activeTab, setActiveTab] = useState<"smart" | "keyframes" | "character" | "scene" | "selected">("smart");
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const selectedShotCharacter = shot?.characters.find((item) => item.id === selectedShotCharacterId) ?? shot?.characters[0];
   const selectedCharacter = characters.find((item) => item.id === selectedShotCharacter?.character_id);
   const looksQuery = useQuery({
@@ -825,6 +912,40 @@ function ReferencePanel({
     onSuccess: async () => invalidateShotData(shot?.id)
   });
 
+  function handleReferencePickerConfirm(item: PickerOptionItem) {
+    const referenceType = pickerMetadataString(item, "reference_type");
+    const suggestedPurpose = pickerMetadataString(item, "suggested_purpose");
+    if (referenceType === "character") {
+      const characterReferenceId = pickerMetadataString(item, "character_reference_id");
+      const shotCharacterId = pickerMetadataString(item, "shot_character_id");
+      if (!characterReferenceId) {
+        onMessage({ tone: "error", text: "人物参考图信息不完整，无法绑定。" });
+        return;
+      }
+      addRefMutation.mutate({
+        reference_type: "character",
+        character_reference_id: characterReferenceId,
+        shot_character_id: shotCharacterId || undefined,
+        purpose: (suggestedPurpose || "identity") as CharacterReferencePurpose
+      });
+      return;
+    }
+    if (referenceType === "scene") {
+      const sceneReferenceId = pickerMetadataString(item, "scene_reference_id");
+      if (!sceneReferenceId) {
+        onMessage({ tone: "error", text: "场景参考图信息不完整，无法绑定。" });
+        return;
+      }
+      addRefMutation.mutate({
+        reference_type: "scene",
+        scene_reference_id: sceneReferenceId,
+        purpose: (suggestedPurpose || "environment") as SceneReferencePurpose
+      });
+      return;
+    }
+    onMessage({ tone: "error", text: "当前参考图类型暂不支持绑定。" });
+  }
+
   if (!shot) {
     return <aside className="rounded-md border border-border bg-panel p-4 text-sm text-muted">请选择镜头。</aside>;
   }
@@ -833,6 +954,22 @@ function ReferencePanel({
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
       <div className="grid gap-4">
         <ShotAssetSummaryCard projectId={projectId} shotId={shot.id} />
+        <Button type="button" variant="secondary" onClick={() => setReferencePickerOpen(true)}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          {assetPickerCopy.chooseReferenceImage}
+        </Button>
+        <AssetPickerDialog
+          open={referencePickerOpen}
+          onOpenChange={setReferencePickerOpen}
+          projectId={projectId}
+          scope="shot"
+          assetType="reference_image"
+          shotId={shot.id}
+          source="shot_context"
+          title={assetPickerCopy.chooseReferenceImage}
+          description={assetPickerCopy.referenceDescription}
+          onConfirm={handleReferencePickerConfirm}
+        />
         <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-background p-1 text-xs">
           {(["smart", "keyframes", "character", "scene", "selected"] as const).map((tab) => (
             <button
@@ -1109,6 +1246,11 @@ function formValuesToPayload(values: ShotFormValues): ShotInput {
 
 function hasSceneRefs(references: ShotReference[]) {
   return references.some((reference) => reference.reference_type === "scene");
+}
+
+function pickerMetadataString(item: PickerOptionItem, key: string): string | null {
+  const value = item.metadata[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function getErrorText(error: unknown, fallback: string) {

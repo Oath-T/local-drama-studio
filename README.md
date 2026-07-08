@@ -173,6 +173,8 @@ POST   /api/projects/{project_id}/scenes/{scene_id}/states/{state_id}/references
 
 Shot recommendations are computed from current shot parameters and asset metadata. They are not stored, do not call AI models, and do not automatically bind references.
 
+The unified Asset Picker is read-only and currently supports project or shot-scoped selection for characters, scenes, frame images, character looks, scene states, and shot-context reference images. Actual changes still go through the existing shot, shot-reference, keyframe-task, or video-task APIs.
+
 Vision analysis is user-triggered per reference image. Suggestions are stored separately from official metadata and must be accepted through the dedicated review flow before they change reference metadata. The API starts without an OpenAI key; manual editing remains available.
 
 Keyframe tasks store a validated shot snapshot, prompt fields, generation parameters, and selected task references. They only support `draft` and `ready` statuses in Sprint 7 and never call image generation services.

@@ -2,11 +2,23 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-PickerAssetType = Literal["character", "scene", "frame_image"]
+PickerAssetType = Literal[
+    "character",
+    "scene",
+    "frame_image",
+    "character_look",
+    "scene_state",
+    "reference_image",
+]
 PickerScope = Literal["project", "shot"]
 PickerSourceKind = Literal[
     "character",
     "scene",
+    "character_look",
+    "scene_state",
+    "character_reference",
+    "scene_reference",
+    "shot_reference",
     "keyframe_output",
     "media_asset",
 ]

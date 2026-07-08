@@ -29,10 +29,17 @@ export function AssetPickerDialog({
   scope,
   assetType,
   shotId,
+  characterId,
+  sceneId,
+  shotCharacterId,
+  taskId,
+  source,
   title,
   description,
   confirmLabel = assetPickerCopy.confirm,
   disabledItemIds = [],
+  isItemDisabled,
+  disabledMessage = assetPickerCopy.disabledSelected,
   onConfirm
 }: {
   open: boolean;
@@ -41,10 +48,17 @@ export function AssetPickerDialog({
   scope: PickerScope;
   assetType: PickerAssetType;
   shotId?: string;
+  characterId?: string;
+  sceneId?: string;
+  shotCharacterId?: string;
+  taskId?: string;
+  source?: "shot_context";
   title: string;
   description?: string;
   confirmLabel?: string;
   disabledItemIds?: string[];
+  isItemDisabled?: (item: PickerOptionItem) => boolean;
+  disabledMessage?: string;
   onConfirm: (item: PickerOptionItem) => void;
 }) {
   const [queryText, setQueryText] = useState("");
@@ -55,6 +69,11 @@ export function AssetPickerDialog({
     scope,
     assetType,
     shotId,
+    characterId,
+    sceneId,
+    shotCharacterId,
+    taskId,
+    source,
     q: queryText,
     limit: 40
   };
@@ -80,7 +99,7 @@ export function AssetPickerDialog({
   }, [items, selectedId]);
 
   function isDisabled(item: PickerOptionItem) {
-    return item.is_selected || disabledIds.has(item.id);
+    return item.is_selected || disabledIds.has(item.id) || Boolean(isItemDisabled?.(item));
   }
 
   return (
@@ -148,7 +167,7 @@ export function AssetPickerDialog({
           )}
 
           {selectedItem && isDisabled(selectedItem) && (
-            <StatusMessage tone="neutral">{assetPickerCopy.disabledSelected}</StatusMessage>
+            <StatusMessage tone="neutral">{disabledMessage}</StatusMessage>
           )}
 
           <div className="flex justify-end gap-2 border-t border-border pt-4">

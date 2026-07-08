@@ -203,8 +203,17 @@ const secondScene: Scene = {
 const secondLook: CharacterLook = {
   ...look,
   id: secondLookId,
-  character_id: secondCharacterId,
+  character_id: characterId,
   name: "Noir Look",
+  primary_reference: null,
+  reference_count: 0
+};
+
+const secondCharacterLook: CharacterLook = {
+  ...look,
+  id: "30303030-3030-4303-8303-303030303030",
+  character_id: secondCharacterId,
+  name: "Second Character Look",
   primary_reference: null,
   reference_count: 0
 };
@@ -213,7 +222,7 @@ const secondCharacter: Character = {
   ...character,
   id: secondCharacterId,
   name: "Second Character",
-  default_look: secondLook,
+  default_look: secondCharacterLook,
   look_count: 1,
   reference_count: 0
 };
@@ -1004,6 +1013,145 @@ function mockShotApi(
         }));
         return jsonResponse({ items, total: items.length });
       }
+      if (assetType === "character_look") {
+        const characterIdParam = parsed.searchParams.get("character_id");
+        const shotCharacterIdParam = parsed.searchParams.get("shot_character_id");
+        const looks = characterIdParam === characterId ? [look, secondLook] : [secondCharacterLook];
+        const items = looks.map((item) => ({
+          id: item.id,
+          type: "character_look",
+          name: item.name,
+          description: item.description,
+          thumbnail_url: item.primary_reference?.media_asset.thumbnail_url ?? null,
+          content_url: item.primary_reference?.media_asset.content_url ?? null,
+          badges: [
+            ...(item.is_default ? ["默认造型"] : []),
+            ...(item.id === lookId && shotCharacterIdParam === shotCharacterId ? ["当前使用"] : [])
+          ],
+          source: { kind: "character_look", label: "角色造型" },
+          is_selected: item.id === lookId && shotCharacterIdParam === shotCharacterId,
+          is_adopted: false,
+          metadata: {
+            character_id: item.character_id,
+            reference_count: item.reference_count
+          }
+        }));
+        return jsonResponse({ items, total: items.length });
+      }
+      if (assetType === "scene_state") {
+        const sceneIdParam = parsed.searchParams.get("scene_id") ?? sceneId;
+        const items = (statesByScene[sceneIdParam] ?? []).map((item) => ({
+          id: item.id,
+          type: "scene_state",
+          name: item.name,
+          description: item.description,
+          thumbnail_url: item.primary_reference?.media_asset.thumbnail_url ?? null,
+          content_url: item.primary_reference?.media_asset.content_url ?? null,
+          badges: [
+            ...(item.is_default ? ["默认状态"] : []),
+            ...(item.id === currentShot().scene_state_id ? ["当前使用"] : [])
+          ],
+          source: { kind: "scene_state", label: "场景状态" },
+          is_selected: item.id === currentShot().scene_state_id,
+          is_adopted: false,
+          metadata: {
+            scene_id: item.scene_id,
+            reference_count: item.reference_count
+          }
+        }));
+        return jsonResponse({ items, total: items.length });
+      }
+      if (assetType === "reference_image") {
+        const taskIdParam = parsed.searchParams.get("task_id");
+        const taskReferenceIds = new Set(
+          taskIdParam
+            ? (keyframeTasks.find((item) => item.id === taskIdParam)?.references ?? []).map(
+                (reference) => reference.shot_reference_id
+              )
+            : []
+        );
+        const items = [
+          ...currentShot().references.map((reference) => {
+            const referenceMedia = reference.media_asset ?? mediaAsset;
+            return {
+              id: reference.id,
+              type: "reference_image",
+              name: referenceMedia.original_filename,
+              description:
+                reference.character_reference?.description ??
+                reference.scene_reference?.description ??
+                "镜头参考图",
+              thumbnail_url: referenceMedia.thumbnail_url,
+              content_url: referenceMedia.content_url,
+              badges: [
+                "镜头参考图",
+                ...(taskReferenceIds.has(reference.id) ? ["已加入任务"] : [])
+              ],
+              source: { kind: "shot_reference", label: "镜头参考图" },
+              is_selected: taskIdParam ? taskReferenceIds.has(reference.id) : true,
+              is_adopted: false,
+              metadata: {
+                reference_type: reference.reference_type,
+                shot_reference_id: reference.id,
+                character_reference_id: reference.character_reference_id,
+                scene_reference_id: reference.scene_reference_id,
+                shot_character_id: reference.shot_character_id,
+                purpose: reference.purpose,
+                suggested_purpose: reference.purpose,
+                is_bound_to_shot: true,
+                is_added_to_task: taskReferenceIds.has(reference.id)
+              }
+            };
+          }),
+          {
+            id: characterReferenceId,
+            type: "reference_image",
+            name: mediaAsset.original_filename,
+            description: characterReference.description,
+            thumbnail_url: mediaAsset.thumbnail_url,
+            content_url: mediaAsset.content_url,
+            badges: ["身份基准图", "主图"],
+            source: { kind: "character_reference", label: "人物参考图" },
+            is_selected: false,
+            is_adopted: false,
+            metadata: {
+              reference_type: "character",
+              shot_reference_id: null,
+              character_reference_id: characterReferenceId,
+              scene_reference_id: null,
+              shot_character_id: shotCharacterId,
+              purpose: "identity",
+              suggested_purpose: "identity",
+              is_bound_to_shot: false,
+              is_added_to_task: false
+            }
+          },
+          {
+            id: sceneReferenceId,
+            type: "reference_image",
+            name: mediaAsset.original_filename,
+            description: sceneReference.description,
+            thumbnail_url: mediaAsset.thumbnail_url,
+            content_url: mediaAsset.content_url,
+            badges: ["空间结构参考图", "主图"],
+            source: { kind: "scene_reference", label: "场景参考图" },
+            is_selected: false,
+            is_adopted: false,
+            metadata: {
+              reference_type: "scene",
+              shot_reference_id: null,
+              character_reference_id: null,
+              scene_reference_id: sceneReferenceId,
+              shot_character_id: null,
+              purpose: "environment",
+              suggested_purpose: "environment",
+              is_bound_to_shot: false,
+              is_added_to_task: false
+            }
+          }
+        ];
+        return jsonResponse({ items, total: items.length });
+      }
       if (assetType === "frame_image") {
         const items = [
           {
@@ -1064,8 +1212,8 @@ function mockShotApi(
       if (options.failCharacters) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
       return jsonResponse({ items: characters, total: characters.length });
     }
-    if (url === `/api/projects/${projectId}/characters/${characterId}/looks`) return jsonResponse({ items: [look], total: 1 });
-    if (url === `/api/projects/${projectId}/characters/${secondCharacterId}/looks`) return jsonResponse({ items: [secondLook], total: 1 });
+    if (url === `/api/projects/${projectId}/characters/${characterId}/looks`) return jsonResponse({ items: [look, secondLook], total: 2 });
+    if (url === `/api/projects/${projectId}/characters/${secondCharacterId}/looks`) return jsonResponse({ items: [secondCharacterLook], total: 1 });
     if (url === `/api/projects/${projectId}/characters/${characterId}/looks/${lookId}/references`) return jsonResponse({ items: [characterReference], total: 1 });
     if (url === `/api/projects/${projectId}/scenes`) {
       if (options.failScenes) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
@@ -1163,6 +1311,80 @@ describe("shot workbench routes", () => {
       const payload = JSON.parse(request?.body ?? "{}");
       expect(payload.scene_id).toBe(secondSceneId);
       expect(payload.scene_state_id).toBeNull();
+    });
+  });
+
+  it("updates a shot character look through the asset picker", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({ characters: [character] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: assetPickerCopy.chooseCharacterLook }));
+    await user.click(await screen.findByRole("button", { name: /Noir Look/ }));
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url.endsWith(`/shots/${shotId}/characters/${shotCharacterId}`) &&
+            request.body?.includes(secondLookId)
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("updates the shot scene state through the asset picker", async () => {
+    const user = userEvent.setup();
+    const alternateState = { ...secondState, scene_id: sceneId, name: "清晨大厅" };
+    const { requests } = mockShotApi({
+      statesByScene: { [sceneId]: [state, alternateState] }
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    const sceneSelect = await screen.findByRole("combobox", { name: shotCopy.fields.scene });
+    await user.click(sceneSelect);
+    await user.click(await screen.findByRole("option", { name: scene.name }));
+    await user.click(await screen.findByRole("button", { name: assetPickerCopy.chooseSceneState }));
+    const stateOption = (await screen.findAllByText("清晨大厅"))
+      .map((item) => item.closest("button"))
+      .find(Boolean);
+    expect(stateOption).toBeDefined();
+    await user.click(stateOption!);
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url === `/api/projects/${projectId}/shots/${shotId}` &&
+            request.body?.includes(secondStateId)
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("adds a shot reference from shot-context asset picker options", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi();
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: assetPickerCopy.chooseReferenceImage }));
+    await user.click((await screen.findAllByRole("button", { name: /reference\.png/ }))[0]);
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/shots/${shotId}/references`) &&
+            request.body?.includes(characterReferenceId) &&
+            request.body?.includes(shotCharacterId)
+        )
+      ).toBe(true);
     });
   });
 
@@ -1283,9 +1505,9 @@ describe("shot workbench routes", () => {
 
     const lookSelect = screen.getByRole("combobox", { name: shotCopy.fields.look });
     await user.click(lookSelect);
-    expect(await screen.findByRole("option", { name: "Noir Look" })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "Second Character Look" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: look.name })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("option", { name: "Noir Look" }));
+    await user.click(screen.getByRole("option", { name: "Second Character Look" }));
     await user.click(screen.getByRole("button", { name: "添加" }));
 
     await waitFor(() => {
@@ -1295,7 +1517,7 @@ describe("shot workbench routes", () => {
             request.method === "POST" &&
             request.url.endsWith(`/shots/${shotId}/characters`) &&
             request.body?.includes(secondCharacterId) &&
-            request.body?.includes(secondLookId)
+            request.body?.includes(secondCharacterLook.id)
         )
       ).toBe(true);
     });
@@ -1548,6 +1770,42 @@ describe("shot workbench routes", () => {
           request.url.endsWith(`/references/${keyframeTaskReferenceId}`)
       )
     ).toBe(true);
+  });
+
+  it("adds keyframe task references through the shot-context asset picker only from existing shot references", async () => {
+    const user = userEvent.setup();
+    const { requests } = mockShotApi({
+      shots: [shotWithReferences],
+      keyframeTasks: [keyframeTask]
+    });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.tab }));
+    await user.click(await screen.findByRole("button", { name: keyframeTaskCopy.edit }));
+    await user.click(await screen.findByRole("button", { name: assetPickerCopy.chooseTaskReference }));
+    const candidateButtons = await screen.findAllByRole("button", { name: /reference\.png/ });
+    const selectableCandidate = candidateButtons.find((button) => !button.hasAttribute("disabled"));
+    expect(selectableCandidate).toBeDefined();
+    await user.click(selectableCandidate!);
+    await user.click(screen.getByRole("button", { name: assetPickerCopy.confirm }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.url.endsWith(`/keyframe-tasks/${keyframeTaskId}/references`) &&
+            request.body?.includes(shotSceneReferenceId)
+        )
+      ).toBe(true);
+    });
+    const request = requests.find(
+      (item) =>
+        item.method === "POST" &&
+        item.url.endsWith(`/keyframe-tasks/${keyframeTaskId}/references`) &&
+        item.body?.includes(shotSceneReferenceId)
+    );
+    expect(request?.body).not.toContain(sceneReferenceId);
   });
 
   it("keeps manual shot tabs usable when keyframe task loading fails", async () => {
