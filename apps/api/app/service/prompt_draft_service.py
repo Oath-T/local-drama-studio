@@ -17,6 +17,27 @@ from app.repository.prompt_context_repository import (
     PromptContextReferenceData,
     PromptContextRepository,
 )
+from app.service.director.composer import (
+    context_summary_zh as director_context_summary_zh,
+)
+from app.service.director.composer import (
+    end_frame_prompt as director_end_frame_prompt,
+)
+from app.service.director.composer import (
+    first_frame_prompt as director_first_frame_prompt,
+)
+from app.service.director.composer import (
+    merge_warnings as merge_director_warnings,
+)
+from app.service.director.composer import (
+    motion_prompt as director_motion_prompt,
+)
+from app.service.director.composer import (
+    negative_prompt as director_negative_prompt,
+)
+from app.service.director.context_builder import build_director_context
+from app.service.director.matcher import recommend_template_id
+from app.service.director.templates import get_template
 from app.service.prompt_style_presets import get_style_preset
 
 DEFAULT_NEGATIVE_PROMPT_EN = (
@@ -141,18 +162,58 @@ class PromptDraftService:
             )
 
         warnings = self._warnings(data, payload)
+        recommended_template_id = recommend_template_id(data.shot)
+        template = get_template(payload.template_id or recommended_template_id)
+        director_context, director_warnings = build_director_context(
+            data=data,
+            template=template,
+            style=payload.style,
+            director_overrides=payload.director_overrides,
+            prompt_overrides=payload.overrides,
+        )
         preset = get_style_preset(payload.style)
-        negative_prompt = DEFAULT_NEGATIVE_PROMPT_EN if payload.include_negative_prompt else ""
+        negative_prompt = director_negative_prompt(payload.include_negative_prompt)
+        first_prompt = join_prompt(
+            [
+                director_first_frame_prompt(director_context, template),
+                phrase("first frame action", override_value(payload, "start_action")),
+                preset.frame_fragment,
+                phrase("visual style", override_value(payload, "visual_style")),
+                phrase("mood", override_value(payload, "mood")),
+            ]
+        )
+        end_prompt = join_prompt(
+            [
+                director_end_frame_prompt(director_context, template),
+                phrase("ending action beat", override_value(payload, "end_action")),
+                preset.frame_fragment,
+                phrase("visual style", override_value(payload, "visual_style")),
+                phrase("emotional change", override_value(payload, "mood")),
+            ]
+        )
+        motion_prompt = join_prompt(
+            [
+                director_motion_prompt(director_context, template),
+                phrase("motion direction", override_value(payload, "motion_direction")),
+                preset.motion_fragment,
+                phrase("visual style", override_value(payload, "visual_style")),
+                phrase("emotional transition", override_value(payload, "mood")),
+            ]
+        )
         return PromptDraftResponse(
             source_shot_updated_at=ensure_utc(data.shot.updated_at),
             applied_style=preset.style,
-            context_summary_zh=self._context_summary_zh(data),
-            first_frame_prompt_en=self._first_frame_prompt(data, payload),
-            end_frame_prompt_en=self._end_frame_prompt(data, payload),
-            motion_prompt_en=self._motion_prompt(data, payload),
+            context_summary_zh=director_context_summary_zh(director_context),
+            first_frame_prompt_en=first_prompt,
+            end_frame_prompt_en=end_prompt,
+            motion_prompt_en=motion_prompt,
             negative_prompt_en=negative_prompt,
             camera_motion=self._camera_motion(data.shot, payload),
-            warnings=warnings,
+            recommended_template_id=recommended_template_id,
+            applied_template_id=template.id,
+            workflow_hint=template.workflow_hint,
+            director_context=director_context,
+            warnings=merge_director_warnings(warnings, director_warnings, template),
         )
 
     def _ensure_project(self, project_id: UUID) -> None:

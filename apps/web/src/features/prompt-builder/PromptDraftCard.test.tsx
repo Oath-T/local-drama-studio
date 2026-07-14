@@ -25,6 +25,52 @@ const draft: PromptDraftResponse = {
   motion_prompt_en: "smooth cinematic short drama motion, slow push-in",
   negative_prompt_en: "low quality, blurry, inconsistent character",
   camera_motion: "slow push-in",
+  recommended_template_id: "enter_room_shock",
+  applied_template_id: "enter_room_shock",
+  workflow_hint: "pose_control",
+  director_context: {
+    shot_id: shotId,
+    template_id: "enter_room_shock",
+    subjects: [
+      {
+        shot_character_id: "33333333-3333-4333-8333-333333333333",
+        character_id: "44444444-4444-4444-8444-444444444444",
+        role: "primary",
+        identity: "男主",
+        look: "黑西装",
+        position: "doorway foreground",
+        start_action: "pushes the door open",
+        end_action: "stands inside the room",
+        expression_start: "urgent",
+        expression_end: "determined"
+      }
+    ],
+    scene: {
+      scene_id: "55555555-5555-4555-8555-555555555555",
+      state_id: "66666666-6666-4666-8666-666666666666",
+      name: "董事会议室",
+      state: "夜晚",
+      layout: "long meeting table, doorway visible",
+      lighting: "cold corporate lighting",
+      environment_motion: "tense stillness"
+    },
+    reaction: {
+      crowd_action: "everyone turns toward the entrance",
+      crowd_emotion: "shock"
+    },
+    camera: {
+      shot_scale: "medium wide shot",
+      angle: "eye-level camera angle",
+      height: "eye-level camera height",
+      lens: "28mm",
+      composition: "subject at doorway, crowd around table",
+      movement: "slow push-in"
+    },
+    style: {
+      preset: "cinematic_short_drama",
+      aspect_ratio: "9:16"
+    }
+  },
   warnings: [{ code: "NO_CAMERA_MOTION", message: "缺少镜头运动描述。", severity: "info" }]
 };
 
@@ -191,6 +237,38 @@ describe("PromptDraftCard", () => {
     });
   });
 
+  it("sends selected template and temporary director overrides", async () => {
+    const user = userEvent.setup();
+    const bodies: PromptDraftRequest[] = [];
+    mockDraftApi({ onBody: (body) => bodies.push(body) });
+
+    renderWithClient(<PromptDraftCard projectId={projectId} shotId={shotId} />);
+
+    await user.click(screen.getByRole("combobox", { name: "镜头模板" }));
+    await user.click(await screen.findByRole("option", { name: "闯入震惊" }));
+    await user.type(screen.getByLabelText("人物位置"), "门口前景");
+    await user.type(screen.getByLabelText("导演首帧动作"), "推门冲进会议室");
+    await user.type(screen.getByLabelText("导演尾帧动作"), "站在会议室内对峙众人");
+    await user.type(screen.getByLabelText("群众动作"), "所有人转头看向门口");
+    await user.type(screen.getByLabelText("群众情绪"), "震惊");
+    await user.type(screen.getByLabelText("构图"), "主角在门口，会议桌和众人可见");
+    await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
+
+    expect(await screen.findByText("导演结构预览")).toBeInTheDocument();
+    expect(screen.getByText(/Workflow hint/)).toBeInTheDocument();
+    expect(bodies[0]).toMatchObject({
+      template_id: "enter_room_shock",
+      director_overrides: {
+        subject_position: "门口前景",
+        start_action: "推门冲进会议室",
+        end_action: "站在会议室内对峙众人",
+        crowd_action: "所有人转头看向门口",
+        crowd_emotion: "震惊",
+        composition: "主角在门口，会议桌和众人可见"
+      }
+    });
+  });
+
   it("clears override settings before regenerating", async () => {
     const user = userEvent.setup();
     const bodies: PromptDraftRequest[] = [];
@@ -203,6 +281,20 @@ describe("PromptDraftCard", () => {
 
     expect(await screen.findByText("镜头上下文")).toBeInTheDocument();
     expect(bodies[0].overrides).toBeUndefined();
+  });
+
+  it("clears temporary director settings before regenerating", async () => {
+    const user = userEvent.setup();
+    const bodies: PromptDraftRequest[] = [];
+    mockDraftApi({ onBody: (body) => bodies.push(body) });
+
+    renderWithClient(<PromptDraftCard projectId={projectId} shotId={shotId} />);
+    await user.type(screen.getByLabelText("人物位置"), "门口");
+    await user.click(screen.getByRole("button", { name: "清空导演设置" }));
+    await user.click(screen.getByRole("button", { name: "生成提示词草稿" }));
+
+    expect(await screen.findByText("导演结构预览")).toBeInTheDocument();
+    expect(bodies[0].director_overrides).toBeUndefined();
   });
 
   it("shows a safe Chinese error without breaking the card", async () => {

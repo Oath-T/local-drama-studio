@@ -2,6 +2,8 @@
 
 Local Drama Studio is a local-first AI short-drama production platform. Sprint 9.2 adds a real Wan2.2 14B first-last-frame ComfyUI workflow definition on top of project, character, scene, shot, rule-based recommendation, visual analysis, keyframe task preparation, keyframe generation, and local ComfyUI video task systems.
 
+Sprint 18 adds a deterministic Director Engine v1 to the existing Prompt / Context Builder. It provides built-in shot templates, Director Context previews, and template-aware prompt drafts without using an LLM, changing the database, or triggering ComfyUI.
+
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure

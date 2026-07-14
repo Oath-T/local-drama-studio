@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { buildPromptDraft } from "../api";
 import { promptBuilderCopy } from "../copy";
 import type {
+  DirectorContext,
+  DirectorOverrides,
   PromptDraftOverrides,
   PromptDraftResponse,
   PromptDraftStyle,
@@ -50,6 +52,34 @@ const emptyOverrides: Record<keyof PromptDraftOverrides, string> = {
   mood: ""
 };
 
+const templateOptions = [
+  "enter_room_shock",
+  "door_open_reveal",
+  "character_walks_forward",
+  "character_turns_head",
+  "emotional_closeup",
+  "two_person_confrontation",
+  "phone_reveal",
+  "meeting_room_wide",
+  "authority_stands_up",
+  "crowd_reaction",
+  "character_leaves",
+  "establishing_scene"
+] as const;
+
+const autoTemplateValue = "__auto__";
+
+const emptyDirectorOverrides: Record<keyof DirectorOverrides, string> = {
+  subject_position: "",
+  start_action: "",
+  end_action: "",
+  crowd_action: "",
+  crowd_emotion: "",
+  camera_movement: "",
+  composition: "",
+  environment_motion: ""
+};
+
 export function PromptDraftCard({
   projectId,
   shotId,
@@ -65,8 +95,11 @@ export function PromptDraftCard({
     "first_frame" | "end_frame" | "video" | null
   >(null);
   const [style, setStyle] = useState<PromptDraftStyle>("cinematic_short_drama");
+  const [templateId, setTemplateId] = useState<string>(autoTemplateValue);
   const [overrides, setOverrides] =
     useState<Record<keyof PromptDraftOverrides, string>>(emptyOverrides);
+  const [directorOverrides, setDirectorOverrides] =
+    useState<Record<keyof DirectorOverrides, string>>(emptyDirectorOverrides);
   const mutation = useMutation({
     mutationFn: () =>
       buildPromptDraft(projectId, shotId, {
@@ -74,7 +107,9 @@ export function PromptDraftCard({
         style,
         language: "en",
         include_negative_prompt: true,
-        overrides: compactOverrides(overrides)
+        overrides: compactOverrides(overrides),
+        template_id: templateId === autoTemplateValue ? null : templateId,
+        director_overrides: compactDirectorOverrides(directorOverrides)
       }),
     onSuccess: (result) => {
       setDraft(result);
@@ -90,6 +125,10 @@ export function PromptDraftCard({
 
   function updateOverride(field: keyof PromptDraftOverrides, value: string) {
     setOverrides((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateDirectorOverride(field: keyof DirectorOverrides, value: string) {
+    setDirectorOverrides((current) => ({ ...current, [field]: value }));
   }
 
   async function handleCreateTask(type: "first_frame" | "end_frame" | "video") {
@@ -178,6 +217,22 @@ export function PromptDraftCard({
             </SelectContent>
           </Select>
         </label>
+        <label className="grid gap-1 text-xs text-muted">
+          {promptBuilderCopy.shotTemplate}
+          <Select value={templateId} onValueChange={setTemplateId}>
+            <SelectTrigger aria-label={promptBuilderCopy.shotTemplate}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={autoTemplateValue}>{promptBuilderCopy.autoTemplate}</SelectItem>
+              {templateOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {promptBuilderCopy.templateLabels[option]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
         <div className="grid gap-2 lg:grid-cols-2">
           <OverrideTextarea
             label={promptBuilderCopy.startActionOverride}
@@ -212,6 +267,71 @@ export function PromptDraftCard({
         </div>
       </div>
 
+      <div className="grid gap-3 rounded-md border border-border bg-panel p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold text-muted">
+              {promptBuilderCopy.directorSettings}
+            </div>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              {promptBuilderCopy.directorSafeNote}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setDirectorOverrides(emptyDirectorOverrides)}
+            disabled={mutation.isPending}
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            {promptBuilderCopy.clearDirectorOverrides}
+          </Button>
+        </div>
+        <div className="grid gap-2 lg:grid-cols-2">
+          <OverrideTextarea
+            label={promptBuilderCopy.subjectPositionOverride}
+            value={directorOverrides.subject_position}
+            onChange={(value) => updateDirectorOverride("subject_position", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.directorStartActionOverride}
+            value={directorOverrides.start_action}
+            onChange={(value) => updateDirectorOverride("start_action", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.directorEndActionOverride}
+            value={directorOverrides.end_action}
+            onChange={(value) => updateDirectorOverride("end_action", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.crowdActionOverride}
+            value={directorOverrides.crowd_action}
+            onChange={(value) => updateDirectorOverride("crowd_action", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.crowdEmotionOverride}
+            value={directorOverrides.crowd_emotion}
+            onChange={(value) => updateDirectorOverride("crowd_emotion", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.directorCameraMotionOverride}
+            value={directorOverrides.camera_movement}
+            onChange={(value) => updateDirectorOverride("camera_movement", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.compositionOverride}
+            value={directorOverrides.composition}
+            onChange={(value) => updateDirectorOverride("composition", value)}
+          />
+          <OverrideTextarea
+            label={promptBuilderCopy.environmentMotionOverride}
+            value={directorOverrides.environment_motion}
+            onChange={(value) => updateDirectorOverride("environment_motion", value)}
+          />
+        </div>
+      </div>
+
       <StatusMessage tone="neutral">{promptBuilderCopy.safeNote}</StatusMessage>
       {mutation.isError && (
         <StatusMessage tone="error">{promptBuilderCopy.loadFailed}</StatusMessage>
@@ -225,6 +345,7 @@ export function PromptDraftCard({
             copied={copied}
             onCopy={copyText}
           />
+          <DirectorContextPreview draft={draft} />
           <DraftText
             label={promptBuilderCopy.firstFramePrompt}
             value={draft.first_frame_prompt_en}
@@ -314,6 +435,60 @@ export function PromptDraftCard({
   );
 }
 
+function DirectorContextPreview({ draft }: { draft: PromptDraftResponse }) {
+  const context = draft.director_context;
+  if (!context) {
+    return null;
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-panel p-3 text-xs text-muted">
+      <div className="flex flex-wrap gap-2 text-foreground">
+        <span>
+          {promptBuilderCopy.recommendedTemplate}:{" "}
+          {templateLabel(draft.recommended_template_id)}
+        </span>
+        <span>
+          {promptBuilderCopy.appliedTemplate}: {templateLabel(draft.applied_template_id)}
+        </span>
+        <span>
+          {promptBuilderCopy.workflowHint}: {draft.workflow_hint}
+        </span>
+      </div>
+      <div className="text-xs font-semibold text-muted">{promptBuilderCopy.directorContext}</div>
+      <DirectorContextRows context={context} />
+    </div>
+  );
+}
+
+function DirectorContextRows({ context }: { context: DirectorContext }) {
+  const primary = context.subjects.find((subject) => subject.role === "primary");
+  const rows = [
+    ["主体", primary?.identity ?? "未指定"],
+    ["位置", primary?.position ?? "未指定"],
+    ["首帧动作", primary?.start_action ?? "未指定"],
+    ["尾帧动作", primary?.end_action ?? "未指定"],
+    [
+      "群众反应",
+      [context.reaction.crowd_action, context.reaction.crowd_emotion]
+        .filter(Boolean)
+        .join(" / ") || "未指定"
+    ],
+    ["场景", [context.scene.name, context.scene.state].filter(Boolean).join(" / ") || "未指定"],
+    ["构图", context.camera.composition],
+    ["镜头运动", context.camera.movement]
+  ];
+  return (
+    <dl className="grid gap-1">
+      {rows.map(([label, value]) => (
+        <div key={label} className="grid grid-cols-[72px_1fr] gap-2">
+          <dt className="text-muted">{label}</dt>
+          <dd className="text-foreground">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function CreateTaskButton({
   label,
   busy,
@@ -390,6 +565,24 @@ function compactOverrides(
     return undefined;
   }
   return Object.fromEntries(entries) as PromptDraftOverrides;
+}
+
+function compactDirectorOverrides(
+  overrides: Record<keyof DirectorOverrides, string>
+): DirectorOverrides | undefined {
+  const entries = Object.entries(overrides)
+    .map(([key, value]) => [key, value.trim()] as const)
+    .filter(([, value]) => value.length > 0);
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(entries) as DirectorOverrides;
+}
+
+function templateLabel(templateId: string) {
+  return promptBuilderCopy.templateLabels[
+    templateId as keyof typeof promptBuilderCopy.templateLabels
+  ] ?? templateId;
 }
 
 function createConfirmMessage(
