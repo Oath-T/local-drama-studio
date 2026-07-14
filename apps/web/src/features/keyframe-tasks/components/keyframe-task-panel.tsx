@@ -74,6 +74,7 @@ import {
 import { keyframeTaskCopy } from "../copy";
 import {
   keyframeAspectRatioOptions,
+  keyframePurposeOptions,
   keyframeTaskFormSchema,
   taskFormValuesToPayload,
   type KeyframeTaskFormValues
@@ -327,6 +328,7 @@ function TaskCard({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={isReady ? "success" : "default"}>{keyframeTaskCopy.status[task.status]}</Badge>
+            <Badge tone="primary">{keyframeTaskCopy.purpose[task.purpose]}</Badge>
             <ReadinessBadge task={task} />
           </div>
           <h3 className="mt-2 break-words text-sm font-semibold text-foreground">{task.name}</h3>
@@ -578,6 +580,29 @@ function KeyframeTaskEditorDialog({
             <Field label={keyframeTaskCopy.fields.name}>
               <Input aria-label={keyframeTaskCopy.fields.name} {...form.register("name")} />
               <FormError>{form.formState.errors.name?.message}</FormError>
+            </Field>
+            <Field label={keyframeTaskCopy.fields.purpose}>
+              <Select
+                value={form.watch("purpose")}
+                onValueChange={(value) =>
+                  form.setValue("purpose", value as KeyframeTaskFormValues["purpose"], {
+                    shouldDirty: true,
+                    shouldTouch: true
+                  })
+                }
+              >
+                <SelectTrigger aria-label={keyframeTaskCopy.fields.purpose}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {keyframePurposeOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {keyframeTaskCopy.purpose[option]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormError>{form.formState.errors.purpose?.message}</FormError>
             </Field>
             <Field label={keyframeTaskCopy.fields.aspectRatio}>
               <Select value={form.watch("aspect_ratio")} onValueChange={handleAspectChange}>
@@ -948,6 +973,7 @@ function FormError({ children }: { children?: string }) {
 function taskToFormValues(task: KeyframeTask | null): KeyframeTaskFormValues {
   return {
     name: task?.name ?? "",
+    purpose: task?.purpose ?? "concept",
     prompt_zh: task?.prompt_zh ?? "",
     prompt_en: task?.prompt_en ?? "",
     negative_prompt: task?.negative_prompt ?? "",

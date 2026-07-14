@@ -30,6 +30,7 @@ class GenerationTaskService:
                 task_id=item.task_id,
                 task_name=item.task_name,
                 task_status=item.task_status,
+                task_purpose=item.task_purpose,
                 readiness_status=item.readiness_status,
                 shot_id=item.shot_id,
                 shot_name=item.shot_name,

@@ -8,6 +8,7 @@ import {
   Images,
   LayoutList,
   ListChecks,
+  Route,
   Settings,
   UserRound
 } from "lucide-react";
@@ -72,6 +73,13 @@ const navItems: Array<{
     projectPath: (projectId) => `/projects/${projectId}/shots`
   },
   {
+    id: "production",
+    label: "生产看板",
+    path: "/tasks",
+    icon: Route,
+    projectPath: (projectId) => `/projects/${projectId}/production`
+  },
+  {
     id: "tasks",
     label: "生成中心",
     path: "/tasks",
@@ -107,7 +115,9 @@ export function AppShell({ children }: AppShellProps) {
       ? "scenes"
       : location.pathname.includes("/shots")
         ? "shots"
-        : location.pathname.includes("/generation") || location.pathname.startsWith("/tasks")
+        : location.pathname.includes("/production")
+          ? "production"
+          : location.pathname.includes("/generation") || location.pathname.startsWith("/tasks")
           ? "tasks"
           : location.pathname.includes("/media") || location.pathname.startsWith("/media")
             ? "media"

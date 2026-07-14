@@ -217,6 +217,7 @@ function mockProjectApi(initialProjects: Project[] = []) {
         items: [
           {
             task_type: "video",
+            task_purpose: null,
             project_id: projectId,
             task_id: "88888888-8888-4888-8888-888888888888",
             task_name: "首尾帧视频",
@@ -233,6 +234,89 @@ function mockProjectApi(initialProjects: Project[] = []) {
             has_outputs: true,
             has_selected_output: true,
             created_at: "2026-06-28T10:00:00+00:00",
+            updated_at: "2026-06-28T12:00:00+00:00"
+          }
+        ],
+        total: 1
+      });
+    }
+
+    const productionStatusMatch = url.match(/^\/api\/projects\/([^/]+)\/production-status$/);
+    if (productionStatusMatch && method === "GET") {
+      const projectId = productionStatusMatch[1];
+      return jsonResponse({
+        project_id: projectId,
+        summary: {
+          total_shots: 1,
+          blocked: 0,
+          in_progress: 0,
+          ready_for_video: 1,
+          completed: 0
+        },
+        items: [
+          {
+            project_id: projectId,
+            shot_id: "77777777-7777-4777-8777-777777777777",
+            shot_name: "开场镜头",
+            order_index: 1,
+            overall_status: "ready_for_video",
+            steps: {
+              assets: {
+                status: "complete",
+                character_count: 1,
+                reference_count: 2,
+                has_primary_subject: true,
+                has_scene: true,
+                has_scene_state: true,
+                scene_name: "会议室",
+                scene_state_name: "夜晚",
+                warnings: []
+              },
+              director_prompt: {
+                status: "available",
+                director_template_available: true,
+                recommended_template_id: "enter_room_shock"
+              },
+              first_frame: {
+                status: "adopted",
+                task_id: "first-task",
+                task_name: "首帧草稿",
+                adopted_output_id: "first-output",
+                adopted_media_asset_id: baseMediaAsset.id,
+                content_url: baseMediaAsset.content_url
+              },
+              end_frame: {
+                status: "adopted",
+                task_id: "end-task",
+                task_name: "尾帧草稿",
+                adopted_output_id: "end-output",
+                adopted_media_asset_id: baseMediaAsset.id,
+                content_url: baseMediaAsset.content_url
+              },
+              video: {
+                status: "missing_inputs",
+                task_id: null,
+                task_name: null,
+                adopted_output_id: null,
+                adopted_media_asset_id: null,
+                content_url: null,
+                has_start_frame: false,
+                has_end_frame: false
+              },
+              final_adoption: {
+                status: "missing_inputs",
+                task_id: null,
+                task_name: null,
+                adopted_output_id: null,
+                adopted_media_asset_id: null,
+                content_url: null,
+                has_start_frame: false,
+                has_end_frame: false
+              }
+            },
+            blockers: ["视频任务缺少首帧或尾帧输入"],
+            next_actions: ["fill_video_inputs"],
+            continuity_candidate: null,
             updated_at: "2026-06-28T12:00:00+00:00"
           }
         ],
@@ -424,6 +508,21 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /生成中心/ })).toBeInTheDocument();
     expect(await screen.findByText("首尾帧视频")).toBeInTheDocument();
     expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "打开镜头" })).toHaveAttribute(
+      "href",
+      `/projects/${baseProject.id}/shots/77777777-7777-4777-8777-777777777777`
+    );
+  });
+
+  it("renders the project production board", async () => {
+    mockProjectApi([baseProject]);
+    renderApp(`/projects/${baseProject.id}/production`);
+
+    expect(await screen.findByRole("heading", { name: /生产看板/ })).toBeInTheDocument();
+    expect(await screen.findByText(/开场镜头/)).toBeInTheDocument();
+    expect(screen.getAllByText("可进入视频").length).toBeGreaterThan(0);
+    expect(screen.getByText("首帧已采用")).toBeInTheDocument();
+    expect(screen.getByText("尾帧已采用")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "打开镜头" })).toHaveAttribute(
       "href",
       `/projects/${baseProject.id}/shots/77777777-7777-4777-8777-777777777777`

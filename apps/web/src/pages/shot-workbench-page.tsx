@@ -40,8 +40,16 @@ import { KeyframeTaskPanel } from "@/features/keyframe-tasks/components/keyframe
 import { PromptDraftCard } from "@/features/prompt-builder/components/prompt-draft-card";
 import { promptBuilderCopy } from "@/features/prompt-builder/copy";
 import type { PromptDraftResponse } from "@/features/prompt-builder/types";
+import {
+  fetchShotProductionStatus,
+  productionStatusKeys
+} from "@/features/production-status/api";
+import { ShotProductionPanel } from "@/features/production-status/components/shot-production-panel";
+import { productionStatusCopy } from "@/features/production-status/copy";
+import type { ShotProductionStatus } from "@/features/production-status/types";
 import { ShotRecommendationPanel } from "@/features/shots/components/shot-recommendation-panel";
 import { createVideoTask, updateVideoTask } from "@/features/video-generation/api";
+import type { VideoTaskInputPayload } from "@/features/video-generation/types";
 import {
   addShotCharacter,
   addShotReference,
@@ -214,6 +222,10 @@ export function ShotWorkbenchPage() {
       nextShotId
         ? queryClient.invalidateQueries({ queryKey: shotKeys.videoTasks(projectId, nextShotId) })
         : Promise.resolve(),
+      nextShotId
+        ? queryClient.invalidateQueries({ queryKey: productionStatusKeys.shot(projectId, nextShotId) })
+        : Promise.resolve(),
+      queryClient.invalidateQueries({ queryKey: productionStatusKeys.project(projectId) }),
       queryClient.invalidateQueries({ queryKey: generationTaskKeys.lists(projectId) })
     ]);
   }
@@ -910,6 +922,11 @@ function ReferencePanel({
   const [scenePurpose, setScenePurpose] = useState<SceneReferencePurpose>("environment");
   const [activeTab, setActiveTab] = useState<"smart" | "keyframes" | "character" | "scene" | "selected">("smart");
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
+  const productionStatusQuery = useQuery({
+    queryKey: shot ? productionStatusKeys.shot(projectId, shot.id) : ["production-status", "none"],
+    queryFn: () => fetchShotProductionStatus(projectId, shot?.id || ""),
+    enabled: Boolean(projectId && shot?.id)
+  });
   const selectedShotCharacter = shot?.characters.find((item) => item.id === selectedShotCharacterId) ?? shot?.characters[0];
   const selectedCharacter = characters.find((item) => item.id === selectedShotCharacter?.character_id);
   const looksQuery = useQuery({
@@ -957,6 +974,7 @@ function ReferencePanel({
     try {
       const created = await createKeyframeTask(projectId, shot.id, {
         name: `${frame === "first" ? "首帧草稿" : "尾帧草稿"} - ${shotTaskLabel(shot)}`,
+        purpose: frame === "first" ? "first_frame" : "end_frame",
         copy_current_references: true
       });
       taskId = created.id;
@@ -992,9 +1010,18 @@ function ReferencePanel({
   }
 
   async function createVideoTaskFromDraft(draft: PromptDraftResponse) {
+    await createVideoTaskWithOptionalAdoptedFrames(draft);
+  }
+
+  async function createVideoTaskFromProductionPanel() {
+    await createVideoTaskWithOptionalAdoptedFrames();
+  }
+
+  async function createVideoTaskWithOptionalAdoptedFrames(draft?: PromptDraftResponse) {
     if (!shot) {
       return;
     }
+    const adoptedInputs = confirmedAdoptedVideoInputs(productionStatusQuery.data);
     let taskId = "";
     try {
       const created = await createVideoTask(projectId, shot.id, {});
@@ -1010,9 +1037,10 @@ function ReferencePanel({
     try {
       const updated = await updateVideoTask(projectId, taskId, {
         name: `视频草稿 - ${shotTaskLabel(shot)}`,
-        prompt: draft.motion_prompt_en,
-        negative_prompt: draft.negative_prompt_en,
-        camera_motion: draft.camera_motion,
+        inputs: adoptedInputs.length > 0 ? adoptedInputs : undefined,
+        prompt: draft?.motion_prompt_en,
+        negative_prompt: draft?.negative_prompt_en,
+        camera_motion: draft?.camera_motion,
         duration_seconds:
           typeof shot.duration_seconds === "number" && shot.duration_seconds > 0
             ? shot.duration_seconds
@@ -1020,11 +1048,23 @@ function ReferencePanel({
       });
       await invalidateCreatedTaskData(shot.id, updated.id, "video");
       setActiveTab("keyframes");
-      onMessage({ tone: "success", text: promptBuilderCopy.videoTaskCreated });
+      onMessage({
+        tone: "success",
+        text:
+          adoptedInputs.length > 0
+            ? productionStatusCopy.videoTaskCreatedWithFrames
+            : promptBuilderCopy.videoTaskCreated
+      });
     } catch {
       await invalidateCreatedTaskData(shot.id, taskId, "video");
       setActiveTab("keyframes");
-      onMessage({ tone: "error", text: promptBuilderCopy.taskPatchFailed });
+      onMessage({
+        tone: "error",
+        text:
+          adoptedInputs.length > 0
+            ? productionStatusCopy.videoTaskFrameFillFailed
+            : promptBuilderCopy.taskPatchFailed
+      });
     }
   }
 
@@ -1069,14 +1109,30 @@ function ReferencePanel({
   return (
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
       <div className="grid gap-4">
-        <ShotAssetSummaryCard projectId={projectId} shotId={shot.id} />
-        <PromptDraftCard
-          projectId={projectId}
-          shotId={shot.id}
-          onCreateFirstFrameTask={(draft) => createKeyframeTaskFromDraft(draft, "first")}
-          onCreateEndFrameTask={(draft) => createKeyframeTaskFromDraft(draft, "end")}
-          onCreateVideoTask={createVideoTaskFromDraft}
+        <ShotProductionPanel
+          status={productionStatusQuery.data}
+          loading={productionStatusQuery.isLoading}
+          error={productionStatusQuery.isError}
+          onRetry={() => void productionStatusQuery.refetch()}
+          onOpenPrompt={() =>
+            document.getElementById("shot-prompt-draft")?.scrollIntoView({
+              behavior: "smooth",
+              block: "start"
+            })
+          }
+          onOpenTasks={() => setActiveTab("keyframes")}
+          onCreateVideoTask={createVideoTaskFromProductionPanel}
         />
+        <ShotAssetSummaryCard projectId={projectId} shotId={shot.id} />
+        <div id="shot-prompt-draft">
+          <PromptDraftCard
+            projectId={projectId}
+            shotId={shot.id}
+            onCreateFirstFrameTask={(draft) => createKeyframeTaskFromDraft(draft, "first")}
+            onCreateEndFrameTask={(draft) => createKeyframeTaskFromDraft(draft, "end")}
+            onCreateVideoTask={createVideoTaskFromDraft}
+          />
+        </div>
         <Button type="button" variant="secondary" onClick={() => setReferencePickerOpen(true)}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {assetPickerCopy.chooseReferenceImage}
@@ -1373,6 +1429,53 @@ function hasSceneRefs(references: ShotReference[]) {
 
 function shotTaskLabel(shot: Shot) {
   return shot.name.trim() || `镜头 ${shot.order_index}`;
+}
+
+function confirmedAdoptedVideoInputs(
+  status?: ShotProductionStatus
+): VideoTaskInputPayload[] {
+  const inputs = adoptedVideoInputs(status);
+  if (inputs.length === 0) {
+    return [];
+  }
+  const confirmed = window.confirm(
+    inputs.length === 2
+      ? productionStatusCopy.inheritedFramesConfirm
+      : productionStatusCopy.partialInheritedFramesConfirm
+  );
+  return confirmed ? inputs : [];
+}
+
+function adoptedVideoInputs(status?: ShotProductionStatus): VideoTaskInputPayload[] {
+  if (!status) {
+    return [];
+  }
+  const items: VideoTaskInputPayload[] = [];
+  if (
+    status.steps.first_frame.adopted_media_asset_id &&
+    status.steps.first_frame.adopted_output_id &&
+    status.steps.first_frame.task_id
+  ) {
+    items.push({
+      role: "start_frame",
+      media_asset_id: status.steps.first_frame.adopted_media_asset_id,
+      source_keyframe_output_id: status.steps.first_frame.adopted_output_id,
+      source_keyframe_task_id: status.steps.first_frame.task_id
+    });
+  }
+  if (
+    status.steps.end_frame.adopted_media_asset_id &&
+    status.steps.end_frame.adopted_output_id &&
+    status.steps.end_frame.task_id
+  ) {
+    items.push({
+      role: "end_frame",
+      media_asset_id: status.steps.end_frame.adopted_media_asset_id,
+      source_keyframe_output_id: status.steps.end_frame.adopted_output_id,
+      source_keyframe_task_id: status.steps.end_frame.task_id
+    });
+  }
+  return items;
 }
 
 function pickerMetadataString(item: PickerOptionItem, key: string): string | null {

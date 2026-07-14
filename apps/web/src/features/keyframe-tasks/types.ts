@@ -6,6 +6,7 @@ import type {
 } from "@/features/shots/types";
 
 export type KeyframeTaskStatus = "draft" | "ready";
+export type KeyframeTaskPurpose = "first_frame" | "end_frame" | "concept" | "reference";
 export type KeyframeTaskReadinessStatus = "incomplete" | "ready";
 export type KeyframeTaskAspectRatio = "16:9" | "9:16" | "1:1" | "4:3" | "3:4" | "custom";
 export type KeyframeTaskReferenceType = ShotReferenceType;
@@ -105,6 +106,7 @@ export interface KeyframeTask {
   project_id: string;
   shot_id: string;
   name: string;
+  purpose: KeyframeTaskPurpose;
   status: KeyframeTaskStatus;
   shot_snapshot: KeyframeShotSnapshot;
   source_shot_updated_at: string;
@@ -143,11 +145,13 @@ export interface KeyframeTaskReferenceListResponse {
 
 export interface KeyframeTaskCreateInput {
   name?: string | null;
+  purpose?: KeyframeTaskPurpose;
   copy_current_references?: boolean;
 }
 
 export interface KeyframeTaskUpdateInput {
   name?: string | null;
+  purpose?: KeyframeTaskPurpose;
   prompt_zh?: string | null;
   prompt_en?: string | null;
   negative_prompt?: string | null;

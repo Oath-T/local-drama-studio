@@ -25,6 +25,7 @@ class GenerationTaskSummaryData:
     task_id: str
     task_name: str
     task_status: str
+    task_purpose: str | None
     readiness_status: str | None
     shot_id: str
     shot_name: str
@@ -83,6 +84,7 @@ class GenerationTaskRepository:
                 task_id=task.id,
                 task_name=task.name,
                 task_status=task.status,
+                task_purpose=task.purpose,
                 readiness_status=None,
                 shot_id=task.shot_id,
                 shot_name=shot_name,
@@ -121,6 +123,7 @@ class GenerationTaskRepository:
                 task_id=task.id,
                 task_name=task.name,
                 task_status=task.status,
+                task_purpose=None,
                 readiness_status=None,
                 shot_id=task.shot_id,
                 shot_name=shot_name,

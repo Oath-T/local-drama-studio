@@ -341,6 +341,7 @@ const keyframeTask: KeyframeTask = {
   project_id: projectId,
   shot_id: shotId,
   name: "关键帧任务 1",
+  purpose: "concept",
   status: "draft",
   shot_snapshot: {
     schema_version: 1,
@@ -702,6 +703,75 @@ const recommendations: ShotRecommendationResponse = {
   }
 };
 
+function shotProductionStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    project_id: projectId,
+    shot_id: shotId,
+    shot_name: shot.name,
+    order_index: shot.order_index,
+    overall_status: "ready_for_video",
+    steps: {
+      assets: {
+        status: "complete",
+        character_count: 1,
+        reference_count: 2,
+        has_primary_subject: true,
+        has_scene: true,
+        has_scene_state: true,
+        scene_name: scene.name,
+        scene_state_name: state.name,
+        warnings: []
+      },
+      director_prompt: {
+        status: "available",
+        director_template_available: true,
+        recommended_template_id: "enter_room_shock"
+      },
+      first_frame: {
+        status: "adopted",
+        task_id: keyframeTaskId,
+        task_name: "首帧草稿",
+        adopted_output_id: keyframeOutputId,
+        adopted_media_asset_id: mediaAsset.id,
+        content_url: mediaAsset.content_url
+      },
+      end_frame: {
+        status: "adopted",
+        task_id: keyframeTaskId,
+        task_name: "尾帧草稿",
+        adopted_output_id: "25252525-2525-4252-8252-252525252526",
+        adopted_media_asset_id: mediaAsset.id,
+        content_url: mediaAsset.content_url
+      },
+      video: {
+        status: "missing_inputs",
+        task_id: videoTaskId,
+        task_name: videoTask.name,
+        adopted_output_id: null,
+        adopted_media_asset_id: null,
+        content_url: null,
+        has_start_frame: false,
+        has_end_frame: false
+      },
+      final_adoption: {
+        status: "missing_inputs",
+        task_id: videoTaskId,
+        task_name: videoTask.name,
+        adopted_output_id: null,
+        adopted_media_asset_id: null,
+        content_url: null,
+        has_start_frame: false,
+        has_end_frame: false
+      }
+    },
+    blockers: ["视频任务缺少首帧或尾帧输入"],
+    next_actions: ["fill_video_inputs"],
+    continuity_candidate: null,
+    updated_at: shot.updated_at,
+    ...overrides
+  };
+}
+
 function renderRoute(path: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
@@ -742,6 +812,8 @@ function mockShotApi(
     failVideoTasks?: boolean;
     videoRuns?: VideoRun[];
     failVideoRuns?: boolean;
+    productionStatus?: ReturnType<typeof shotProductionStatus>;
+    failProductionStatus?: boolean;
   } = {}
 ) {
   const requests: Array<{ url: string; method: string; body?: string }> = [];
@@ -790,6 +862,27 @@ function mockShotApi(
     }
     if (url === `/api/projects/${projectId}/shots/${shotId}/prompt-draft` && method === "POST") {
       return jsonResponse(promptDraft);
+    }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/production-status` && method === "GET") {
+      if (options.failProductionStatus) {
+        return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      }
+      return jsonResponse(options.productionStatus ?? shotProductionStatus());
+    }
+    if (url === `/api/projects/${projectId}/production-status` && method === "GET") {
+      const item = options.productionStatus ?? shotProductionStatus();
+      return jsonResponse({
+        project_id: projectId,
+        summary: {
+          total_shots: 1,
+          blocked: item.overall_status === "blocked" ? 1 : 0,
+          in_progress: item.overall_status === "in_progress" ? 1 : 0,
+          ready_for_video: item.overall_status === "ready_for_video" ? 1 : 0,
+          completed: item.overall_status === "completed" ? 1 : 0
+        },
+        items: [item],
+        total: 1
+      });
     }
     if (url === `/api/projects/${projectId}/keyframe-workflows` && method === "GET") {
       if (options.failWorkflows) return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
@@ -1212,7 +1305,20 @@ function mockShotApi(
       }
       return jsonResponse(options.recommendations ?? recommendations);
     }
-    if (url.startsWith(`/api/projects/${projectId}/shots/`) && method === "GET" && !url.includes("/characters") && !url.includes("/references") && !url.includes("/recommendations") && !url.includes("/keyframe-tasks")) {
+    const productionStatusMatch = url.match(
+      new RegExp(`^/api/projects/${projectId}/shots/([^/]+)/production-status$`)
+    );
+    if (productionStatusMatch && method === "GET") {
+      if (options.failProductionStatus) {
+        return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
+      }
+      const id = productionStatusMatch[1];
+      const sourceShot = shots.find((item) => item.id === id) ?? shot;
+      return jsonResponse(
+        options.productionStatus ?? shotProductionStatus({ shot_id: id, shot_name: sourceShot.name })
+      );
+    }
+    if (url.startsWith(`/api/projects/${projectId}/shots/`) && method === "GET" && !url.includes("/characters") && !url.includes("/references") && !url.includes("/recommendations") && !url.includes("/keyframe-tasks") && !url.includes("/production-status")) {
       const id = url.split("/shots/")[1];
       return jsonResponse(shots.find((item) => item.id === id) ?? shot);
     }
@@ -1744,6 +1850,7 @@ describe("shot workbench routes", () => {
     );
     expect(JSON.parse(firstFrameCreate?.body ?? "{}")).toMatchObject({
       name: expect.stringContaining("首帧草稿"),
+      purpose: "first_frame",
       copy_current_references: true
     });
     expect(JSON.parse(firstFramePatch?.body ?? "{}")).toMatchObject({
@@ -1793,7 +1900,21 @@ describe("shot workbench routes", () => {
       prompt: promptDraft.motion_prompt_en,
       negative_prompt: promptDraft.negative_prompt_en,
       camera_motion: promptDraft.camera_motion,
-      duration_seconds: 3
+      duration_seconds: 3,
+      inputs: [
+        {
+          role: "start_frame",
+          media_asset_id: mediaAsset.id,
+          source_keyframe_output_id: keyframeOutputId,
+          source_keyframe_task_id: keyframeTaskId
+        },
+        {
+          role: "end_frame",
+          media_asset_id: mediaAsset.id,
+          source_keyframe_output_id: "25252525-2525-4252-8252-252525252526",
+          source_keyframe_task_id: keyframeTaskId
+        }
+      ]
     });
     expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("当前草稿还有 1 条上下文提示"));
     expect(
@@ -1803,6 +1924,39 @@ describe("shot workbench routes", () => {
           (request.url.includes("/mark-ready") || request.url.endsWith("/runs"))
       )
     ).toBe(false);
+  });
+
+  it("shows production steps and lets the user reject inherited keyframes for a video draft", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { requests } = mockShotApi({ shots: [shotWithReferences] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByText("生产流程")).toBeInTheDocument();
+    expect(screen.getByText("资产准备")).toBeInTheDocument();
+    expect(screen.getByText("导演 Prompt")).toBeInTheDocument();
+    expect(screen.getByText("首帧")).toBeInTheDocument();
+    expect(screen.getByText("尾帧")).toBeInTheDocument();
+    expect(screen.getByText("视频")).toBeInTheDocument();
+    expect(screen.getByText("最终采用")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "用已采用首尾帧创建视频任务" }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "PATCH" &&
+            request.url === `/api/projects/${projectId}/video-tasks/${videoTaskId}`
+        )
+      ).toBe(true);
+    });
+    const videoPatch = requests.find(
+      (request) =>
+        request.method === "PATCH" &&
+        request.url === `/api/projects/${projectId}/video-tasks/${videoTaskId}`
+    );
+    expect(JSON.parse(videoPatch?.body ?? "{}")).not.toHaveProperty("inputs");
   });
 
   it("keeps a created task and shows a safe error when prompt patching fails", async () => {

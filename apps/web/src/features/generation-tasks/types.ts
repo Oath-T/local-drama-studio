@@ -9,6 +9,7 @@ export type GenerationRunStatus =
 
 export interface GenerationTaskSummary {
   task_type: GenerationTaskType;
+  task_purpose: string | null;
   project_id: string;
   task_id: string;
   task_name: string;

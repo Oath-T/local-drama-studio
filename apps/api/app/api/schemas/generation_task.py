@@ -12,6 +12,7 @@ class GenerationTaskSummaryResponse(BaseModel):
     task_id: str
     task_name: str
     task_status: str
+    task_purpose: str | None = None
     readiness_status: str | None = None
     shot_id: str
     shot_name: str

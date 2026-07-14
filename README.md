@@ -4,6 +4,8 @@ Local Drama Studio is a local-first AI short-drama production platform. Sprint 9
 
 Sprint 18 adds a deterministic Director Engine v1 to the existing Prompt / Context Builder. It provides built-in shot templates, Director Context previews, and template-aware prompt drafts without using an LLM, changing the database, or triggering ComfyUI.
 
+Sprint 19-20 adds Production Pipeline v1: structured keyframe task purposes, read-only shot/project production status APIs, a shot-level six-step production panel, and a project production board. It does not automatically generate, mark tasks ready, start ComfyUI, or adopt outputs.
+
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure
@@ -132,6 +134,8 @@ GET    /api/projects/{project_id}/assets/picker-options
 GET    /api/projects/{project_id}/characters/{character_id}/asset-summary
 GET    /api/projects/{project_id}/scenes/{scene_id}/asset-summary
 GET    /api/projects/{project_id}/shots/{shot_id}/asset-summary
+GET    /api/projects/{project_id}/shots/{shot_id}/production-status
+GET    /api/projects/{project_id}/production-status
 
 GET    /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
 POST   /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
@@ -178,7 +182,7 @@ Shot recommendations are computed from current shot parameters and asset metadat
 
 The unified Asset Picker is read-only and currently supports project or shot-scoped selection for characters, scenes, frame images, character looks, scene states, and shot-context reference images. Actual changes still go through the existing shot, shot-reference, keyframe-task, or video-task APIs.
 
-The Prompt / Context Builder is read-only and rule-based. It builds editable prompt drafts from the current shot context, does not call LLMs or vision models, does not save Prompt Draft records, and does not trigger ComfyUI. Keyframe and video task panels can fill their existing form fields from the draft, but users must still save and start generation manually. Sprint 13.1 adds request-scoped style presets and one-time action, motion, camera, visual-style, and mood overrides; these controls are not persisted. Sprint 14 can create real first-frame, end-frame, and video task drafts from a Prompt Draft by reusing the existing create and update task APIs; it still does not mark tasks ready or start generation automatically.
+The Prompt / Context Builder is read-only and rule-based. It builds editable prompt drafts from the current shot context, does not call LLMs or vision models, does not save Prompt Draft records, and does not trigger ComfyUI. Keyframe and video task panels can fill their existing form fields from the draft, but users must still save and start generation manually. Sprint 13.1 adds request-scoped style presets and one-time action, motion, camera, visual-style, and mood overrides; these controls are not persisted. Sprint 14 can create real first-frame, end-frame, and video task drafts from a Prompt Draft by reusing the existing create and update task APIs; it still does not mark tasks ready or start generation automatically. Sprint 19-20 writes structured keyframe task `purpose` values for first-frame and end-frame tasks, and can ask the user whether adopted first/end frame outputs should be filled into a newly created video task draft.
 
 Vision analysis is user-triggered per reference image. Suggestions are stored separately from official metadata and must be accepted through the dedicated review flow before they change reference metadata. The API starts without an OpenAI key; manual editing remains available.
 
@@ -196,6 +200,8 @@ adds role-based `start_frame` and `end_frame` inputs. Sprint 9.2 includes the re
 does not download models, install Custom Nodes, or modify the user's ComfyUI directory. If a
 configured workflow JSON is missing or fails safety checks, that workflow is reported as unavailable
 and no fake generation is exposed.
+
+Production Pipeline v1 is a read-only orchestration layer over existing data. The shot workbench shows six production steps: assets, Director Prompt, first frame, end frame, video, and final adoption. The project production board at `/projects/:projectId/production` summarizes the same status across shots. It never starts generation or adopts outputs automatically.
 
 ## Frontend
 
@@ -218,6 +224,7 @@ Routes:
 - `/projects/:projectId/scenes/:sceneId`: scene detail, states, and reference images.
 - `/projects/:projectId/shots`: project shot workbench.
 - `/projects/:projectId/shots/:shotId`: project shot workbench with a selected shot.
+- `/projects/:projectId/production`: project production board.
 - `/projects/:projectId/generation`: project generation center.
 - `/projects/:projectId/media`: project media library placeholder.
 - `/projects/:projectId/settings`: project settings placeholder.

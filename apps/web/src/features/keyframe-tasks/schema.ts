@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-import type { KeyframeTaskAspectRatio, KeyframeTaskUpdateInput } from "./types";
+import type { KeyframeTaskAspectRatio, KeyframeTaskPurpose, KeyframeTaskUpdateInput } from "./types";
 
 export const keyframeAspectRatioOptions = ["9:16", "16:9", "1:1", "4:3", "3:4", "custom"] as const;
+export const keyframePurposeOptions = ["first_frame", "end_frame", "concept", "reference"] as const;
 
 const integerString = z.string().trim().regex(/^\d+$/, "请输入整数");
 const numberString = z.string().trim().regex(/^\d+(\.\d+)?$/, "请输入数字");
@@ -17,6 +18,7 @@ function dimensionSchema(label: string) {
 
 export const keyframeTaskFormSchema = z.object({
   name: z.string().trim().min(1, "请输入任务名称").max(120, "任务名称不能超过 120 个字符"),
+  purpose: z.enum(keyframePurposeOptions),
   prompt_zh: z.string().max(8000, "中文提示词不能超过 8000 个字符"),
   prompt_en: z.string().max(8000, "英文提示词不能超过 8000 个字符"),
   negative_prompt: z.string().max(4000, "负面提示词不能超过 4000 个字符"),
@@ -51,6 +53,7 @@ export type KeyframeTaskFormValues = z.infer<typeof keyframeTaskFormSchema>;
 export function taskFormValuesToPayload(values: KeyframeTaskFormValues): KeyframeTaskUpdateInput {
   return {
     name: values.name.trim(),
+    purpose: values.purpose as KeyframeTaskPurpose,
     prompt_zh: emptyToNull(values.prompt_zh),
     prompt_en: emptyToNull(values.prompt_en),
     negative_prompt: emptyToNull(values.negative_prompt),

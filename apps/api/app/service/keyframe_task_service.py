@@ -27,6 +27,7 @@ from app.domain.keyframe_task import (
     DEFAULT_WIDTH,
     KeyframeTaskAspectRatio,
     KeyframeTaskErrorCode,
+    KeyframeTaskPurpose,
     KeyframeTaskReadinessStatus,
     KeyframeTaskReferenceType,
     KeyframeTaskStatus,
@@ -62,6 +63,7 @@ ERROR_MESSAGES: dict[KeyframeTaskErrorCode, str] = {
     KeyframeTaskErrorCode.INVALID_GUIDANCE: "引导强度必须在 0 到 30 之间。",
     KeyframeTaskErrorCode.INVALID_OUTPUT_COUNT: "输出数量必须在 1 到 8 之间。",
     KeyframeTaskErrorCode.INVALID_SEED: "随机种子必须为空、0 或正整数。",
+    KeyframeTaskErrorCode.INVALID_PURPOSE: "关键帧任务用途无效。",
     KeyframeTaskErrorCode.INVALID_REFERENCE_TYPE: "任务参考图类型无效。",
     KeyframeTaskErrorCode.INVALID_REFERENCE_PURPOSE: "任务参考图用途无效。",
     KeyframeTaskErrorCode.REFERENCE_ALREADY_EXISTS: "相同用途的任务参考图已经存在。",
@@ -121,6 +123,7 @@ class KeyframeTaskService:
                 else self._default_name(shot)
             ),
             status=KeyframeTaskStatus.DRAFT.value,
+            purpose=payload.purpose.value,
             shot_snapshot=snapshot.model_dump_json(),
             source_shot_updated_at=ensure_utc(shot.updated_at),
             prompt_zh=self.prompt_service.build_prompt_zh(snapshot),
@@ -205,6 +208,7 @@ class KeyframeTaskService:
             shot_id=source.shot_id,
             name=f"{source.name} - 副本",
             status=KeyframeTaskStatus.DRAFT.value,
+            purpose=source.purpose,
             shot_snapshot=source.shot_snapshot,
             source_shot_updated_at=source.source_shot_updated_at,
             prompt_zh=source.prompt_zh,
@@ -495,6 +499,7 @@ class KeyframeTaskService:
             shot_id=task.shot_id,
             name=task.name,
             status=KeyframeTaskStatus(task.status),
+            purpose=KeyframeTaskPurpose(task.purpose),
             shot_snapshot=snapshot,
             source_shot_updated_at=ensure_utc(task.source_shot_updated_at),
             prompt_zh=task.prompt_zh,
@@ -604,6 +609,11 @@ class KeyframeTaskService:
         values: dict[str, object] = {}
         if "name" in submitted:
             values["name"] = self._normalize_name(submitted["name"])
+        if "purpose" in submitted and submitted["purpose"] is not None:
+            try:
+                values["purpose"] = KeyframeTaskPurpose(str(submitted["purpose"])).value
+            except ValueError:
+                raise_keyframe_error(KeyframeTaskErrorCode.INVALID_PURPOSE, HTTP_422)
         for key, max_length in {
             "prompt_zh": 8000,
             "prompt_en": 8000,

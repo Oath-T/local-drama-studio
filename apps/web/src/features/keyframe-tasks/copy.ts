@@ -1,5 +1,6 @@
 import type {
   KeyframeTaskBlockingIssue,
+  KeyframeTaskPurpose,
   KeyframeTaskReadinessStatus,
   KeyframeTaskStatus,
   KeyframeTaskWarningIssue
@@ -48,6 +49,12 @@ export const keyframeTaskCopy = {
     draft: "草稿",
     ready: "准备完成"
   } satisfies Record<KeyframeTaskStatus, string>,
+  purpose: {
+    first_frame: "首帧",
+    end_frame: "尾帧",
+    concept: "概念图",
+    reference: "参考图"
+  } satisfies Record<KeyframeTaskPurpose, string>,
   fields: {
     name: "任务名称",
     promptZh: "中文提示词",

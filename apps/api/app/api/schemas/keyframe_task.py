@@ -13,6 +13,7 @@ from app.domain.keyframe_task import (
     DEFAULT_WIDTH,
     KeyframeTaskAspectRatio,
     KeyframeTaskBlockingIssue,
+    KeyframeTaskPurpose,
     KeyframeTaskReadinessStatus,
     KeyframeTaskReferenceType,
     KeyframeTaskStatus,
@@ -64,11 +65,13 @@ class KeyframeShotSnapshot(BaseModel):
 
 class KeyframeTaskCreateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=120)
+    purpose: KeyframeTaskPurpose = KeyframeTaskPurpose.CONCEPT
     copy_current_references: bool = True
 
 
 class KeyframeTaskUpdateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=120)
+    purpose: KeyframeTaskPurpose | None = None
     prompt_zh: str | None = Field(default=None, max_length=8000)
     prompt_en: str | None = Field(default=None, max_length=8000)
     negative_prompt: str | None = Field(default=None, max_length=4000)
@@ -137,6 +140,7 @@ class KeyframeTaskResponse(BaseModel):
     shot_id: str
     name: str
     status: KeyframeTaskStatus
+    purpose: KeyframeTaskPurpose
     shot_snapshot: KeyframeShotSnapshot
     source_shot_updated_at: datetime
     prompt_zh: str | None

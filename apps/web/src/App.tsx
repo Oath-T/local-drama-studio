@@ -6,6 +6,7 @@ import { CharacterLibraryPage } from "./pages/character-library-page";
 import { GenerationCenterPage } from "./pages/generation-center-page";
 import { MediaLibraryPage } from "./pages/media-library-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
+import { ProjectProductionPage } from "./pages/project-production-page";
 import { ProjectSettingsPage } from "./pages/project-settings-page";
 import { ProjectsPage } from "./pages/projects-page";
 import { SceneDetailPage } from "./pages/scene-detail-page";
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/projects/:projectId/scenes/:sceneId" element={<SceneDetailPage />} />
       <Route path="/projects/:projectId/shots" element={<ShotWorkbenchPage />} />
       <Route path="/projects/:projectId/shots/:shotId" element={<ShotWorkbenchPage />} />
+      <Route path="/projects/:projectId/production" element={<ProjectProductionPage />} />
       <Route path="/projects/:projectId/generation" element={<GenerationCenterPage />} />
       <Route path="/projects/:projectId/media" element={<MediaLibraryPage />} />
       <Route path="/projects/:projectId/settings" element={<ProjectSettingsPage />} />

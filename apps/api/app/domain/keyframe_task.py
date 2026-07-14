@@ -6,6 +6,13 @@ class KeyframeTaskStatus(StrEnum):
     READY = "ready"
 
 
+class KeyframeTaskPurpose(StrEnum):
+    FIRST_FRAME = "first_frame"
+    END_FRAME = "end_frame"
+    CONCEPT = "concept"
+    REFERENCE = "reference"
+
+
 class KeyframeTaskReadinessStatus(StrEnum):
     INCOMPLETE = "incomplete"
     READY = "ready"
@@ -64,6 +71,7 @@ class KeyframeTaskErrorCode(StrEnum):
     INVALID_GUIDANCE = "INVALID_KEYFRAME_GUIDANCE"
     INVALID_OUTPUT_COUNT = "INVALID_KEYFRAME_OUTPUT_COUNT"
     INVALID_SEED = "INVALID_KEYFRAME_SEED"
+    INVALID_PURPOSE = "INVALID_KEYFRAME_PURPOSE"
     INVALID_REFERENCE_TYPE = "INVALID_KEYFRAME_REFERENCE_TYPE"
     INVALID_REFERENCE_PURPOSE = "INVALID_KEYFRAME_REFERENCE_PURPOSE"
     REFERENCE_ALREADY_EXISTS = "KEYFRAME_TASK_REFERENCE_ALREADY_EXISTS"

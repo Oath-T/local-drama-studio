@@ -45,9 +45,13 @@ const sectionCopy = {
 };
 
 type PlaceholderSection = Exclude<WorkbenchSection, "projects" | "overview" | "assets">;
+type SupportedPlaceholderSection = keyof typeof sectionCopy;
 
 export function WorkbenchPage({ section }: { section: PlaceholderSection }) {
-  const copy = sectionCopy[section];
+  const copy =
+    section in sectionCopy
+      ? sectionCopy[section as SupportedPlaceholderSection]
+      : sectionCopy.tasks;
 
   return (
     <AppShell>

@@ -12,6 +12,8 @@ import { Badge } from "@/features/characters/components/status-badge";
 import { fetchGenerationTasks, generationTaskKeys } from "@/features/generation-tasks/api";
 import { generationTaskCopy } from "@/features/generation-tasks/copy";
 import type { GenerationTaskSummary } from "@/features/generation-tasks/types";
+import { keyframeTaskCopy } from "@/features/keyframe-tasks/copy";
+import type { KeyframeTaskPurpose } from "@/features/keyframe-tasks/types";
 import { fetchProject, projectKeys } from "@/features/projects/api";
 import { cn } from "@/lib/utils";
 
@@ -127,6 +129,9 @@ function GenerationTaskCard({ task }: { task: GenerationTaskSummary }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="primary">{generationTaskCopy.taskType[task.task_type]}</Badge>
+          {task.task_type === "keyframe" && task.task_purpose && (
+            <Badge>{keyframeTaskCopy.purpose[task.task_purpose as KeyframeTaskPurpose]}</Badge>
+          )}
           <Badge>{taskStatusText(task.task_status)}</Badge>
           <Badge tone={runTone}>{runLabel}</Badge>
           {task.has_selected_output && <Badge tone="success">{generationTaskCopy.selected}</Badge>}

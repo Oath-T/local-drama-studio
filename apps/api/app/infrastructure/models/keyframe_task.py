@@ -14,6 +14,10 @@ class KeyframeGenerationTaskRecord(Base):
             name="ck_keyframe_generation_tasks_status",
         ),
         CheckConstraint(
+            "purpose IN ('first_frame', 'end_frame', 'concept', 'reference')",
+            name="ck_keyframe_generation_tasks_purpose",
+        ),
+        CheckConstraint(
             "aspect_ratio IN ('16:9', '9:16', '1:1', '4:3', '3:4', 'custom')",
             name="ck_keyframe_generation_tasks_aspect_ratio",
         ),
@@ -52,6 +56,7 @@ class KeyframeGenerationTaskRecord(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, default="concept")
     shot_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     source_shot_updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
