@@ -64,14 +64,22 @@ export const productionStatusCopy = {
     adopted: "已采用"
   } satisfies Record<VideoStepStatus, string>,
   action: {
+    complete_assets: "补齐镜头资产",
+    generate_director_prompt: "生成导演 Prompt",
     bind_character: "添加镜头角色",
     bind_scene: "选择场景和状态",
     create_director_prompt: "生成导演 Prompt",
     create_first_frame_task: "创建首帧任务",
+    select_first_frame_output: "采用首帧输出",
     create_end_frame_task: "创建尾帧任务",
+    select_end_frame_output: "采用尾帧输出",
     select_first_frame: "采用首帧输出",
     select_end_frame: "采用尾帧输出",
     create_video_task: "创建视频任务",
+    select_video_frames: "选择视频首尾帧",
+    mark_video_ready: "标记视频任务就绪",
+    start_video_generation: "开始视频生成",
+    select_video_output: "采用视频输出",
     fill_video_inputs: "填入视频首尾帧",
     review_final_output: "检查并采用最终视频"
   } satisfies Record<ProductionAction, string>,

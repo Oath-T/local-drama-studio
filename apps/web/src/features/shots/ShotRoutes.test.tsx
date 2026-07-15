@@ -1959,6 +1959,94 @@ describe("shot workbench routes", () => {
     expect(JSON.parse(videoPatch?.body ?? "{}")).not.toHaveProperty("inputs");
   });
 
+  it("keeps the shot page visible when production status is missing final adoption and asset counts", async () => {
+    const productionStatus = {
+      ...shotProductionStatus(),
+      overall_status: "blocked",
+      steps: {
+        assets: {
+          status: "missing",
+          warnings: ["missing_characters"]
+        },
+        director_prompt: {
+          status: "available",
+          director_template_available: true,
+          recommended_template_id: "meeting_room_wide"
+        },
+        first_frame: {
+          status: "not_created",
+          task_id: null,
+          adopted_output_id: null,
+          adopted_media_asset_id: null,
+          content_url: null
+        },
+        end_frame: {
+          status: "not_created",
+          task_id: null,
+          adopted_output_id: null,
+          adopted_media_asset_id: null,
+          content_url: null
+        },
+        video: {
+          status: "not_created",
+          task_id: null,
+          adopted_output_id: null,
+          adopted_media_asset_id: null,
+          content_url: null,
+          has_start_frame: false,
+          has_end_frame: false
+        }
+      },
+      blockers: ["missing_characters"],
+      next_actions: ["complete_assets", "generate_director_prompt"]
+    } as unknown as ReturnType<typeof shotProductionStatus>;
+
+    mockShotApi({ productionStatus });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByText("生产流程")).toBeInTheDocument();
+    expect(screen.getByText("0 个角色 / 0 张镜头参考")).toBeInTheDocument();
+    expect(screen.getByText("最终采用")).toBeInTheDocument();
+    expect(screen.getByText("等待最终视频输出采用")).toBeInTheDocument();
+    expect(screen.getAllByText(shot.name).length).toBeGreaterThan(0);
+  });
+
+  it("derives final adoption from adopted video when final adoption step is absent", async () => {
+    const base = shotProductionStatus();
+    const productionStatus = {
+      ...base,
+      steps: {
+        ...base.steps,
+        video: {
+          status: "adopted",
+          task_id: videoTaskId,
+          task_name: videoTask.name,
+          adopted_output_id: "adopted-video-output",
+          adopted_media_asset_id: mediaAsset.id,
+          content_url: mediaAsset.content_url,
+          has_start_frame: true,
+          has_end_frame: true
+        },
+        final_adoption: undefined
+      }
+    } as unknown as ReturnType<typeof shotProductionStatus>;
+
+    mockShotApi({ productionStatus });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByText("生产流程")).toBeInTheDocument();
+    expect(screen.getByText("已有采用的视频输出")).toBeInTheDocument();
+  });
+
+  it("shows production status error without breaking the rest of the shot workbench", async () => {
+    mockShotApi({ failProductionStatus: true });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByText("生产状态加载失败，请稍后重试。")).toBeInTheDocument();
+    expect(screen.getAllByText(shot.name).length).toBeGreaterThan(0);
+    expect(screen.getByText("镜头信息")).toBeInTheDocument();
+  });
+
   it("keeps a created task and shows a safe error when prompt patching fails", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(true);

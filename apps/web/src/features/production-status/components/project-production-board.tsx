@@ -10,6 +10,7 @@ import { Badge } from "@/features/characters/components/status-badge";
 import { cn } from "@/lib/utils";
 
 import { productionStatusCopy } from "../copy";
+import { normalizeShotProductionStatus } from "../normalizers";
 import type { ProductionOverallStatus, ShotProductionStatus } from "../types";
 
 type FilterKey = "all" | ProductionOverallStatus;
@@ -40,13 +41,13 @@ export function ProjectProductionBoard({
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const filteredItems = useMemo(
-    () => items.filter((item) => filter === "all" || item.overall_status === filter),
+    () => items.filter((item) => filter === "all" || normalizeShotProductionStatus(item).overallStatus === filter),
     [filter, items]
   );
   const counts = useMemo(() => {
     return items.reduce(
       (acc, item) => {
-        acc[item.overall_status] += 1;
+        acc[normalizeShotProductionStatus(item).overallStatus] += 1;
         return acc;
       },
       { blocked: 0, in_progress: 0, ready_for_video: 0, completed: 0 } satisfies Record<ProductionOverallStatus, number>
@@ -152,38 +153,39 @@ function ProductionShotCard({
   projectId: string;
   item: ShotProductionStatus;
 }) {
-  const firstReady = item.steps.first_frame.status === "adopted";
-  const endReady = item.steps.end_frame.status === "adopted";
+  const safeItem = normalizeShotProductionStatus(item);
+  const firstReady = safeItem.steps.first_frame.status === "adopted";
+  const endReady = safeItem.steps.end_frame.status === "adopted";
   return (
     <article className="grid gap-4 rounded-md border border-border bg-panel p-4 lg:grid-cols-[minmax(0,1fr)_220px]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={item.overall_status === "completed" ? "success" : item.overall_status === "blocked" ? "danger" : "primary"}>
-            {productionStatusCopy.overall[item.overall_status]}
+          <Badge tone={safeItem.overallStatus === "completed" ? "success" : safeItem.overallStatus === "blocked" ? "danger" : "primary"}>
+            {productionStatusCopy.overall[safeItem.overallStatus]}
           </Badge>
-          <Badge>{productionStatusCopy.assetStatus[item.steps.assets.status]}</Badge>
+          <Badge>{productionStatusCopy.assetStatus[safeItem.steps.assets.status]}</Badge>
           {firstReady && <Badge tone="success">{productionStatusCopy.startFrameSelected}</Badge>}
           {endReady && <Badge tone="success">{productionStatusCopy.endFrameSelected}</Badge>}
         </div>
         <h2 className="mt-3 truncate text-base font-semibold text-foreground">
-          #{item.order_index} {item.shot_name}
+          #{safeItem.orderIndex} {safeItem.shotName}
         </h2>
         <p className="mt-2 text-sm text-muted">
-          {item.steps.assets.scene_name ?? "未选择场景"} / {item.steps.assets.scene_state_name ?? "未选择状态"}
+          {safeItem.steps.assets.scene_name ?? "未选择场景"} / {safeItem.steps.assets.scene_state_name ?? "未选择状态"}
         </p>
         <p className="mt-2 text-xs text-muted">
-          {item.blockers.length > 0 ? item.blockers.join(" / ") : productionStatusCopy.noBlockers}
+          {safeItem.blockers.length > 0 ? safeItem.blockers.join(" / ") : productionStatusCopy.noBlockers}
         </p>
       </div>
       <div className="grid content-between gap-3 text-sm">
         <div className="grid grid-cols-2 gap-2 text-center">
-          <MiniMetric label="首帧" value={productionStatusCopy.frameStatus[item.steps.first_frame.status]} />
-          <MiniMetric label="尾帧" value={productionStatusCopy.frameStatus[item.steps.end_frame.status]} />
-          <MiniMetric label="视频" value={productionStatusCopy.videoStatus[item.steps.video.status]} />
-          <MiniMetric label="采用" value={item.steps.final_adoption.adopted_output_id ? "已采用" : "未采用"} />
+          <MiniMetric label="首帧" value={productionStatusCopy.frameStatus[safeItem.steps.first_frame.status]} />
+          <MiniMetric label="尾帧" value={productionStatusCopy.frameStatus[safeItem.steps.end_frame.status]} />
+          <MiniMetric label="视频" value={productionStatusCopy.videoStatus[safeItem.steps.video.status]} />
+          <MiniMetric label="采用" value={safeItem.steps.final_adoption.adopted_output_id ? "已采用" : "未采用"} />
         </div>
         <Button asChild variant="secondary">
-          <Link to={`/projects/${projectId}/shots/${item.shot_id}`}>
+          <Link to={`/projects/${projectId}/shots/${safeItem.shotId}`}>
             <Clapperboard className="h-4 w-4" aria-hidden="true" />
             {productionStatusCopy.openShot}
           </Link>

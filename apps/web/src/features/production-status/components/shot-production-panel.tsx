@@ -1,5 +1,6 @@
 import { Clapperboard, Film, Images, ListChecks, RefreshCw, Wand2 } from "lucide-react";
 import type React from "react";
+import { Component } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,9 +8,29 @@ import { StatusMessage } from "@/components/ui/status-message";
 import { Badge } from "@/features/characters/components/status-badge";
 
 import { productionStatusCopy } from "../copy";
-import type { ProductionFrameStep, ShotProductionStatus } from "../types";
+import { normalizeShotProductionStatus } from "../normalizers";
+import type { ProductionAction, ProductionFrameStep, ShotProductionStatus } from "../types";
 
 export function ShotProductionPanel({
+  onRetry,
+  ...props
+}: {
+  status?: ShotProductionStatus;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+  onOpenPrompt: () => void;
+  onOpenTasks: () => void;
+  onCreateVideoTask: () => void;
+}) {
+  return (
+    <ShotProductionPanelErrorBoundary onRetry={onRetry}>
+      <ShotProductionPanelContent {...props} onRetry={onRetry} />
+    </ShotProductionPanelErrorBoundary>
+  );
+}
+
+function ShotProductionPanelContent({
   status,
   loading,
   error,
@@ -43,18 +64,28 @@ export function ShotProductionPanel({
   }
 
   if (!status) {
-    return null;
+    return (
+      <section className="grid gap-3 rounded-md border border-border bg-background p-3">
+        <StatusMessage tone="error">生产流程加载失败，请重试。</StatusMessage>
+        <Button type="button" variant="secondary" onClick={onRetry}>
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          重试
+        </Button>
+      </section>
+    );
   }
+
+  const safeStatus = normalizeShotProductionStatus(status);
 
   return (
     <section className="grid gap-3 rounded-md border border-border bg-background p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-foreground">{productionStatusCopy.title}</h3>
-          <p className="mt-1 text-xs text-muted">{status.shot_name}</p>
+          <p className="mt-1 text-xs text-muted">{safeStatus.shotName}</p>
         </div>
-        <Badge tone={status.overall_status === "completed" ? "success" : status.overall_status === "blocked" ? "danger" : "primary"}>
-          {productionStatusCopy.overall[status.overall_status]}
+        <Badge tone={safeStatus.overallStatus === "completed" ? "success" : safeStatus.overallStatus === "blocked" ? "danger" : "primary"}>
+          {productionStatusCopy.overall[safeStatus.overallStatus]}
         </Badge>
       </div>
 
@@ -62,18 +93,18 @@ export function ShotProductionPanel({
         <ProductionStep
           icon={<Images className="h-4 w-4" aria-hidden="true" />}
           title={productionStatusCopy.steps.assets}
-          status={productionStatusCopy.assetStatus[status.steps.assets.status]}
-          tone={status.steps.assets.status === "complete" ? "success" : status.steps.assets.status === "missing" ? "danger" : "default"}
-          description={`${status.steps.assets.character_count} 个角色 / ${status.steps.assets.reference_count} 张镜头参考`}
+          status={productionStatusCopy.assetStatus[safeStatus.steps.assets.status]}
+          tone={safeStatus.steps.assets.status === "complete" ? "success" : safeStatus.steps.assets.status === "missing" ? "danger" : "default"}
+          description={`${safeStatus.steps.assets.character_count} 个角色 / ${safeStatus.steps.assets.reference_count} 张镜头参考`}
         />
         <ProductionStep
           icon={<Wand2 className="h-4 w-4" aria-hidden="true" />}
           title={productionStatusCopy.steps.director_prompt}
-          status={productionStatusCopy.directorStatus[status.steps.director_prompt.status]}
+          status={productionStatusCopy.directorStatus[safeStatus.steps.director_prompt.status]}
           tone="primary"
           description={
-            status.steps.director_prompt.recommended_template_id
-              ? `推荐模板：${status.steps.director_prompt.recommended_template_id}`
+            safeStatus.steps.director_prompt.recommended_template_id
+              ? `推荐模板：${safeStatus.steps.director_prompt.recommended_template_id}`
               : "可从镜头上下文生成可编辑草稿"
           }
           action={
@@ -84,20 +115,20 @@ export function ShotProductionPanel({
         />
         <FrameStepCard
           title={productionStatusCopy.steps.first_frame}
-          step={status.steps.first_frame}
+          step={safeStatus.steps.first_frame}
           onOpenTasks={onOpenTasks}
         />
         <FrameStepCard
           title={productionStatusCopy.steps.end_frame}
-          step={status.steps.end_frame}
+          step={safeStatus.steps.end_frame}
           onOpenTasks={onOpenTasks}
         />
         <ProductionStep
           icon={<Film className="h-4 w-4" aria-hidden="true" />}
           title={productionStatusCopy.steps.video}
-          status={productionStatusCopy.videoStatus[status.steps.video.status]}
-          tone={status.steps.video.status === "adopted" ? "success" : status.steps.video.status === "missing_inputs" ? "danger" : "primary"}
-          description={`${status.steps.video.has_start_frame ? productionStatusCopy.startFrameSelected : productionStatusCopy.startFrameMissing} / ${status.steps.video.has_end_frame ? productionStatusCopy.endFrameSelected : productionStatusCopy.endFrameMissing}`}
+          status={productionStatusCopy.videoStatus[safeStatus.steps.video.status]}
+          tone={safeStatus.steps.video.status === "adopted" ? "success" : safeStatus.steps.video.status === "missing_inputs" ? "danger" : "primary"}
+          description={`${safeStatus.steps.video.has_start_frame ? productionStatusCopy.startFrameSelected : productionStatusCopy.startFrameMissing} / ${safeStatus.steps.video.has_end_frame ? productionStatusCopy.endFrameSelected : productionStatusCopy.endFrameMissing}`}
           action={
             <Button type="button" variant="secondary" size="sm" onClick={onCreateVideoTask}>
               {productionStatusCopy.createVideoTask}
@@ -107,10 +138,10 @@ export function ShotProductionPanel({
         <ProductionStep
           icon={<ListChecks className="h-4 w-4" aria-hidden="true" />}
           title={productionStatusCopy.steps.final_adoption}
-          status={productionStatusCopy.videoStatus[status.steps.final_adoption.status]}
-          tone={status.steps.final_adoption.status === "adopted" ? "success" : "default"}
+          status={productionStatusCopy.videoStatus[safeStatus.steps.final_adoption.status]}
+          tone={safeStatus.steps.final_adoption.status === "adopted" ? "success" : "default"}
           description={
-            status.steps.final_adoption.adopted_output_id
+            safeStatus.steps.final_adoption.adopted_output_id
               ? "已有采用的视频输出"
               : "等待最终视频输出采用"
           }
@@ -119,29 +150,65 @@ export function ShotProductionPanel({
 
       <div className="rounded-md border border-border bg-panel p-2 text-xs leading-5 text-muted">
         <div className="font-medium text-foreground">阻断项</div>
-        {status.blockers.length > 0 ? status.blockers.join(" / ") : productionStatusCopy.noBlockers}
+        {safeStatus.blockers.length > 0 ? safeStatus.blockers.join(" / ") : productionStatusCopy.noBlockers}
       </div>
 
-      {status.next_actions.length > 0 && (
+      {safeStatus.nextActions.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {status.next_actions.map((action) => (
-            <Badge key={action}>{productionStatusCopy.action[action]}</Badge>
+          {safeStatus.nextActions.map((action) => (
+            <Badge key={action}>{actionLabel(action)}</Badge>
           ))}
         </div>
       )}
 
-      {status.continuity_candidate && (
+      {safeStatus.continuityCandidate && (
         <div className="rounded-md border border-border bg-panel p-2 text-xs leading-5 text-muted">
           <div className="font-medium text-foreground">{productionStatusCopy.continuityTitle}</div>
           {productionStatusCopy.continuityDescription}
           <div className="mt-1 text-foreground">
-            {status.continuity_candidate.source_shot_name} /{" "}
-            {status.continuity_candidate.source_type === "video" ? "视频" : "尾帧"}
+            {safeStatus.continuityCandidate.source_shot_name} /{" "}
+            {safeStatus.continuityCandidate.source_type === "video" ? "视频" : "尾帧"}
           </div>
         </div>
       )}
     </section>
   );
+}
+
+class ShotProductionPanelErrorBoundary extends Component<
+  { children: React.ReactNode; onRetry: () => void },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(previousProps: { children: React.ReactNode; onRetry: () => void }) {
+    if (previousProps.children !== this.props.children && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section className="grid gap-3 rounded-md border border-border bg-background p-3">
+          <StatusMessage tone="error">生产流程加载失败，请重试。</StatusMessage>
+          <Button type="button" variant="secondary" onClick={this.props.onRetry}>
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            重试
+          </Button>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function actionLabel(action: string) {
+  return productionStatusCopy.action[action as ProductionAction] ?? action;
 }
 
 function FrameStepCard({

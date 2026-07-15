@@ -11,27 +11,35 @@ export type VideoStepStatus =
   | "completed"
   | "adopted";
 export type ProductionAction =
+  | "complete_assets"
+  | "generate_director_prompt"
   | "bind_character"
   | "bind_scene"
   | "create_director_prompt"
   | "create_first_frame_task"
+  | "select_first_frame_output"
   | "create_end_frame_task"
+  | "select_end_frame_output"
   | "select_first_frame"
   | "select_end_frame"
   | "create_video_task"
+  | "select_video_frames"
+  | "mark_video_ready"
+  | "start_video_generation"
+  | "select_video_output"
   | "fill_video_inputs"
   | "review_final_output";
 
 export interface ProductionAssetStep {
   status: AssetStepStatus;
-  character_count: number;
-  reference_count: number;
-  has_primary_subject: boolean;
-  has_scene: boolean;
-  has_scene_state: boolean;
-  scene_name: string | null;
-  scene_state_name: string | null;
-  warnings: string[];
+  character_count?: number;
+  reference_count?: number;
+  has_primary_subject?: boolean;
+  has_scene?: boolean;
+  has_scene_state?: boolean;
+  scene_name?: string | null;
+  scene_state_name?: string | null;
+  warnings?: string[];
 }
 
 export interface ProductionDirectorPromptStep {
@@ -43,7 +51,7 @@ export interface ProductionDirectorPromptStep {
 export interface ProductionFrameStep {
   status: FrameStepStatus;
   task_id: string | null;
-  task_name: string | null;
+  task_name?: string | null;
   adopted_output_id: string | null;
   adopted_media_asset_id: string | null;
   content_url: string | null;
@@ -52,7 +60,7 @@ export interface ProductionFrameStep {
 export interface ProductionVideoStep {
   status: VideoStepStatus;
   task_id: string | null;
-  task_name: string | null;
+  task_name?: string | null;
   adopted_output_id: string | null;
   adopted_media_asset_id: string | null;
   content_url: string | null;
@@ -61,34 +69,37 @@ export interface ProductionVideoStep {
 }
 
 export interface ProductionSteps {
-  assets: ProductionAssetStep;
-  director_prompt: ProductionDirectorPromptStep;
-  first_frame: ProductionFrameStep;
-  end_frame: ProductionFrameStep;
-  video: ProductionVideoStep;
-  final_adoption: ProductionVideoStep;
+  assets?: ProductionAssetStep;
+  director_prompt?: ProductionDirectorPromptStep;
+  first_frame?: ProductionFrameStep;
+  end_frame?: ProductionFrameStep;
+  video?: ProductionVideoStep;
+  final_adoption?: ProductionVideoStep;
 }
 
 export interface ContinuityCandidate {
-  source_shot_id: string;
-  source_shot_name: string;
-  source_type: "video" | "end_frame";
-  output_id: string;
+  source_shot_id?: string;
+  source_shot_name?: string;
+  source_type?: "video" | "end_frame";
+  previous_shot_id?: string;
+  previous_shot_name?: string;
+  source?: "adopted_end_frame" | "adopted_video";
+  output_id?: string;
   media_asset_id: string;
   content_url: string | null;
 }
 
 export interface ShotProductionStatus {
-  project_id: string;
+  project_id?: string;
   shot_id: string;
   shot_name: string;
   order_index: number;
   overall_status: ProductionOverallStatus;
   steps: ProductionSteps;
-  blockers: string[];
-  next_actions: ProductionAction[];
+  blockers?: string[];
+  next_actions?: ProductionAction[];
   continuity_candidate: ContinuityCandidate | null;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface ProjectProductionSummary {
@@ -100,8 +111,9 @@ export interface ProjectProductionSummary {
 }
 
 export interface ProjectProductionStatus {
-  project_id: string;
+  project_id?: string;
   summary: ProjectProductionSummary;
-  items: ShotProductionStatus[];
-  total: number;
+  shots?: ShotProductionStatus[];
+  items?: ShotProductionStatus[];
+  total?: number;
 }

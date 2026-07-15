@@ -46,6 +46,7 @@ import {
 } from "@/features/production-status/api";
 import { ShotProductionPanel } from "@/features/production-status/components/shot-production-panel";
 import { productionStatusCopy } from "@/features/production-status/copy";
+import { normalizeShotProductionStatus } from "@/features/production-status/normalizers";
 import type { ShotProductionStatus } from "@/features/production-status/types";
 import { ShotRecommendationPanel } from "@/features/shots/components/shot-recommendation-panel";
 import { createVideoTask, updateVideoTask } from "@/features/video-generation/api";
@@ -1450,29 +1451,30 @@ function adoptedVideoInputs(status?: ShotProductionStatus): VideoTaskInputPayloa
   if (!status) {
     return [];
   }
+  const safeStatus = normalizeShotProductionStatus(status);
   const items: VideoTaskInputPayload[] = [];
   if (
-    status.steps.first_frame.adopted_media_asset_id &&
-    status.steps.first_frame.adopted_output_id &&
-    status.steps.first_frame.task_id
+    safeStatus.steps.first_frame.adopted_media_asset_id &&
+    safeStatus.steps.first_frame.adopted_output_id &&
+    safeStatus.steps.first_frame.task_id
   ) {
     items.push({
       role: "start_frame",
-      media_asset_id: status.steps.first_frame.adopted_media_asset_id,
-      source_keyframe_output_id: status.steps.first_frame.adopted_output_id,
-      source_keyframe_task_id: status.steps.first_frame.task_id
+      media_asset_id: safeStatus.steps.first_frame.adopted_media_asset_id,
+      source_keyframe_output_id: safeStatus.steps.first_frame.adopted_output_id,
+      source_keyframe_task_id: safeStatus.steps.first_frame.task_id
     });
   }
   if (
-    status.steps.end_frame.adopted_media_asset_id &&
-    status.steps.end_frame.adopted_output_id &&
-    status.steps.end_frame.task_id
+    safeStatus.steps.end_frame.adopted_media_asset_id &&
+    safeStatus.steps.end_frame.adopted_output_id &&
+    safeStatus.steps.end_frame.task_id
   ) {
     items.push({
       role: "end_frame",
-      media_asset_id: status.steps.end_frame.adopted_media_asset_id,
-      source_keyframe_output_id: status.steps.end_frame.adopted_output_id,
-      source_keyframe_task_id: status.steps.end_frame.task_id
+      media_asset_id: safeStatus.steps.end_frame.adopted_media_asset_id,
+      source_keyframe_output_id: safeStatus.steps.end_frame.adopted_output_id,
+      source_keyframe_task_id: safeStatus.steps.end_frame.task_id
     });
   }
   return items;

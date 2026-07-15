@@ -12,7 +12,14 @@ export const productionStatusKeys = {
 export function fetchProjectProductionStatus(
   projectId: string
 ): Promise<ProjectProductionStatus> {
-  return apiGet<ProjectProductionStatus>(`/api/projects/${projectId}/production-status`);
+  return apiGet<ProjectProductionStatus>(`/api/projects/${projectId}/production-status`).then((data) => {
+    const items = data.items ?? data.shots ?? [];
+    return {
+      ...data,
+      items,
+      total: data.total ?? items.length
+    };
+  });
 }
 
 export function fetchShotProductionStatus(
