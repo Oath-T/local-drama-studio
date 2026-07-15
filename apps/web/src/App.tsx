@@ -5,6 +5,7 @@ import { CharacterDetailPage } from "./pages/character-detail-page";
 import { CharacterLibraryPage } from "./pages/character-library-page";
 import { GenerationCenterPage } from "./pages/generation-center-page";
 import { MediaLibraryPage } from "./pages/media-library-page";
+import { ProjectCanvasPage } from "./pages/project-canvas-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
 import { ProjectProductionPage } from "./pages/project-production-page";
 import { ProjectSettingsPage } from "./pages/project-settings-page";
@@ -21,6 +22,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+      <Route path="/projects/:projectId/canvas" element={<ProjectCanvasPage />} />
       <Route path="/projects/:projectId/assets" element={<AssetLibraryPage />} />
       <Route path="/projects/:projectId/characters" element={<CharacterLibraryPage />} />
       <Route

@@ -11,7 +11,8 @@ import {
   Route,
   Settings,
   StretchHorizontal,
-  UserRound
+  UserRound,
+  Workflow
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type React from "react";
@@ -42,6 +43,13 @@ const navItems: Array<{
     path: "/projects",
     icon: LayoutList,
     projectPath: (projectId) => `/projects/${projectId}`
+  },
+  {
+    id: "canvas",
+    label: "创作画布",
+    path: "/projects",
+    icon: Workflow,
+    projectPath: (projectId) => `/projects/${projectId}/canvas`
   },
   {
     id: "assets",
@@ -127,6 +135,8 @@ export function AppShell({ children }: AppShellProps) {
           ? "production"
           : location.pathname.includes("/timeline")
           ? "timeline"
+          : location.pathname.includes("/canvas")
+          ? "canvas"
           : location.pathname.includes("/generation") || location.pathname.startsWith("/tasks")
           ? "tasks"
           : location.pathname.includes("/media") || location.pathname.startsWith("/media")

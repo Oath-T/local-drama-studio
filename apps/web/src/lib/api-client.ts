@@ -158,7 +158,14 @@ Object.assign(errorCodeMessages, {
   PROJECT_EXPORT_MEDIA_FILE_MISSING: "导出源视频文件不存在或无法读取。",
   PROJECT_EXPORT_MEDIA_FILE_UNSAFE: "导出源文件路径无效。",
   PROJECT_EXPORT_INVALID_STATUS: "当前导出任务状态不允许执行此操作。",
-  PROJECT_EXPORT_RUN_FAILED: "最终导出失败，请检查源视频和 FFmpeg 环境。"
+  PROJECT_EXPORT_RUN_FAILED: "最终导出失败，请检查源视频和 FFmpeg 环境。",
+  PROJECT_CANVAS_NOT_FOUND: "创作画布不存在或已被删除。",
+  PROJECT_CANVAS_REVISION_CONFLICT: "创作画布已在其他页面更新，请刷新后继续。",
+  PROJECT_CANVAS_NODE_NOT_FOUND: "画布节点不存在或已被删除。",
+  PROJECT_CANVAS_EDGE_NOT_FOUND: "画布连线不存在或已被删除。",
+  PROJECT_CANVAS_ENTITY_NOT_FOUND: "关联的项目资产不存在或不属于当前项目。",
+  PROJECT_CANVAS_EDGE_NODE_NOT_FOUND: "连线两端节点不存在或已被删除。",
+  PROJECT_CANVAS_EDGE_SELF_LOOP_FORBIDDEN: "不能把节点连接到自己。"
 });
 
 function buildUrl(path: string): string {
@@ -239,6 +246,10 @@ export async function apiPost<TResponse, TBody>(path: string, body: TBody): Prom
 
 export async function apiPatch<TResponse, TBody>(path: string, body: TBody): Promise<TResponse> {
   return apiRequest<TResponse>(path, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export async function apiPut<TResponse, TBody>(path: string, body: TBody): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "PUT", body: JSON.stringify(body) });
 }
 
 export async function apiDelete(path: string): Promise<void> {

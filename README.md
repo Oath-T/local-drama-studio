@@ -229,6 +229,7 @@ Routes:
 
 - `/projects`: project list.
 - `/projects/:projectId`: project overview.
+- `/projects/:projectId/canvas`: project creative canvas and storyboard.
 - `/projects/:projectId/assets`: project asset library hub.
 - `/projects/:projectId/characters`: project character library.
 - `/projects/:projectId/characters/:characterId`: character detail, looks, and reference images.
@@ -306,3 +307,7 @@ LDS_API_EXPORT_TIMEOUT_SECONDS=1800
 ```
 
 The frontend never receives the ComfyUI base URL, workflow JSON, local paths, or model paths.
+
+## Sprint 24 Project Canvas
+
+Project Canvas & Storyboard v1 adds a project-level creative map backed by Alembic-managed canvas tables. Canvas nodes and semantic edges are persisted separately from business entities; they do not modify shot bindings, generation tasks, adopted outputs, exports, or ComfyUI execution. See `docs/sprint-24-project-canvas.md`.

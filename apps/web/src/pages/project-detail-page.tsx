@@ -1,4 +1,13 @@
-import { Clapperboard, Film, Images, ListChecks, Plus, RefreshCw, UserRound } from "lucide-react";
+import {
+  Clapperboard,
+  Film,
+  Images,
+  ListChecks,
+  Plus,
+  RefreshCw,
+  UserRound,
+  Workflow
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -90,12 +99,20 @@ export function ProjectDetailPage() {
                   {projectQuery.data.description || "暂无项目简介。"}
                 </p>
               </div>
-              <Button asChild>
-                <Link to={`/projects/${projectQuery.data.id}/generation`}>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild>
+                  <Link to={`/projects/${projectQuery.data.id}/canvas`}>
+                    <Workflow className="h-4 w-4" aria-hidden="true" />
+                    进入创作画布
+                  </Link>
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link to={`/projects/${projectQuery.data.id}/generation`}>
                   <ListChecks className="h-4 w-4" aria-hidden="true" />
                   进入生成中心
-                </Link>
-              </Button>
+                  </Link>
+                </Button>
+              </div>
             </section>
 
             <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
@@ -131,6 +148,12 @@ export function ProjectDetailPage() {
             <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
               <DashboardPanel title="快捷入口">
                 <div className="grid gap-2 sm:grid-cols-2">
+                  <QuickLink
+                    icon={<Workflow className="h-4 w-4" aria-hidden="true" />}
+                    title="打开创作画布"
+                    description="在项目级画布中组织角色、场景、镜头、输出和导出关系。"
+                    href={`/projects/${projectQuery.data.id}/canvas`}
+                  />
                   <QuickLink
                     icon={<UserRound className="h-4 w-4" aria-hidden="true" />}
                     title="新建角色"

@@ -3,6 +3,7 @@ import { create } from "zustand";
 export type WorkbenchSection =
   | "projects"
   | "overview"
+  | "canvas"
   | "assets"
   | "characters"
   | "scenes"

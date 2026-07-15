@@ -13,6 +13,11 @@ from app.infrastructure.models.keyframe_task import (
     KeyframeGenerationTaskReferenceRecord,
 )
 from app.infrastructure.models.project import ProjectRecord
+from app.infrastructure.models.project_canvas import (
+    ProjectCanvasEdgeRecord,
+    ProjectCanvasNodeRecord,
+    ProjectCanvasRecord,
+)
 from app.infrastructure.models.project_export import ProjectExportRecord
 from app.infrastructure.models.scene import (
     SceneRecord,
@@ -42,6 +47,9 @@ __all__ = [
     "KeyframeGenerationRunRecord",
     "MediaAssetRecord",
     "ProjectRecord",
+    "ProjectCanvasEdgeRecord",
+    "ProjectCanvasNodeRecord",
+    "ProjectCanvasRecord",
     "ProjectExportRecord",
     "SceneRecord",
     "SceneReferenceRecord",
