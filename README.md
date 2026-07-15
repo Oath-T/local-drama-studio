@@ -8,6 +8,8 @@ Sprint 19-20 adds Production Pipeline v1: structured keyframe task purposes, rea
 
 Sprint 21-22 adds Timeline & Final Export v1. The project can read adopted video outputs in shot order, create stable final-export snapshots, and run a local FFmpeg-based MP4 concat export when FFmpeg and FFprobe are available. It does not add audio, subtitles, transitions, ComfyUI changes, or a timeline editor.
 
+Sprint 23 adds Creative Workspace v1 on the shot page. It introduces a faster creator-facing frame for reference slots, first-frame/end-frame/video modes, a central result stage, and simplified prompt controls while keeping the existing professional task panels available in advanced mode. It does not change ComfyUI, workflows, manifests, runner/provider code, backend APIs, or the database.
+
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure

@@ -1410,6 +1410,39 @@ describe("shot workbench routes", () => {
     expect(requests.some((request) => request.method === "PATCH" && request.body?.includes("雨夜入场"))).toBe(true);
   });
 
+  it("renders the quick creative workspace shell without hiding existing shot data", async () => {
+    mockShotApi({ shots: [shotWithReferences] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    expect(await screen.findByRole("heading", { name: "镜头工作台" })).toBeInTheDocument();
+    expect(await screen.findByText("素材与参考")).toBeInTheDocument();
+    expect(screen.getByText("当前画面与生成结果")).toBeInTheDocument();
+    expect(screen.getByText("Prompt 与生成控制")).toBeInTheDocument();
+    expect(screen.getByText("快速创作模式")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "首帧模式" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "生成首帧" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("候选结果")).toBeInTheDocument();
+    expect(screen.getByText(/Sprint 23 只重构创作入口/)).toBeInTheDocument();
+    expect(screen.getAllByText("镜头一").length).toBeGreaterThan(0);
+  });
+
+  it("switches creative modes and opens advanced task details from quick mode", async () => {
+    const user = userEvent.setup();
+    mockShotApi({ shots: [shotWithReferences] });
+    renderRoute(`/projects/${projectId}/shots/${shotId}`);
+
+    await user.click((await screen.findAllByRole("button", { name: "尾帧模式" }))[0]);
+    expect(screen.getAllByRole("button", { name: "生成尾帧" }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getAllByRole("button", { name: "视频模式" })[0]);
+    expect(screen.getAllByRole("button", { name: "生成视频" }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "查看高级设置" }));
+    expect(screen.getByRole("button", { name: "收起高级设置" })).toBeInTheDocument();
+    expect(screen.getByText("镜头信息")).toBeInTheDocument();
+    expect(screen.getByText(shotRecommendationCopy.tabs.smart)).toBeInTheDocument();
+  });
+
   it("adds a shot character through the asset picker", async () => {
     const user = userEvent.setup();
     const { requests } = mockShotApi({ characters: [character, secondCharacter] });
@@ -1682,7 +1715,7 @@ describe("shot workbench routes", () => {
     const { requests } = mockShotApi({ shots: [shot, secondShot] });
     renderRoute(`/projects/${projectId}/shots/${shotId}`);
 
-    await screen.findByText("镜头一");
+    expect((await screen.findAllByText("镜头一")).length).toBeGreaterThan(0);
     await user.click(screen.getAllByTitle("复制")[0]);
     await user.click(screen.getAllByTitle("下移")[0]);
     await user.click(screen.getAllByTitle("删除镜头")[0]);
@@ -1935,9 +1968,9 @@ describe("shot workbench routes", () => {
     expect(await screen.findByText("生产流程")).toBeInTheDocument();
     expect(screen.getByText("资产准备")).toBeInTheDocument();
     expect(screen.getByText("导演 Prompt")).toBeInTheDocument();
-    expect(screen.getByText("首帧")).toBeInTheDocument();
-    expect(screen.getByText("尾帧")).toBeInTheDocument();
-    expect(screen.getByText("视频")).toBeInTheDocument();
+    expect(screen.getAllByText("首帧").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("尾帧").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("视频").length).toBeGreaterThan(0);
     expect(screen.getByText("最终采用")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "用已采用首尾帧创建视频任务" }));

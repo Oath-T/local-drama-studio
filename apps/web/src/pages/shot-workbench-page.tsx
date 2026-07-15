@@ -5,12 +5,16 @@ import {
   ArrowLeft,
   ArrowUp,
   Copy,
+  Film,
+  Images,
   Plus,
   RefreshCw,
   Save,
+  Settings,
+  Sparkles,
   Trash2
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -85,6 +89,27 @@ import { ApiClientError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 const NONE = "__none";
+
+type CreativeMode = "first_frame" | "end_frame" | "video";
+type WorkspaceMode = "quick" | "advanced";
+
+const creativeModeCopy: Record<CreativeMode, { label: string; action: string; empty: string }> = {
+  first_frame: {
+    label: "首帧",
+    action: "生成首帧",
+    empty: "还没有首帧候选。放入参考图并填写 Prompt 后，可以在这里查看生成结果。"
+  },
+  end_frame: {
+    label: "尾帧",
+    action: "生成尾帧",
+    empty: "还没有尾帧候选。采用首帧后，可以继续生成尾帧保持连续性。"
+  },
+  video: {
+    label: "视频",
+    action: "生成视频",
+    empty: "还没有视频候选。采用首帧和尾帧后，可以继续生成视频。"
+  }
+};
 
 const shotScaleOptions = [
   "unknown",
@@ -165,6 +190,8 @@ export function ShotWorkbenchPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [creativeMode, setCreativeMode] = useState<CreativeMode>("first_frame");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("quick");
 
   const projectQuery = useQuery({
     queryKey: projectKeys.detail(projectId),
@@ -180,6 +207,11 @@ export function ShotWorkbenchPage() {
   const shotQuery = useQuery({
     queryKey: shotKeys.detail(projectId, activeShotId),
     queryFn: () => fetchShot(projectId, activeShotId),
+    enabled: projectId.length > 0 && activeShotId.length > 0
+  });
+  const productionStatusQuery = useQuery({
+    queryKey: activeShotId ? productionStatusKeys.shot(projectId, activeShotId) : ["production-status", "none"],
+    queryFn: () => fetchShotProductionStatus(projectId, activeShotId),
     enabled: projectId.length > 0 && activeShotId.length > 0
   });
   const charactersQuery = useQuery({
@@ -335,41 +367,460 @@ export function ShotWorkbenchPage() {
           />
         )}
         {shotsQuery.isSuccess && shotsQuery.data.total > 0 && (
-          <div className="grid min-h-[620px] gap-4 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-            <ShotListPanel
-              projectId={projectId}
-              shots={shotsQuery.data.items}
-              activeShotId={activeShotId}
-              onMove={(id, orderIndex) => moveMutation.mutate({ id, orderIndex })}
-              onDuplicate={(id) => duplicateMutation.mutate(id)}
-              onDelete={(id) => deleteMutation.mutateAsync(id)}
-              disabled={moveMutation.isPending || duplicateMutation.isPending || deleteMutation.isPending}
-            />
-            <ShotEditorPanel
-              projectId={projectId}
+          <PanelErrorBoundary title="创作工作台加载失败">
+            <CreativeTopBar
               shot={shotQuery.data}
-              loading={shotQuery.isLoading}
-              scenes={scenesQuery.data?.items ?? []}
-              scenesLoading={scenesQuery.isLoading}
-              scenesError={scenesQuery.isError}
-              characters={charactersQuery.data?.items ?? []}
-              charactersLoading={charactersQuery.isLoading}
-              charactersError={charactersQuery.isError}
-              onMessage={setMessage}
-              invalidateShotData={invalidateShotData}
+              mode={creativeMode}
+              workspaceMode={workspaceMode}
+              productionStatus={productionStatusQuery.data}
+              comfyStatus="沿用现有生成服务"
+              onModeChange={setCreativeMode}
+              onWorkspaceModeChange={setWorkspaceMode}
+              onPrimaryAction={() => {
+                setWorkspaceMode("advanced");
+                setMessage({
+                  tone: "success",
+                  text: "快速生成编排将在 Sprint 25 接入。当前已打开专业任务详情，可继续使用现有任务链生成。"
+                });
+              }}
             />
-            <ReferencePanel
-              projectId={projectId}
-              shot={shotQuery.data}
-              characters={charactersQuery.data?.items ?? []}
-              onMessage={setMessage}
-              invalidateShotData={invalidateShotData}
-              invalidateCreatedTaskData={invalidateCreatedTaskData}
-            />
-          </div>
+            <div className="grid min-h-[680px] gap-4 2xl:grid-cols-[340px_minmax(0,1fr)_430px] xl:grid-cols-[300px_minmax(0,1fr)_400px]">
+              <PanelErrorBoundary title="素材与参考加载失败">
+                <aside className="grid min-h-0 gap-4">
+                  <CreativeReferenceSlots
+                    shot={shotQuery.data}
+                    mode={creativeMode}
+                    productionStatus={productionStatusQuery.data}
+                    onOpenAdvanced={() => setWorkspaceMode("advanced")}
+                  />
+                  <ShotListPanel
+                    projectId={projectId}
+                    shots={shotsQuery.data.items}
+                    activeShotId={activeShotId}
+                    onMove={(id, orderIndex) => moveMutation.mutate({ id, orderIndex })}
+                    onDuplicate={(id) => duplicateMutation.mutate(id)}
+                    onDelete={(id) => deleteMutation.mutateAsync(id)}
+                    disabled={moveMutation.isPending || duplicateMutation.isPending || deleteMutation.isPending}
+                  />
+                </aside>
+              </PanelErrorBoundary>
+              <PanelErrorBoundary title="当前画面加载失败">
+                <CreativeResultStage
+                  shot={shotQuery.data}
+                  mode={creativeMode}
+                  productionStatus={productionStatusQuery.data}
+                  onModeChange={setCreativeMode}
+                  onOpenAdvanced={() => setWorkspaceMode("advanced")}
+                />
+              </PanelErrorBoundary>
+              <PanelErrorBoundary title="Prompt 与生成控制加载失败">
+                <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
+                  <CreativePromptControl
+                    shot={shotQuery.data}
+                    mode={creativeMode}
+                    workspaceMode={workspaceMode}
+                    onWorkspaceModeChange={setWorkspaceMode}
+                    onPrimaryAction={() => {
+                      setWorkspaceMode("advanced");
+                      setMessage({
+                        tone: "success",
+                        text: "一键生成尚未接入，已展开专业任务详情。"
+                      });
+                    }}
+                  />
+                  <div className={cn("mt-4 grid gap-4", workspaceMode === "quick" && "sr-only")}>
+                    <ShotEditorPanel
+                      projectId={projectId}
+                      shot={shotQuery.data}
+                      loading={shotQuery.isLoading}
+                      scenes={scenesQuery.data?.items ?? []}
+                      scenesLoading={scenesQuery.isLoading}
+                      scenesError={scenesQuery.isError}
+                      characters={charactersQuery.data?.items ?? []}
+                      charactersLoading={charactersQuery.isLoading}
+                      charactersError={charactersQuery.isError}
+                      onMessage={setMessage}
+                      invalidateShotData={invalidateShotData}
+                    />
+                    <ReferencePanel
+                      projectId={projectId}
+                      shot={shotQuery.data}
+                      characters={charactersQuery.data?.items ?? []}
+                      onMessage={setMessage}
+                      invalidateShotData={invalidateShotData}
+                      invalidateCreatedTaskData={invalidateCreatedTaskData}
+                    />
+                  </div>
+                </aside>
+              </PanelErrorBoundary>
+            </div>
+          </PanelErrorBoundary>
         )}
       </div>
     </AppShell>
+  );
+}
+
+class PanelErrorBoundary extends Component<
+  { children: React.ReactNode; title: string },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section className="rounded-md border border-danger/40 bg-danger/10 p-4">
+          <StatusMessage tone="error">{this.props.title}，请刷新或重试。</StatusMessage>
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => this.setState({ hasError: false })}>
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            重试
+          </Button>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function CreativeTopBar({
+  shot,
+  mode,
+  workspaceMode,
+  productionStatus,
+  comfyStatus,
+  onModeChange,
+  onWorkspaceModeChange,
+  onPrimaryAction
+}: {
+  shot?: Shot;
+  mode: CreativeMode;
+  workspaceMode: WorkspaceMode;
+  productionStatus?: ShotProductionStatus;
+  comfyStatus: string;
+  onModeChange: (mode: CreativeMode) => void;
+  onWorkspaceModeChange: (mode: WorkspaceMode) => void;
+  onPrimaryAction: () => void;
+}) {
+  const safeStatus = productionStatus ? normalizeShotProductionStatus(productionStatus) : null;
+  const characterSummary =
+    shot?.characters.length
+      ? shot.characters.map((item) => `${item.character_name}${item.look_name ? ` · ${item.look_name}` : ""}`).join(" / ")
+      : "缺少人物参考";
+  const sceneSummary = shot?.scene?.name
+    ? `${shot.scene.name}${shot.scene_state?.name ? ` · ${shot.scene_state.name}` : ""}`
+    : "缺少场景参考";
+  const workflowLabel =
+    mode === "video"
+      ? safeStatus?.steps.video.status === "not_created"
+        ? "等待首尾帧"
+        : "沿用视频任务"
+      : "将自动选择";
+
+  return (
+    <section className="sticky top-0 z-10 rounded-md border border-border bg-panel/95 p-3 shadow-sm backdrop-blur">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="primary">{`模式：${creativeModeCopy[mode].label}`}</Badge>
+            <Badge>{workspaceMode === "quick" ? "快速创作模式" : "高级模式"}</Badge>
+            <Badge>{`工作流：${workflowLabel}`}</Badge>
+            <Badge>{`ComfyUI：${comfyStatus}`}</Badge>
+          </div>
+          <h2 className="mt-2 truncate text-base font-semibold text-foreground">
+            {shot ? `镜头 ${shot.order_index}：${shot.name}` : "请选择镜头"}
+          </h2>
+          <p className="mt-1 line-clamp-1 text-xs text-muted">
+            人物：{characterSummary} / 场景：{sceneSummary}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ModeTabs mode={mode} onModeChange={onModeChange} />
+          <Button type="button" variant="secondary" onClick={() => onWorkspaceModeChange(workspaceMode === "quick" ? "advanced" : "quick")}>
+            <Settings className="h-4 w-4" aria-hidden="true" />
+            {workspaceMode === "quick" ? "高级设置" : "返回快速模式"}
+          </Button>
+          <Button type="button" onClick={onPrimaryAction}>
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            {creativeModeCopy[mode].action}
+          </Button>
+        </div>
+      </div>
+      {(!shot?.characters.length || !shot.scene_id) && (
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+          {!shot?.characters.length && <Badge tone="danger">缺少人物参考</Badge>}
+          {!shot?.scene_id && <Badge tone="danger">缺少场景参考</Badge>}
+          <span>补齐后再生成，结果会更稳定。</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CreativeReferenceSlots({
+  shot,
+  mode,
+  productionStatus,
+  onOpenAdvanced
+}: {
+  shot?: Shot;
+  mode: CreativeMode;
+  productionStatus?: ShotProductionStatus;
+  onOpenAdvanced: () => void;
+}) {
+  const safeStatus = productionStatus ? normalizeShotProductionStatus(productionStatus) : null;
+  const slots =
+    mode === "video"
+      ? [
+          {
+            id: "start_frame",
+            title: "视频首帧",
+            purpose: "首帧",
+            mediaUrl: safeStatus?.steps.first_frame.content_url,
+            filled: Boolean(safeStatus?.steps.first_frame.adopted_media_asset_id)
+          },
+          {
+            id: "end_frame",
+            title: "视频尾帧",
+            purpose: "尾帧",
+            mediaUrl: safeStatus?.steps.end_frame.content_url,
+            filled: Boolean(safeStatus?.steps.end_frame.adopted_media_asset_id)
+          },
+          ...referenceSlotsFromShot(shot, ["identity", "environment", "pose", "general"])
+        ]
+      : referenceSlotsFromShot(shot, ["identity", "appearance", "environment", "pose", "composition", "general"]);
+
+  return (
+    <section className="rounded-md border border-border bg-panel p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">素材与参考</h2>
+          <p className="mt-1 text-xs text-muted">把参考图按用途放入槽位，后续将用于自动装配工作流。</p>
+        </div>
+        <Button type="button" variant="secondary" size="sm" onClick={onOpenAdvanced}>
+          从资产选择
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {slots.map((slot) => (
+          <ReferenceSlotCard key={slot.id} {...slot} onOpenAdvanced={onOpenAdvanced} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReferenceSlotCard({
+  title,
+  purpose,
+  mediaUrl,
+  filled,
+  onOpenAdvanced
+}: {
+  title: string;
+  purpose: string;
+  mediaUrl?: string | null;
+  filled: boolean;
+  onOpenAdvanced: () => void;
+}) {
+  return (
+    <article className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border bg-background p-2">
+      <div className="flex aspect-square items-center justify-center overflow-hidden rounded border border-border bg-panel">
+        {mediaUrl ? (
+          <img src={mediaUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+        ) : (
+          <Images className="h-5 w-5 text-muted" aria-hidden="true" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
+          <Badge tone={filled ? "success" : "default"}>{filled ? "已放入" : "空"}</Badge>
+        </div>
+        <p className="mt-1 text-xs text-muted">用途：{purpose}</p>
+        <button type="button" className="mt-2 text-xs text-primary hover:text-foreground" onClick={onOpenAdvanced}>
+          选择 / 替换
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function CreativeResultStage({
+  shot,
+  mode,
+  productionStatus,
+  onModeChange,
+  onOpenAdvanced
+}: {
+  shot?: Shot;
+  mode: CreativeMode;
+  productionStatus?: ShotProductionStatus;
+  onModeChange: (mode: CreativeMode) => void;
+  onOpenAdvanced: () => void;
+}) {
+  const safeStatus = productionStatus ? normalizeShotProductionStatus(productionStatus) : null;
+  const currentStep =
+    mode === "first_frame"
+      ? safeStatus?.steps.first_frame
+      : mode === "end_frame"
+        ? safeStatus?.steps.end_frame
+        : safeStatus?.steps.video;
+  const contentUrl = currentStep?.content_url;
+  const adopted = Boolean(currentStep?.adopted_output_id);
+
+  return (
+    <main className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">当前画面与生成结果</h2>
+          <p className="mt-1 text-xs text-muted">围绕当前镜头查看候选、采用结果和下一步。</p>
+        </div>
+        <ModeTabs mode={mode} onModeChange={onModeChange} />
+      </div>
+      <section className="mt-4 overflow-hidden rounded-md border border-border bg-background">
+        <div className="flex aspect-[9/16] min-h-[420px] items-center justify-center bg-black/20">
+          {contentUrl ? (
+            mode === "video" ? (
+              <video src={contentUrl} controls className="h-full max-h-[720px] w-full object-contain" />
+            ) : (
+              <img src={contentUrl} alt="" className="h-full max-h-[720px] w-full object-contain" />
+            )
+          ) : (
+            <div className="max-w-sm px-6 text-center">
+              <Film className="mx-auto h-10 w-10 text-muted" aria-hidden="true" />
+              <h3 className="mt-3 text-sm font-semibold text-foreground">{creativeModeCopy[mode].label}结果区</h3>
+              <p className="mt-2 text-sm leading-6 text-muted">{creativeModeCopy[mode].empty}</p>
+              <Button type="button" variant="secondary" className="mt-4" onClick={onOpenAdvanced}>
+                查看专业任务详情
+              </Button>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-3">
+          <Badge tone={adopted ? "success" : "default"}>{adopted ? "已采用" : "未采用"}</Badge>
+          <div className="text-xs text-muted">
+            未采用候选不会进入时间线。
+          </div>
+        </div>
+      </section>
+      <section className="mt-4 grid gap-3 rounded-md border border-border bg-background p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground">候选结果</h3>
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenAdvanced}>
+            打开任务详情
+          </Button>
+        </div>
+        <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted">
+          当前模式下的候选会在这里集中展示。Sprint 23 保留现有任务链，不自动启动生成。
+        </div>
+      </section>
+      {shot && (
+        <section className="mt-4 rounded-md border border-border bg-background p-3 text-sm text-muted">
+          下一步建议：{nextActionHint(shot, safeStatus, mode)}
+        </section>
+      )}
+    </main>
+  );
+}
+
+function CreativePromptControl({
+  shot,
+  mode,
+  workspaceMode,
+  onWorkspaceModeChange,
+  onPrimaryAction
+}: {
+  shot?: Shot;
+  mode: CreativeMode;
+  workspaceMode: WorkspaceMode;
+  onWorkspaceModeChange: (mode: WorkspaceMode) => void;
+  onPrimaryAction: () => void;
+}) {
+  const promptSeed = [
+    shot?.visual_description,
+    shot?.action_summary,
+    shot?.mood_description
+  ].filter(Boolean).join("\n");
+
+  return (
+    <section className="grid gap-4">
+      <div>
+        <h2 className="text-base font-semibold text-foreground">Prompt 与生成控制</h2>
+        <p className="mt-1 text-xs text-muted">快速模式只保留创作必需项，底层任务参数放在高级设置。</p>
+      </div>
+      <div className="grid gap-3">
+        <Field label="镜头意图">
+          <Input defaultValue={shot?.action_summary ?? ""} placeholder="例如：男主推门闯入会议室" />
+        </Field>
+        <Field label="Prompt">
+          <Textarea defaultValue={promptSeed} placeholder="描述画面主体、场景、动作和氛围" />
+        </Field>
+        <details className="rounded-md border border-border bg-background p-3">
+          <summary className="cursor-pointer text-sm font-medium text-foreground">负面 Prompt</summary>
+          <Textarea className="mt-3" placeholder="低质量、变形、模糊等" />
+        </details>
+        <div className="grid gap-3 md:grid-cols-2">
+          <SelectField label="快速景别" value={shot?.shot_scale ?? "unknown"} onChange={() => undefined} options={shotScaleOptions} />
+          <SelectField label="快速镜头运动" value={shot?.camera_movement ?? "unknown"} onChange={() => undefined} options={movementOptions} />
+        </div>
+        {mode === "video" && (
+          <Field label="时长（秒）">
+            <Input type="number" min="0.1" step="0.1" defaultValue={shot?.duration_seconds ?? ""} />
+          </Field>
+        )}
+        <Field label="候选数量">
+          <Input type="number" min="1" max="4" defaultValue={1} />
+        </Field>
+        <Button type="button" onClick={onPrimaryAction}>
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+          {creativeModeCopy[mode].action}
+        </Button>
+        <StatusMessage tone="success">
+          Sprint 23 只重构创作入口；一键创建、ready 和 start 将在 Sprint 25 接入。当前可通过高级任务详情继续使用原生成链路。
+        </StatusMessage>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={workspaceMode === "quick" ? "secondary" : "default"}
+          onClick={() => onWorkspaceModeChange(workspaceMode === "quick" ? "advanced" : "quick")}
+        >
+          <Settings className="h-4 w-4" aria-hidden="true" />
+          {workspaceMode === "quick" ? "查看高级设置" : "收起高级设置"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function ModeTabs({
+  mode,
+  onModeChange
+}: {
+  mode: CreativeMode;
+  onModeChange: (mode: CreativeMode) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-1 rounded-md border border-border bg-background p-1 text-xs">
+      {(Object.keys(creativeModeCopy) as CreativeMode[]).map((item) => (
+        <button
+          key={item}
+          type="button"
+          className={cn(
+            "rounded px-3 py-2 text-muted transition-colors",
+            mode === item && "bg-primarySoft text-foreground"
+          )}
+          onClick={() => onModeChange(item)}
+        >
+          {`${creativeModeCopy[item].label}模式`}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1478,6 +1929,68 @@ function adoptedVideoInputs(status?: ShotProductionStatus): VideoTaskInputPayloa
     });
   }
   return items;
+}
+
+function referenceSlotsFromShot(
+  shot: Shot | undefined,
+  purposes: string[]
+) {
+  const titleByPurpose: Record<string, string> = {
+    identity: "人物身份参考",
+    appearance: "人物造型参考",
+    environment: "场景参考",
+    pose: "姿态参考",
+    composition: "构图参考",
+    general: "连续性参考"
+  };
+  return purposes.map((purpose) => {
+    const reference = shot?.references.find((item) => item.purpose === purpose);
+    return {
+      id: purpose,
+      title: titleByPurpose[purpose] ?? purpose,
+      purpose: shotCopy.purposes[purpose as keyof typeof shotCopy.purposes] ?? purpose,
+      mediaUrl: reference?.media_asset?.thumbnail_url ?? reference?.media_asset?.content_url,
+      filled: Boolean(reference)
+    };
+  });
+}
+
+function nextActionHint(
+  shot: Shot,
+  status: ReturnType<typeof normalizeShotProductionStatus> | null,
+  mode: CreativeMode
+) {
+  if (shot.characters.length === 0) {
+    return "请先添加人物，并放入人物身份或造型参考图。";
+  }
+  if (!shot.scene_id) {
+    return "请先选择场景，并放入场景参考图。";
+  }
+  if (!status) {
+    return "正在读取生产状态，请稍后继续。";
+  }
+  if (mode === "first_frame") {
+    if (status.steps.first_frame.status === "adopted") {
+      return "首帧已采用，可以切换到尾帧模式继续生成。";
+    }
+    return "建议先生成并采用首帧。";
+  }
+  if (mode === "end_frame") {
+    if (status.steps.first_frame.status !== "adopted") {
+      return "请先采用首帧，再生成尾帧以保证连续性。";
+    }
+    if (status.steps.end_frame.status === "adopted") {
+      return "尾帧已采用，可以切换到视频模式。";
+    }
+    return "可以生成尾帧，并检查与首帧的人物、造型和场景连续性。";
+  }
+  if (status.steps.video.status === "adopted") {
+    return "视频已采用，可以进入时间线与导出。";
+  }
+  if (status.steps.first_frame.status === "adopted" && status.steps.end_frame.status === "adopted") {
+    return "首尾帧已采用，可以生成视频。";
+  }
+  return "请先补齐并采用首帧和尾帧。";
 }
 
 function pickerMetadataString(item: PickerOptionItem, key: string): string | null {
