@@ -13,6 +13,7 @@ from app.infrastructure.models.keyframe_task import (
     KeyframeGenerationTaskReferenceRecord,
 )
 from app.infrastructure.models.project import ProjectRecord
+from app.infrastructure.models.project_export import ProjectExportRecord
 from app.infrastructure.models.scene import (
     SceneRecord,
     SceneReferenceRecord,
@@ -41,6 +42,7 @@ __all__ = [
     "KeyframeGenerationRunRecord",
     "MediaAssetRecord",
     "ProjectRecord",
+    "ProjectExportRecord",
     "SceneRecord",
     "SceneReferenceRecord",
     "SceneStateRecord",

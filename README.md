@@ -6,6 +6,8 @@ Sprint 18 adds a deterministic Director Engine v1 to the existing Prompt / Conte
 
 Sprint 19-20 adds Production Pipeline v1: structured keyframe task purposes, read-only shot/project production status APIs, a shot-level six-step production panel, and a project production board. It does not automatically generate, mark tasks ready, start ComfyUI, or adopt outputs.
 
+Sprint 21-22 adds Timeline & Final Export v1. The project can read adopted video outputs in shot order, create stable final-export snapshots, and run a local FFmpeg-based MP4 concat export when FFmpeg and FFprobe are available. It does not add audio, subtitles, transitions, ComfyUI changes, or a timeline editor.
+
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure
@@ -136,6 +138,12 @@ GET    /api/projects/{project_id}/scenes/{scene_id}/asset-summary
 GET    /api/projects/{project_id}/shots/{shot_id}/asset-summary
 GET    /api/projects/{project_id}/shots/{shot_id}/production-status
 GET    /api/projects/{project_id}/production-status
+GET    /api/projects/{project_id}/timeline
+GET    /api/projects/{project_id}/exports
+POST   /api/projects/{project_id}/exports
+GET    /api/projects/{project_id}/exports/{export_id}
+POST   /api/projects/{project_id}/exports/{export_id}/mark-ready
+POST   /api/projects/{project_id}/exports/{export_id}/start
 
 GET    /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
 POST   /api/projects/{project_id}/shots/{shot_id}/keyframe-tasks
@@ -203,6 +211,8 @@ and no fake generation is exposed.
 
 Production Pipeline v1 is a read-only orchestration layer over existing data. The shot workbench shows six production steps: assets, Director Prompt, first frame, end frame, video, and final adoption. The project production board at `/projects/:projectId/production` summarizes the same status across shots. It never starts generation or adopts outputs automatically.
 
+Timeline & Final Export v1 reads only explicitly adopted video outputs. A project export stores a creation-time snapshot of the current timeline clips, so later shot or adoption changes do not silently alter an existing export draft. Export execution uses local FFmpeg/FFprobe from `LDS_API_FFMPEG_BIN` and `LDS_API_FFPROBE_BIN`, normalizes clips to H.264 `yuv420p`, scale-pads to the target size, concatenates without audio, and stores the final MP4 as a safe platform `MediaAsset`. The API never returns absolute filesystem paths.
+
 ## Frontend
 
 ```powershell
@@ -225,8 +235,9 @@ Routes:
 - `/projects/:projectId/shots`: project shot workbench.
 - `/projects/:projectId/shots/:shotId`: project shot workbench with a selected shot.
 - `/projects/:projectId/production`: project production board.
+- `/projects/:projectId/timeline`: project timeline and final export.
 - `/projects/:projectId/generation`: project generation center.
-- `/projects/:projectId/media`: project media library placeholder.
+- `/projects/:projectId/media`: project media library, including completed final exports.
 - `/projects/:projectId/settings`: project settings placeholder.
 
 ## Alembic
@@ -287,6 +298,9 @@ LDS_API_COMFYUI_JOB_TIMEOUT_SECONDS=900
 LDS_API_COMFYUI_MAX_CONCURRENCY=1
 LDS_API_GENERATED_OUTPUT_MAX_MB=25
 LDS_API_GENERATED_VIDEO_MAX_MB=500
+LDS_API_FFMPEG_BIN=ffmpeg
+LDS_API_FFPROBE_BIN=ffprobe
+LDS_API_EXPORT_TIMEOUT_SECONDS=1800
 ```
 
 The frontend never receives the ComfyUI base URL, workflow JSON, local paths, or model paths.

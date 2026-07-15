@@ -9,6 +9,8 @@ from app.api.health import router as health_router
 from app.api.keyframe_generation import router as keyframe_generation_router
 from app.api.keyframe_tasks import router as keyframe_tasks_router
 from app.api.production_status import router as production_status_router
+from app.api.project_exports import router as project_exports_router
+from app.api.project_timeline import router as project_timeline_router
 from app.api.projects import router as projects_router
 from app.api.prompt_builder import router as prompt_builder_router
 from app.api.scenes import router as scenes_router
@@ -32,6 +34,8 @@ api_router.include_router(keyframe_generation_router)
 api_router.include_router(video_generation_router)
 api_router.include_router(generation_tasks_router)
 api_router.include_router(production_status_router)
+api_router.include_router(project_timeline_router)
+api_router.include_router(project_exports_router)
 api_router.include_router(shot_recommendations_router)
 api_router.include_router(vision_analysis_router)
 api_router.include_router(system_router)

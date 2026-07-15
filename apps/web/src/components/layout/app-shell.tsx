@@ -10,6 +10,7 @@ import {
   ListChecks,
   Route,
   Settings,
+  StretchHorizontal,
   UserRound
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -80,6 +81,13 @@ const navItems: Array<{
     projectPath: (projectId) => `/projects/${projectId}/production`
   },
   {
+    id: "timeline",
+    label: "时间线与导出",
+    path: "/tasks",
+    icon: StretchHorizontal,
+    projectPath: (projectId) => `/projects/${projectId}/timeline`
+  },
+  {
     id: "tasks",
     label: "生成中心",
     path: "/tasks",
@@ -117,6 +125,8 @@ export function AppShell({ children }: AppShellProps) {
         ? "shots"
         : location.pathname.includes("/production")
           ? "production"
+          : location.pathname.includes("/timeline")
+          ? "timeline"
           : location.pathname.includes("/generation") || location.pathname.startsWith("/tasks")
           ? "tasks"
           : location.pathname.includes("/media") || location.pathname.startsWith("/media")

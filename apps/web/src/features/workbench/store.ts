@@ -8,6 +8,7 @@ export type WorkbenchSection =
   | "scenes"
   | "shots"
   | "production"
+  | "timeline"
   | "tasks"
   | "media"
   | "settings";

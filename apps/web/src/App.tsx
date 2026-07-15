@@ -12,6 +12,7 @@ import { ProjectsPage } from "./pages/projects-page";
 import { SceneDetailPage } from "./pages/scene-detail-page";
 import { SceneLibraryPage } from "./pages/scene-library-page";
 import { ShotWorkbenchPage } from "./pages/shot-workbench-page";
+import { TimelineExportPage } from "./pages/timeline-export-page";
 import { WorkbenchPage } from "./pages/workbench-page";
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
       <Route path="/projects/:projectId/shots" element={<ShotWorkbenchPage />} />
       <Route path="/projects/:projectId/shots/:shotId" element={<ShotWorkbenchPage />} />
       <Route path="/projects/:projectId/production" element={<ProjectProductionPage />} />
+      <Route path="/projects/:projectId/timeline" element={<TimelineExportPage />} />
       <Route path="/projects/:projectId/generation" element={<GenerationCenterPage />} />
       <Route path="/projects/:projectId/media" element={<MediaLibraryPage />} />
       <Route path="/projects/:projectId/settings" element={<ProjectSettingsPage />} />

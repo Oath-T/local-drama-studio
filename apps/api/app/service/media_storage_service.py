@@ -108,6 +108,49 @@ class MediaStorageService:
         relative_dir = Path("projects") / project_id / "media" / "generated-videos"
         return self._store_video_bytes(filename, content, mime_type_hint, relative_dir)
 
+    def project_export_path(self, project_id: str, export_id: str, filename: str) -> Path:
+        relative_path = Path("projects") / project_id / "exports" / export_id / filename
+        return self.resolve_relative_path(relative_path.as_posix(), must_exist=False)
+
+    def project_export_segments_dir(self, project_id: str, export_id: str) -> Path:
+        relative_path = Path("projects") / project_id / "exports" / export_id / "segments"
+        return self.resolve_relative_path(relative_path.as_posix(), must_exist=False)
+
+    def register_project_export_video(
+        self,
+        project_id: str,
+        export_id: str,
+        path: Path,
+    ) -> StoredVideo:
+        expected_prefix = (Path("projects") / project_id / "exports" / export_id).as_posix()
+        relative_path = self._relative_to_storage(path).as_posix()
+        if not relative_path.startswith(f"{expected_prefix}/"):
+            raise_media_error(CharacterErrorCode.FILE_NOT_FOUND, status.HTTP_404_NOT_FOUND)
+        safe_path = self.resolve_relative_path(
+            relative_path,
+            must_exist=True,
+        )
+        original_filename = "final.mp4"
+        detected_mime_type = mimetypes.guess_type(original_filename)[0] or "video/mp4"
+        if detected_mime_type not in ALLOWED_VIDEO_MIME_TYPES:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+        content = safe_path.read_bytes()
+        max_bytes = self.settings.generated_video_max_mb * 1024 * 1024
+        if len(content) > max_bytes:
+            raise_media_error(
+                CharacterErrorCode.IMAGE_TOO_LARGE,
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+        return StoredVideo(
+            original_filename=f"project-export-{export_id}.mp4",
+            stored_filename=safe_path.name,
+            relative_path=relative_path,
+            mime_type=detected_mime_type,
+            extension="mp4",
+            size_bytes=len(content),
+            sha256=sha256(content).hexdigest(),
+        )
+
     async def _store_image(self, upload: UploadFile, relative_dir: Path) -> StoredImage:
         original_filename = Path(upload.filename or "image").name
         extension = self._get_extension(original_filename)
@@ -335,6 +378,13 @@ class MediaStorageService:
         if must_exist and not target.exists():
             raise_media_error(CharacterErrorCode.FILE_NOT_FOUND, status.HTTP_404_NOT_FOUND)
         return target
+
+    def _relative_to_storage(self, path: Path) -> Path:
+        root = self.settings.resolved_storage_dir.resolve()
+        target = path.resolve()
+        if root not in target.parents and target != root:
+            raise_media_error(CharacterErrorCode.FILE_NOT_FOUND, status.HTTP_404_NOT_FOUND)
+        return target.relative_to(root)
 
     def delete_relative_file(self, relative_path: str | None) -> None:
         if not relative_path:

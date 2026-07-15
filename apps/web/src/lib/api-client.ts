@@ -145,6 +145,22 @@ Object.assign(errorCodeMessages, {
   video_output_not_found: "视频生成结果不存在或已被删除。"
 });
 
+Object.assign(errorCodeMessages, {
+  PROJECT_EXPORT_NOT_FOUND: "导出任务不存在或已被删除。",
+  PROJECT_EXPORT_NAME_REQUIRED: "请输入导出名称。",
+  PROJECT_EXPORT_INVALID_DIMENSIONS: "导出宽高必须为 256 到 3840 之间的偶数。",
+  PROJECT_EXPORT_INVALID_FPS: "导出帧率必须在 1 到 60 之间。",
+  PROJECT_EXPORT_INVALID_CODEC: "当前仅支持 libx264 编码。",
+  PROJECT_EXPORT_NO_CLIPS: "没有可导出的已采用视频。",
+  PROJECT_EXPORT_TIMELINE_BLOCKED: "时间线仍有阻断项，无法标记可导出。",
+  PROJECT_EXPORT_FFMPEG_UNAVAILABLE: "未检测到 FFmpeg，无法开始成片导出。",
+  PROJECT_EXPORT_FFPROBE_UNAVAILABLE: "未检测到 FFprobe，无法开始成片导出。",
+  PROJECT_EXPORT_MEDIA_FILE_MISSING: "导出源视频文件不存在或无法读取。",
+  PROJECT_EXPORT_MEDIA_FILE_UNSAFE: "导出源文件路径无效。",
+  PROJECT_EXPORT_INVALID_STATUS: "当前导出任务状态不允许执行此操作。",
+  PROJECT_EXPORT_RUN_FAILED: "最终导出失败，请检查源视频和 FFmpeg 环境。"
+});
+
 function buildUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${baseUrl}${normalizedPath}`;

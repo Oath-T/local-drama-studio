@@ -22,6 +22,7 @@ export function ProjectProductionBoard({
   items,
   loading,
   error,
+  timelineExport,
   onRetry
 }: {
   projectId: string;
@@ -29,6 +30,12 @@ export function ProjectProductionBoard({
   items: ShotProductionStatus[];
   loading: boolean;
   error: boolean;
+  timelineExport?: {
+    readyClips: number;
+    totalShots: number;
+    blockers: number;
+    latestExportStatus: string | null;
+  };
   onRetry: () => void;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -72,6 +79,30 @@ export function ProjectProductionBoard({
         <Metric label={productionStatusCopy.overall.ready_for_video} value={counts.ready_for_video} tone="primary" />
         <Metric label={productionStatusCopy.overall.completed} value={counts.completed} tone="success" />
       </section>
+
+      {timelineExport && (
+        <section className="rounded-md border border-border bg-panel p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-foreground">最终成片准备</h2>
+              <p className="mt-1 text-sm text-muted">
+                已采用视频 {timelineExport.readyClips}/{timelineExport.totalShots}，阻断项 {timelineExport.blockers}。
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={timelineExport.blockers > 0 ? "danger" : "success"}>
+                {timelineExport.blockers > 0 ? "仍有阻断" : "时间线就绪"}
+              </Badge>
+              {timelineExport.latestExportStatus && (
+                <Badge>{`最近导出：${timelineExport.latestExportStatus}`}</Badge>
+              )}
+              <Button asChild variant="secondary">
+                <Link to={`/projects/${projectId}/timeline`}>进入时间线与导出</Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {filters.map((item) => (
