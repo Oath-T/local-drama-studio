@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
 from app.core.config import get_settings
 from app.domain.project_export import ProjectExportStatus
@@ -57,7 +58,10 @@ def test_project_timeline_cross_project_access_fails(migrated_client: TestClient
 
 def test_project_export_create_snapshot_and_missing_ffmpeg_blocker(
     migrated_client: TestClient,
+    monkeypatch: MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("app.service.export.ffmpeg_service.which", lambda _binary: None)
+
     project = _create_project(migrated_client)
     shot = _create_shot(migrated_client, project["id"], "Ready Shot")
     _create_selected_video_output(project["id"], shot["id"], selected=True, duration=2)

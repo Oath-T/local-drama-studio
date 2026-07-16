@@ -260,6 +260,13 @@ export async function apiDeleteJson<TResponse>(path: string): Promise<TResponse>
   return apiRequest<TResponse>(path, { method: "DELETE" });
 }
 
+export async function apiDeleteWithBody<TResponse, TBody>(
+  path: string,
+  body: TBody
+): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "DELETE", body: JSON.stringify(body) });
+}
+
 export async function apiPostForm<TResponse>(
   path: string,
   body: FormData

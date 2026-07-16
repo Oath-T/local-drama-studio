@@ -26,6 +26,12 @@ class CanvasEdgeData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     note: str | None = None
+    status: str | None = None
+    business_entity_type: str | None = None
+    business_entity_id: str | None = None
+    error_message: str | None = None
+    applied_at: datetime | None = None
+    binding_payload: dict[str, Any] | None = None
 
 
 class CanvasNodeResponse(BaseModel):

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.asset_picker import router as asset_picker_router
 from app.api.asset_summaries import router as asset_summaries_router
+from app.api.canvas_bindings import router as canvas_bindings_router
 from app.api.characters import media_router
 from app.api.characters import router as characters_router
 from app.api.generation_tasks import router as generation_tasks_router
@@ -36,6 +37,7 @@ api_router.include_router(video_generation_router)
 api_router.include_router(generation_tasks_router)
 api_router.include_router(production_status_router)
 api_router.include_router(project_canvas_router)
+api_router.include_router(canvas_bindings_router)
 api_router.include_router(project_timeline_router)
 api_router.include_router(project_exports_router)
 api_router.include_router(shot_recommendations_router)

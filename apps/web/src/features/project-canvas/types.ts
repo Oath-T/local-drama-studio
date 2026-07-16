@@ -22,6 +22,8 @@ export type CanvasEdgeType =
   | "generated_from"
   | "included_in_export";
 
+export type CanvasEdgeStatus = "draft" | "applied" | "failed";
+
 export interface CanvasViewport {
   x: number;
   y: number;
@@ -38,6 +40,12 @@ export interface CanvasNodeData {
 
 export interface CanvasEdgeData {
   note?: string | null;
+  status?: CanvasEdgeStatus | null;
+  business_entity_type?: string | null;
+  business_entity_id?: string | null;
+  error_message?: string | null;
+  applied_at?: string | null;
+  binding_payload?: Record<string, string | number | boolean | null> | null;
 }
 
 export interface ProjectCanvasNode {
@@ -146,3 +154,54 @@ export interface CanvasEntityBatchInput {
   include_shots?: boolean;
 }
 
+export interface CanvasBindingPayload {
+  look_id?: string | null;
+  action_description?: string | null;
+  expression_description?: string | null;
+  position_description?: string | null;
+  is_primary_subject?: boolean | null;
+  notes?: string | null;
+  scene_state_id?: string | null;
+  replace_existing_scene?: boolean;
+  shot_character_id?: string | null;
+  character_reference_id?: string | null;
+  scene_reference_id?: string | null;
+  purpose?: string | null;
+  video_task_id?: string | null;
+  role?: string | null;
+  media_asset_id?: string | null;
+}
+
+export interface CanvasBindingPreviewInput {
+  source_node_id: string;
+  target_node_id: string;
+  semantic_type: CanvasEdgeType;
+  payload?: CanvasBindingPayload;
+}
+
+export interface CanvasBindingPreview {
+  semantic_type: CanvasEdgeType;
+  can_apply: boolean;
+  title: string;
+  summary: string;
+  warnings: string[];
+  required_fields: string[];
+}
+
+export interface CanvasBindingApplyInput extends CanvasBindingPreviewInput {
+  expected_revision: number;
+  edge_id?: string | null;
+  apply_business?: boolean;
+}
+
+export interface CanvasBindingDeleteInput {
+  expected_revision: number;
+  mode: "hide_only" | "unbind_business";
+}
+
+export interface CanvasBusinessRelationsPreview {
+  character_edges: number;
+  scene_edges: number;
+  reference_edges: number;
+  total_edges: number;
+}

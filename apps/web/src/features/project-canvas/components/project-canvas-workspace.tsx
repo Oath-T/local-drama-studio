@@ -12,6 +12,7 @@ import {
   type Node,
   type NodeChange,
   type OnConnect,
+  type OnNodeDrag,
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow
@@ -23,7 +24,6 @@ import {
   Check,
   Clapperboard,
   Download,
-  FileText,
   Film,
   GitBranch,
   Image,
@@ -46,24 +46,27 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusMessage } from "@/components/ui/status-message";
 import { fetchCharacters, characterKeys } from "@/features/characters/api";
 import { Badge } from "@/features/characters/components/status-badge";
-import type { Character } from "@/features/characters/types";
+import type { Character, MediaAsset } from "@/features/characters/types";
 import { fetchGenerationTasks, generationTaskKeys } from "@/features/generation-tasks/api";
 import type { GenerationTaskSummary } from "@/features/generation-tasks/types";
 import {
   addCanvasEntityBatch,
-  createCanvasEdge,
+  applyCanvasBinding,
   createCanvasNode,
-  deleteCanvasEdge,
+  deleteCanvasBinding,
   deleteCanvasNode,
+  fetchCanvasBusinessRelationsPreview,
   fetchCanvasEntityBatchPreview,
   fetchProjectCanvas,
+  importCanvasBusinessRelations,
   patchCanvasNode,
   projectCanvasKeys,
   saveProjectCanvas
 } from "@/features/project-canvas/api";
-import { canvasNodeTypes, projectCanvasCopy } from "@/features/project-canvas/copy";
 import {
+  type CanvasBindingPayload,
   type CanvasEdgeInput,
+  type CanvasEdgeStatus,
   type CanvasEdgeType,
   type CanvasNodeInput,
   type CanvasNodeType,
@@ -78,15 +81,12 @@ import {
   type CanvasFlowNodeData
 } from "@/features/project-canvas/components/canvas-node-card";
 import { fetchProject, projectKeys } from "@/features/projects/api";
+import { fetchProjectProductionStatus, productionStatusKeys } from "@/features/production-status/api";
+import type { ShotProductionStatus } from "@/features/production-status/types";
 import { fetchScenes, sceneKeys } from "@/features/scenes/api";
 import type { Scene } from "@/features/scenes/types";
 import { fetchShots, shotKeys } from "@/features/shots/api";
 import type { Shot } from "@/features/shots/types";
-import {
-  fetchProjectProductionStatus,
-  productionStatusKeys
-} from "@/features/production-status/api";
-import type { ShotProductionStatus } from "@/features/production-status/types";
 import { ApiClientError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -110,33 +110,58 @@ interface NodeMenuState {
   nodeId: string;
 }
 
+interface BindingDialogState {
+  sourceNodeId: string;
+  targetNodeId: string;
+  semanticType: CanvasEdgeType;
+  edgeId?: string | null;
+}
+
+interface EntityAssetItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  nodeType: CanvasNodeType;
+  entityType: string;
+  thumbnailUrl?: string | null;
+}
+
 const defaultNodeSize = {
   width: 240,
   height: 120
 };
 
-const semanticEdgeTypes: CanvasEdgeType[] = [
-  "uses_character",
-  "uses_scene",
-  "identity_reference",
-  "look_reference",
-  "scene_reference",
-  "pose_reference",
-  "start_frame",
-  "end_frame",
-  "continuity_from",
-  "generated_from",
-  "included_in_export"
-];
+const nodeTypeLabel: Record<CanvasNodeType, string> = {
+  text: "文本",
+  character: "角色",
+  scene: "场景",
+  shot: "镜头",
+  image: "图片",
+  video: "视频",
+  export: "导出"
+};
 
-const entityNodeTypes = new Set<CanvasNodeType>([
-  "character",
-  "scene",
-  "shot",
-  "image",
-  "video",
-  "export"
-]);
+const edgeTypeLabel: Record<CanvasEdgeType, string> = {
+  uses_character: "使用角色",
+  uses_scene: "使用场景",
+  identity_reference: "身份参考",
+  look_reference: "造型参考",
+  scene_reference: "场景参考",
+  pose_reference: "姿态参考",
+  start_frame: "首帧",
+  end_frame: "尾帧",
+  continuity_from: "连续自",
+  generated_from: "生成自",
+  included_in_export: "加入导出"
+};
+
+const edgeStatusLabel: Record<CanvasEdgeStatus, string> = {
+  draft: "草稿",
+  applied: "已绑定",
+  failed: "失败"
+};
+
+const invalidConnectionMessage = "这两类节点目前不能直接连接。";
 
 export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProps) {
   return (
@@ -156,6 +181,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   const [edges, setEdges] = useState<CanvasFlowEdge[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+  const [bindingDialog, setBindingDialog] = useState<BindingDialogState | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [drawerCollapsed, setDrawerCollapsed] = useState(false);
@@ -213,6 +239,11 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     queryFn: () => fetchCanvasEntityBatchPreview(projectId),
     enabled: projectId.length > 0
   });
+  const businessRelationsPreviewQuery = useQuery({
+    queryKey: projectCanvasKeys.businessRelationsPreview(projectId),
+    queryFn: () => fetchCanvasBusinessRelationsPreview(projectId),
+    enabled: projectId.length > 0
+  });
 
   const acceptServerCanvas = useCallback(
     (nextCanvas: ProjectCanvas, options?: { preserveViewMode?: boolean }) => {
@@ -231,32 +262,27 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     }
   }, [acceptServerCanvas, canvasQuery.data]);
 
+  useEffect(
+    () => () => {
+      if (nodeSaveTimer.current) window.clearTimeout(nodeSaveTimer.current);
+      if (viewportSaveTimer.current) window.clearTimeout(viewportSaveTimer.current);
+    },
+    []
+  );
+
   const runMutation = useMutation({
-    mutationFn: (nextCanvas: ProjectCanvas) =>
+    mutationFn: (input: ProjectCanvas) =>
       saveProjectCanvas(projectId, {
-        expected_revision: canvas?.revision ?? nextCanvas.revision,
+        expected_revision: input.revision,
         view_mode: viewMode,
         viewport: viewportFromReactFlow(reactFlow),
-        nodes: nextCanvas.nodes.map(toNodeInput),
-        edges: nextCanvas.edges.map(toEdgeInput)
+        nodes: input.nodes.map(toNodeInput),
+        edges: input.edges.map(toEdgeInput)
       }),
     onSuccess: (nextCanvas) => {
       acceptServerCanvas(nextCanvas, { preserveViewMode: true });
-      setMessage({ tone: "success", text: "画布已恢复。" });
+      setMessage({ tone: "success", text: "画布已保存。" });
     },
-    onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
-  });
-
-  const saveViewMutation = useMutation({
-    mutationFn: (nextViewMode: CanvasViewMode) =>
-      saveProjectCanvas(projectId, {
-        expected_revision: canvas?.revision ?? 0,
-        view_mode: nextViewMode,
-        viewport: viewportFromReactFlow(reactFlow),
-        nodes: canvas?.nodes.map(toNodeInput) ?? [],
-        edges: canvas?.edges.map(toEdgeInput) ?? []
-      }),
-    onSuccess: (nextCanvas) => acceptServerCanvas(nextCanvas),
     onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
   });
 
@@ -278,25 +304,26 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   const createNodeMutation = useMutation({
     mutationFn: (input: {
       nodeType: CanvasNodeType;
-      title?: string;
-      x: number;
-      y: number;
+      title?: string | null;
       entityType?: string | null;
       entityId?: string | null;
+      data?: ProjectCanvasNode["data"];
+      x?: number;
+      y?: number;
     }) => {
       requireCanvas(canvas);
       remember(canvas, setUndoStack, setRedoStack);
       return createCanvasNode(projectId, {
         expected_revision: canvas.revision,
         node_type: input.nodeType,
-        title: input.title ?? projectCanvasCopy.nodeType[input.nodeType],
-        position_x: input.x,
-        position_y: input.y,
+        title: input.title ?? null,
+        position_x: input.x ?? 120 + canvas.nodes.length * 32,
+        position_y: input.y ?? 120 + canvas.nodes.length * 28,
         width: defaultNodeSize.width,
         height: defaultNodeSize.height,
         entity_type: input.entityType ?? null,
         entity_id: input.entityId ?? null,
-        data: {}
+        data: input.data ?? {}
       });
     },
     onSuccess: (nextCanvas) => {
@@ -345,37 +372,70 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
   });
 
-  const createEdgeMutation = useMutation({
-    mutationFn: (input: { source: string; target: string; semanticType: CanvasEdgeType }) => {
+  const applyBindingMutation = useMutation({
+    mutationFn: (input: {
+      sourceNodeId: string;
+      targetNodeId: string;
+      semanticType: CanvasEdgeType;
+      edgeId?: string | null;
+      applyBusiness: boolean;
+      payload: CanvasBindingPayload;
+    }) => {
       requireCanvas(canvas);
       remember(canvas, setUndoStack, setRedoStack);
-      return createCanvasEdge(projectId, {
+      return applyCanvasBinding(projectId, {
         expected_revision: canvas.revision,
-        source_node_id: input.source,
-        target_node_id: input.target,
-        source_handle: null,
-        target_handle: null,
+        edge_id: input.edgeId ?? null,
+        source_node_id: input.sourceNodeId,
+        target_node_id: input.targetNodeId,
         semantic_type: input.semanticType,
-        data: {}
+        apply_business: input.applyBusiness,
+        payload: input.payload
       });
     },
     onSuccess: (nextCanvas) => {
       acceptServerCanvas(nextCanvas, { preserveViewMode: true });
-      setMessage({ tone: "success", text: "语义连线已保存。" });
+      const handledEdge = bindingDialog?.edgeId
+        ? nextCanvas.edges.find((edge) => edge.id === bindingDialog.edgeId)
+        : nextCanvas.edges.at(-1);
+      setBindingDialog(null);
+      setSelectedEdgeIds(handledEdge ? [handledEdge.id] : []);
+      void queryClient.invalidateQueries({ queryKey: shotKeys.all(projectId) });
+      void queryClient.invalidateQueries({ queryKey: generationTaskKeys.lists(projectId) });
+      void queryClient.invalidateQueries({ queryKey: productionStatusKeys.project(projectId) });
+      void queryClient.invalidateQueries({
+        queryKey: projectCanvasKeys.businessRelationsPreview(projectId)
+      });
+      setMessage({
+        tone: handledEdge?.data.status === "failed" ? "error" : "success",
+        text:
+          handledEdge?.data.status === "failed"
+            ? "真实绑定失败，已保留为失败连线，可在 Inspector 重试。"
+            : "画布关系已处理。"
+      });
     },
     onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
   });
 
-  const deleteEdgeMutation = useMutation({
-    mutationFn: (edgeId: string) => {
+  const deleteBindingMutation = useMutation({
+    mutationFn: (input: { edgeId: string; mode: "hide_only" | "unbind_business" }) => {
       requireCanvas(canvas);
       remember(canvas, setUndoStack, setRedoStack);
-      return deleteCanvasEdge(projectId, edgeId, canvas.revision);
+      return deleteCanvasBinding(projectId, input.edgeId, {
+        expected_revision: canvas.revision,
+        mode: input.mode
+      });
     },
     onSuccess: (nextCanvas) => {
       acceptServerCanvas(nextCanvas, { preserveViewMode: true });
       setSelectedEdgeIds([]);
-      setMessage({ tone: "success", text: "连线已删除。" });
+      void queryClient.invalidateQueries({ queryKey: shotKeys.all(projectId) });
+      void queryClient.invalidateQueries({ queryKey: generationTaskKeys.lists(projectId) });
+      void queryClient.invalidateQueries({ queryKey: productionStatusKeys.project(projectId) });
+      void queryClient.invalidateQueries({
+        queryKey: projectCanvasKeys.businessRelationsPreview(projectId)
+      });
+      setMessage({ tone: "success", text: "画布连线已处理。" });
     },
     onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
   });
@@ -393,7 +453,23 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     },
     onSuccess: (nextCanvas) => {
       acceptServerCanvas(nextCanvas, { preserveViewMode: true });
-      setMessage({ tone: "success", text: "已将现有角色、场景和镜头加入画布。" });
+      setMessage({ tone: "success", text: "现有角色、场景和镜头已导入画布。" });
+    },
+    onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
+  });
+
+  const importRelationsMutation = useMutation({
+    mutationFn: () => {
+      requireCanvas(canvas);
+      remember(canvas, setUndoStack, setRedoStack);
+      return importCanvasBusinessRelations(projectId, canvas.revision);
+    },
+    onSuccess: (nextCanvas) => {
+      acceptServerCanvas(nextCanvas, { preserveViewMode: true });
+      void queryClient.invalidateQueries({
+        queryKey: projectCanvasKeys.businessRelationsPreview(projectId)
+      });
+      setMessage({ tone: "success", text: "现有镜头绑定关系已同步到画布。" });
     },
     onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
   });
@@ -402,51 +478,43 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     mutationFn: () => {
       requireCanvas(canvas);
       remember(canvas, setUndoStack, setRedoStack);
-      const nextNodes = autoLayoutNodes(canvas.nodes);
+      const layoutNodes = autoLayoutNodes(canvas.nodes);
       return saveProjectCanvas(projectId, {
         expected_revision: canvas.revision,
         view_mode: viewMode,
         viewport: viewportFromReactFlow(reactFlow),
-        nodes: nextNodes.map(toNodeInput),
+        nodes: layoutNodes.map(toNodeInput),
         edges: canvas.edges.map(toEdgeInput)
       });
     },
     onSuccess: (nextCanvas) => {
       acceptServerCanvas(nextCanvas, { preserveViewMode: true });
-      window.setTimeout(() => reactFlow.fitView({ padding: 0.16 }), 0);
+      window.requestAnimationFrame(() => reactFlow.fitView({ padding: 0.16 }));
       setMessage({ tone: "success", text: "画布已自动整理。" });
     },
     onError: (error) => setMessage({ tone: "error", text: canvasErrorText(error) })
   });
 
-  const selectedCanvasNode = useMemo(
-    () => canvas?.nodes.find((node) => node.id === selectedNodeIds[0]) ?? null,
-    [canvas?.nodes, selectedNodeIds]
-  );
-  const selectedCanvasEdge = useMemo(
-    () => canvas?.edges.find((edge) => edge.id === selectedEdgeIds[0]) ?? null,
-    [canvas?.edges, selectedEdgeIds]
+  const onNodesChange = useCallback(
+    (changes: NodeChange<CanvasFlowNode>[]) => {
+      setNodes((currentNodes) => applyNodeChanges<CanvasFlowNode>(changes, currentNodes));
+    },
+    []
   );
 
-  const onNodesChange = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
-    setNodes((current) => applyNodeChanges(changes, current));
-  }, []);
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange<CanvasFlowEdge>[]) => {
+      setEdges((currentEdges) => applyEdgeChanges<CanvasFlowEdge>(changes, currentEdges));
+    },
+    []
+  );
 
-  const onEdgesChange = useCallback((changes: EdgeChange<CanvasFlowEdge>[]) => {
-    setEdges((current) => applyEdgeChanges(changes, current));
-  }, []);
-
-  const onNodeDragStop = useCallback(
-    (_event: MouseEvent | TouchEvent, node: CanvasFlowNode) => {
-      if (nodeSaveTimer.current) {
-        window.clearTimeout(nodeSaveTimer.current);
-      }
+  const onNodeDragStop: OnNodeDrag<CanvasFlowNode> = useCallback(
+    (_event, node) => {
+      if (nodeSaveTimer.current) window.clearTimeout(nodeSaveTimer.current);
       nodeSaveTimer.current = window.setTimeout(() => {
-        patchNodeMutation.mutate({
-          nodeId: node.id,
-          position: node.position
-        });
-      }, 650);
+        patchNodeMutation.mutate({ nodeId: node.id, position: node.position });
+      }, 300);
     },
     [patchNodeMutation]
   );
@@ -454,80 +522,70 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
-      createEdgeMutation.mutate({
-        source: connection.source,
-        target: connection.target,
-        semanticType: suggestedEdgeType(connection.source, connection.target, canvas?.nodes ?? [])
+      const semanticType = suggestedEdgeType(connection.source, connection.target, canvas?.nodes ?? []);
+      if (!semanticType) {
+        setMessage({ tone: "neutral", text: invalidConnectionMessage });
+        return;
+      }
+      setBindingDialog({
+        sourceNodeId: connection.source,
+        targetNodeId: connection.target,
+        semanticType
       });
     },
-    [canvas?.nodes, createEdgeMutation]
+    [canvas?.nodes]
   );
 
-  function changeViewMode(nextViewMode: CanvasViewMode) {
-    setViewMode(nextViewMode);
-    if (canvas && nextViewMode !== canvas.view_mode) {
-      saveViewMutation.mutate(nextViewMode);
-    }
+  const selectedCanvasNode = canvas?.nodes.find((node) => node.id === selectedNodeIds[0]) ?? null;
+  const selectedCanvasEdge = canvas?.edges.find((edge) => edge.id === selectedEdgeIds[0]) ?? null;
+
+  function changeViewMode(nextMode: CanvasViewMode) {
+    if (!canvas || nextMode === viewMode) return;
+    remember(canvas, setUndoStack, setRedoStack);
+    saveProjectCanvas(projectId, {
+      expected_revision: canvas.revision,
+      view_mode: nextMode,
+      viewport: viewportFromReactFlow(reactFlow),
+      nodes: canvas.nodes.map(toNodeInput),
+      edges: canvas.edges.map(toEdgeInput)
+    })
+      .then((nextCanvas) => acceptServerCanvas(nextCanvas))
+      .catch((error: unknown) => setMessage({ tone: "error", text: canvasErrorText(error) }));
   }
 
   function addNodeAt(nodeType: CanvasNodeType, position?: { x: number; y: number }) {
-    const fallback = reactFlow.screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2
-    });
     createNodeMutation.mutate({
       nodeType,
-      x: position?.x ?? fallback.x,
-      y: position?.y ?? fallback.y
+      title: nodeType === "text" ? "文本备注" : undefined,
+      x: position?.x,
+      y: position?.y
     });
     setContextMenu(null);
   }
 
-  function duplicateNode(node: ProjectCanvasNode) {
-    createNodeMutation.mutate({
-      nodeType: node.node_type,
-      title: `${node.title} 副本`,
-      x: node.position_x + 40,
-      y: node.position_y + 40,
-      entityType: node.entity_type,
-      entityId: node.entity_id
-    });
-    setNodeMenu(null);
-  }
-
-  function bringNodeToFront(node: ProjectCanvasNode) {
-    if (!canvas) return;
-    remember(canvas, setUndoStack, setRedoStack);
-    const maxZIndex = Math.max(0, ...canvas.nodes.map((item) => item.z_index));
-    void saveProjectCanvas(projectId, {
-      expected_revision: canvas.revision,
-      view_mode: viewMode,
-      viewport: viewportFromReactFlow(reactFlow),
-      nodes: canvas.nodes
-        .map((item) => (item.id === node.id ? { ...item, z_index: maxZIndex + 1 } : item))
-        .map(toNodeInput),
-      edges: canvas.edges.map(toEdgeInput)
-    })
-      .then((nextCanvas) => {
-        acceptServerCanvas(nextCanvas, { preserveViewMode: true });
-        setMessage({ tone: "success", text: "节点已置于顶层。" });
-      })
-      .catch((error: unknown) => setMessage({ tone: "error", text: canvasErrorText(error) }));
-    setNodeMenu(null);
-  }
-
   function addEntityNode(entity: EntityAssetItem) {
-    const center = reactFlow.screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2
-    });
+    addEntityNodeAt(entity);
+  }
+
+  function addEntityNodeAt(entity: EntityAssetItem, position?: { x: number; y: number }) {
+    const existing = canvas?.nodes.find(
+      (node) => node.entity_id === entity.id && node.entity_type === entity.entityType
+    );
+    if (existing) {
+      setSelectedNodeIds([existing.id]);
+      setSelectedEdgeIds([]);
+      reactFlow.setCenter(existing.position_x, existing.position_y, { zoom: 1, duration: 360 });
+      setMessage({ tone: "neutral", text: "该素材已在画布中，已定位到已有节点。" });
+      return;
+    }
     createNodeMutation.mutate({
       nodeType: entity.nodeType,
       title: entity.title,
-      x: center.x,
-      y: center.y,
       entityType: entity.entityType,
-      entityId: entity.id
+      entityId: entity.id,
+      data: entity.thumbnailUrl ? { thumbnail_override: entity.thumbnailUrl } : {},
+      x: position?.x,
+      y: position?.y
     });
   }
 
@@ -549,10 +607,15 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
 
   function connectSelected() {
     if (selectedNodeIds.length < 2) return;
-    createEdgeMutation.mutate({
-      source: selectedNodeIds[0],
-      target: selectedNodeIds[1],
-      semanticType: suggestedEdgeType(selectedNodeIds[0], selectedNodeIds[1], canvas?.nodes ?? [])
+    const semanticType = suggestedEdgeType(selectedNodeIds[0], selectedNodeIds[1], canvas?.nodes ?? []);
+    if (!semanticType) {
+      setMessage({ tone: "neutral", text: invalidConnectionMessage });
+      return;
+    }
+    setBindingDialog({
+      sourceNodeId: selectedNodeIds[0],
+      targetNodeId: selectedNodeIds[1],
+      semanticType
     });
   }
 
@@ -562,33 +625,83 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
       deleteNodeMutation.mutate(selectedNodeIds[0]);
       return;
     }
-    if (selectedEdgeIds[0]) {
-      if (!window.confirm("确定删除选中的画布连线吗？")) return;
-      deleteEdgeMutation.mutate(selectedEdgeIds[0]);
+    if (!selectedEdgeIds[0]) return;
+    const edge = canvas?.edges.find((item) => item.id === selectedEdgeIds[0]);
+    if (edge?.data.status === "applied") {
+      const unbind = window.confirm(
+        "这条连线已经应用到业务数据。点击“确定”会同时解除业务绑定，点击“取消”仅隐藏画布连线。"
+      );
+      deleteBindingMutation.mutate({
+        edgeId: selectedEdgeIds[0],
+        mode: unbind ? "unbind_business" : "hide_only"
+      });
+      return;
     }
+    if (!window.confirm("确定删除选中的画布连线吗？")) return;
+    deleteBindingMutation.mutate({ edgeId: selectedEdgeIds[0], mode: "hide_only" });
   }
 
   function importExistingEntities() {
-    const preview = batchPreviewQuery.data;
-    const confirmed = window.confirm(
-      `将添加 ${preview?.character_count ?? 0} 个角色、${preview?.scene_count ?? 0} 个场景、${preview?.shot_count ?? 0} 个镜头到画布。是否继续？`
-    );
-    if (confirmed) {
+    if (!batchPreviewQuery.data || batchPreviewQuery.data.total === 0) {
+      setMessage({ tone: "neutral", text: "当前项目没有可导入的角色、场景或镜头。" });
+      return;
+    }
+    if (window.confirm(`确认导入 ${batchPreviewQuery.data.total} 个现有实体节点吗？`)) {
       batchMutation.mutate();
     }
   }
 
+  function importBusinessRelations() {
+    const total = businessRelationsPreviewQuery.data?.total_edges ?? 0;
+    if (total === 0) {
+      setMessage({ tone: "neutral", text: "当前没有新的业务绑定关系可同步。" });
+      return;
+    }
+    if (window.confirm(`确认把 ${total} 条现有业务关系同步为画布连线吗？不会重复导入。`)) {
+      importRelationsMutation.mutate();
+    }
+  }
+
+  function handleCanvasDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const assetData = event.dataTransfer.getData("application/x-lds-asset");
+    if (assetData) {
+      addEntityNodeAt(JSON.parse(assetData) as EntityAssetItem, position);
+      return;
+    }
+    if (event.dataTransfer.files?.length) {
+      setMessage({
+        tone: "neutral",
+        text: "本地文件上传即将支持，请先从资产库添加已有素材。"
+      });
+    }
+  }
+
+  const assetItems = useMemo(
+    () =>
+      buildAssetItems({
+        characters: charactersQuery.data?.items ?? [],
+        scenes: scenesQuery.data?.items ?? [],
+        shots: shotsQuery.data?.items ?? [],
+        tasks: generationTasksQuery.data?.items ?? []
+      }),
+    [charactersQuery.data?.items, scenesQuery.data?.items, shotsQuery.data?.items, generationTasksQuery.data?.items]
+  );
+  const productionByShotId = new Map(
+    (productionQuery.data?.items ?? []).map((item) => [item.shot_id, item])
+  );
+
   if (projectQuery.isLoading || canvasQuery.isLoading) {
-    return <Skeleton className="h-[760px]" />;
+    return <Skeleton className="h-[calc(100vh-112px)]" />;
   }
 
   if (projectQuery.isError || canvasQuery.isError || !canvas) {
     return (
       <section className="rounded-md border border-border bg-panel p-6">
-        <StatusMessage tone="error">创作画布加载失败。</StatusMessage>
+        <StatusMessage tone="error">创作画布加载失败，请重试。</StatusMessage>
         <Button
           type="button"
-          variant="secondary"
           className="mt-4"
           onClick={() => {
             void projectQuery.refetch();
@@ -601,16 +714,6 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
       </section>
     );
   }
-
-  const assetItems = buildAssetItems({
-    characters: charactersQuery.data?.items ?? [],
-    scenes: scenesQuery.data?.items ?? [],
-    shots: shotsQuery.data?.items ?? [],
-    tasks: generationTasksQuery.data?.items ?? []
-  });
-  const productionByShotId = new Map(
-    (productionQuery.data?.items ?? []).map((item) => [item.shot_id, item])
-  );
 
   return (
     <div className="flex h-[calc(100vh-112px)] min-h-[720px] flex-col overflow-hidden">
@@ -627,7 +730,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
               Project Canvas & Storyboard
             </div>
             <h1 className="truncate text-xl font-semibold text-foreground">
-              {projectQuery.data?.name ?? projectCanvasCopy.title}
+              {projectQuery.data?.name ?? "创作画布"}
             </h1>
           </div>
         </div>
@@ -665,6 +768,17 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 onEdgesChange={onEdgesChange}
                 onNodeDragStop={onNodeDragStop}
                 onConnect={onConnect}
+                onDrop={handleCanvasDrop}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                }}
+                onEdgeContextMenu={(event, edge) => {
+                  event.preventDefault();
+                  setSelectedNodeIds([]);
+                  setSelectedEdgeIds([edge.id]);
+                  setMessage({ tone: "neutral", text: "已选中连线，可在右侧 Inspector 处理。" });
+                }}
                 fitView
                 minZoom={0.2}
                 maxZoom={1.8}
@@ -690,13 +804,9 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                   setSelectedEdgeIds([]);
                 }}
                 onMoveEnd={() => {
-                  if (viewportSaveTimer.current) {
-                    window.clearTimeout(viewportSaveTimer.current);
-                  }
+                  if (viewportSaveTimer.current) window.clearTimeout(viewportSaveTimer.current);
                   viewportSaveTimer.current = window.setTimeout(() => {
-                    if (canvas) {
-                      saveViewportMutation.mutate();
-                    }
+                    if (canvas) saveViewportMutation.mutate();
                   }, 650);
                 }}
                 onNodeContextMenu={(event, node) => {
@@ -722,8 +832,8 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 {nodes.length === 0 && (
                   <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-8">
                     <EmptyState
-                      title={projectCanvasCopy.emptyTitle}
-                      description={projectCanvasCopy.emptyDescription}
+                      title="从这里开始创作"
+                      description="把角色、场景、镜头和输出放到画布上，先搭出项目的创作关系。"
                       action={
                         <div className="pointer-events-auto flex flex-wrap justify-center gap-2">
                           <Button type="button" onClick={() => addNodeAt("shot")}>
@@ -737,7 +847,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                             disabled={batchMutation.isPending}
                           >
                             <Boxes className="h-4 w-4" aria-hidden="true" />
-                            {projectCanvasCopy.addExisting}
+                            导入现有内容
                           </Button>
                         </div>
                       }
@@ -760,8 +870,23 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                   node={canvas.nodes.find((item) => item.id === nodeMenu.nodeId) ?? null}
                   projectId={projectId}
                   onClose={() => setNodeMenu(null)}
-                  onDuplicate={duplicateNode}
-                  onBringToFront={bringNodeToFront}
+                  onDuplicate={(node) =>
+                    createNodeMutation.mutate({
+                      nodeType: node.node_type,
+                      title: `${node.title} 副本`,
+                      entityType: node.entity_type,
+                      entityId: null,
+                      data: node.data,
+                      x: node.position_x + 32,
+                      y: node.position_y + 32
+                    })
+                  }
+                  onBringToFront={(node) =>
+                    patchNodeMutation.mutate({
+                      nodeId: node.id,
+                      data: node.data
+                    })
+                  }
                   onDelete={(node) => {
                     if (window.confirm(`确定删除节点“${node.title}”吗？相关画布连线也会删除。`)) {
                       deleteNodeMutation.mutate(node.id);
@@ -785,15 +910,22 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 batchLabel={
                   batchPreviewQuery.data
                     ? `导入现有内容 (${batchPreviewQuery.data.total})`
-                    : projectCanvasCopy.addExisting
+                    : "导入现有内容"
                 }
                 batchDisabled={batchMutation.isPending}
+                relationsLabel={
+                  businessRelationsPreviewQuery.data
+                    ? `同步绑定 (${businessRelationsPreviewQuery.data.total_edges})`
+                    : "同步绑定"
+                }
+                relationsDisabled={importRelationsMutation.isPending}
                 onAdd={() => addNodeAt("text")}
                 onUndo={undo}
                 onRedo={redo}
                 onConnect={connectSelected}
                 onDelete={deleteSelected}
                 onBatch={importExistingEntities}
+                onImportRelations={importBusinessRelations}
                 onAutoLayout={() => autoLayoutMutation.mutate()}
                 onFitView={() => reactFlow.fitView({ padding: 0.16 })}
               />
@@ -816,7 +948,9 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
             projectId={projectId}
             node={selectedCanvasNode}
             edge={selectedCanvasEdge}
+            canvas={canvas}
             assetItems={assetItems}
+            shots={shotsQuery.data?.items ?? []}
             onOpenShot={(shotId) => navigate(`/projects/${projectId}/shots/${shotId}`)}
             onToggleCollapse={(node) =>
               patchNodeMutation.mutate({
@@ -824,9 +958,31 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 data: { ...node.data, collapsed: !node.data.collapsed }
               })
             }
+            onApplyEdge={(edge) =>
+              setBindingDialog({
+                sourceNodeId: edge.source_node_id,
+                targetNodeId: edge.target_node_id,
+                semanticType: edge.semantic_type,
+                edgeId: edge.id
+              })
+            }
+            onDeleteEdge={(edge, mode) => deleteBindingMutation.mutate({ edgeId: edge.id, mode })}
           />
         </CanvasErrorBoundary>
       </div>
+
+      {bindingDialog && (
+        <BindingDialog
+          state={bindingDialog}
+          canvas={canvas}
+          characters={charactersQuery.data?.items ?? []}
+          scenes={scenesQuery.data?.items ?? []}
+          tasks={generationTasksQuery.data?.items ?? []}
+          pending={applyBindingMutation.isPending}
+          onCancel={() => setBindingDialog(null)}
+          onSubmit={(input) => applyBindingMutation.mutate(input)}
+        />
+      )}
     </div>
   );
 }
@@ -850,19 +1006,11 @@ function SegmentedSwitch({
           )}
           onClick={() => onChange(item)}
         >
-          {item === "workflow" ? projectCanvasCopy.workflow : projectCanvasCopy.storyboard}
+          {item === "workflow" ? "工作流" : "故事板"}
         </button>
       ))}
     </div>
   );
-}
-
-interface EntityAssetItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  nodeType: CanvasNodeType;
-  entityType: string;
 }
 
 function AssetDrawer({
@@ -893,7 +1041,7 @@ function AssetDrawer({
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className={cn("min-w-0", collapsed && "sr-only")}>
           <div className="text-sm font-semibold text-foreground">资产抽屉</div>
-          <div className="text-xs text-muted">拖入计划将在 Sprint 25 接入，本轮可点击添加。</div>
+          <div className="text-xs text-muted">可拖入已有角色、场景、镜头和可用素材。</div>
         </div>
         <Button type="button" variant="ghost" size="icon" onClick={onToggle}>
           <Boxes className="h-4 w-4" aria-hidden="true" />
@@ -904,7 +1052,7 @@ function AssetDrawer({
           <input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
-            placeholder="搜索角色、场景、镜头"
+            placeholder="搜索角色、场景、镜头或素材"
             className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-primary"
           />
           {loading && <Skeleton className="h-36" />}
@@ -918,12 +1066,17 @@ function AssetDrawer({
               <button
                 key={`${item.entityType}-${item.id}`}
                 type="button"
+                draggable
                 className="rounded-md border border-border bg-background p-3 text-left transition-colors hover:border-primary"
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("application/x-lds-asset", JSON.stringify(item));
+                  event.dataTransfer.effectAllowed = "copy";
+                }}
                 onClick={() => onAdd(item)}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-semibold text-foreground">{item.title}</span>
-                  <Badge>{projectCanvasCopy.nodeType[item.nodeType]}</Badge>
+                  <Badge>{nodeTypeLabel[item.nodeType]}</Badge>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted">{item.subtitle}</div>
               </button>
@@ -951,7 +1104,7 @@ function CanvasContextMenu({
       role="menu"
     >
       <div className="px-2 py-1 text-xs text-muted">添加节点</div>
-      {canvasNodeTypes.map((nodeType) => (
+      {(Object.keys(nodeTypeLabel) as CanvasNodeType[]).map((nodeType) => (
         <button
           key={nodeType}
           type="button"
@@ -959,7 +1112,7 @@ function CanvasContextMenu({
           onClick={() => onAdd(nodeType)}
         >
           <Plus className="h-4 w-4 text-primary" aria-hidden="true" />
-          {projectCanvasCopy.nodeType[nodeType]}
+          {nodeTypeLabel[nodeType]}
         </button>
       ))}
       <button
@@ -992,9 +1145,7 @@ function NodeContextMenu({
   onDelete: (node: ProjectCanvasNode) => void;
   onToggleCollapse: (node: ProjectCanvasNode) => void;
 }) {
-  if (!node) {
-    return null;
-  }
+  if (!node) return null;
 
   return (
     <div
@@ -1069,12 +1220,15 @@ function CanvasToolbar({
   deleteDisabled,
   batchLabel,
   batchDisabled,
+  relationsLabel,
+  relationsDisabled,
   onAdd,
   onUndo,
   onRedo,
   onConnect,
   onDelete,
   onBatch,
+  onImportRelations,
   onAutoLayout,
   onFitView
 }: {
@@ -1084,12 +1238,15 @@ function CanvasToolbar({
   deleteDisabled: boolean;
   batchLabel: string;
   batchDisabled: boolean;
+  relationsLabel: string;
+  relationsDisabled: boolean;
   onAdd: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onConnect: () => void;
   onDelete: () => void;
   onBatch: () => void;
+  onImportRelations: () => void;
   onAutoLayout: () => void;
   onFitView: () => void;
 }) {
@@ -1113,7 +1270,7 @@ function CanvasToolbar({
       </Button>
       <Button type="button" size="sm" variant="secondary" onClick={onAutoLayout}>
         <Move className="h-4 w-4" aria-hidden="true" />
-        {projectCanvasCopy.autoLayout}
+        整理
       </Button>
       <Button type="button" size="sm" variant="secondary" onClick={onFitView}>
         <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
@@ -1123,10 +1280,223 @@ function CanvasToolbar({
         <Boxes className="h-4 w-4" aria-hidden="true" />
         {batchLabel}
       </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={onImportRelations}
+        disabled={relationsDisabled}
+      >
+        <Sparkles className="h-4 w-4" aria-hidden="true" />
+        {relationsLabel}
+      </Button>
       <Button type="button" size="sm" variant="danger" onClick={onDelete} disabled={deleteDisabled}>
         <Trash2 className="h-4 w-4" aria-hidden="true" />
         删除所选
       </Button>
+    </div>
+  );
+}
+
+function BindingDialog({
+  state,
+  canvas,
+  characters,
+  scenes,
+  tasks,
+  pending,
+  onCancel,
+  onSubmit
+}: {
+  state: BindingDialogState;
+  canvas: ProjectCanvas;
+  characters: Character[];
+  scenes: Scene[];
+  tasks: GenerationTaskSummary[];
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (input: {
+    sourceNodeId: string;
+    targetNodeId: string;
+    semanticType: CanvasEdgeType;
+    edgeId?: string | null;
+    applyBusiness: boolean;
+    payload: CanvasBindingPayload;
+  }) => void;
+}) {
+  const sourceNode = canvas.nodes.find((node) => node.id === state.sourceNodeId) ?? null;
+  const targetNode = canvas.nodes.find((node) => node.id === state.targetNodeId) ?? null;
+  const allowedTypes = useMemo(
+    () => allowedSemanticTypes(sourceNode, targetNode),
+    [sourceNode, targetNode]
+  );
+  const initialSemanticType = allowedTypes.includes(state.semanticType)
+    ? state.semanticType
+    : allowedTypes[0];
+  const [semanticType, setSemanticType] = useState<CanvasEdgeType | null>(initialSemanticType ?? null);
+  const [lookId, setLookId] = useState("");
+  const [sceneStateId, setSceneStateId] = useState("");
+  const [replaceExistingScene, setReplaceExistingScene] = useState(false);
+  const [videoTaskId, setVideoTaskId] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const sourceCharacter = sourceNode?.entity_id
+    ? characters.find((item) => item.id === sourceNode.entity_id)
+    : null;
+  const sourceScene = sourceNode?.entity_id ? scenes.find((item) => item.id === sourceNode.entity_id) : null;
+  const targetShotId = targetNode?.node_type === "shot" ? targetNode.entity_id : null;
+  const videoTasks = tasks.filter((task) => task.task_type === "video" && task.shot_id === targetShotId);
+
+  useEffect(() => {
+    setLookId(sourceCharacter?.default_look?.id ?? "");
+  }, [sourceCharacter?.default_look?.id]);
+
+  useEffect(() => {
+    setSceneStateId(sourceScene?.default_state?.id ?? "");
+  }, [sourceScene?.default_state?.id]);
+
+  useEffect(() => {
+    setVideoTaskId(videoTasks[0]?.task_id ?? "");
+  }, [videoTasks]);
+
+  useEffect(() => {
+    if (!semanticType || !allowedTypes.includes(semanticType)) {
+      setSemanticType(allowedTypes[0] ?? null);
+    }
+  }, [allowedTypes, semanticType]);
+
+  function submit(applyBusiness: boolean) {
+    if (!semanticType) return;
+    onSubmit({
+      sourceNodeId: state.sourceNodeId,
+      targetNodeId: state.targetNodeId,
+      semanticType,
+      edgeId: state.edgeId ?? null,
+      applyBusiness,
+      payload: {
+        look_id: lookId || null,
+        scene_state_id: sceneStateId || null,
+        replace_existing_scene: replaceExistingScene,
+        video_task_id: videoTaskId || null,
+        notes: notes.trim() || null
+      }
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+      <section className="w-full max-w-xl rounded-md border border-border bg-panel p-5 shadow-workbench">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted">Semantic Binding</div>
+            <h2 className="mt-2 text-lg font-semibold text-foreground">确认画布关系</h2>
+          </div>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={pending}>
+            取消
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-3 text-sm">
+          <InfoRow label="来源" value={sourceNode?.title ?? "未知节点"} />
+          <InfoRow label="目标" value={targetNode?.title ?? "未知节点"} />
+          {allowedTypes.length === 0 || !semanticType ? (
+            <StatusMessage tone="neutral">{invalidConnectionMessage}</StatusMessage>
+          ) : (
+            <label className="grid gap-1">
+              <span className="text-muted">语义用途</span>
+              <select
+                aria-label="语义用途"
+                value={semanticType}
+                onChange={(event) => setSemanticType(event.target.value as CanvasEdgeType)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:border-primary"
+              >
+                {allowedTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {edgeTypeLabel[type]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {semanticType === "uses_character" && sourceCharacter?.default_look && (
+            <label className="grid gap-1">
+              <span className="text-muted">角色造型</span>
+              <select
+                value={lookId}
+                onChange={(event) => setLookId(event.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:border-primary"
+              >
+                <option value="">不指定造型</option>
+                <option value={sourceCharacter.default_look.id}>
+                  {sourceCharacter.default_look.name}（默认）
+                </option>
+              </select>
+            </label>
+          )}
+          {semanticType === "uses_scene" && sourceScene?.default_state && (
+            <>
+              <label className="grid gap-1">
+                <span className="text-muted">场景状态</span>
+                <select
+                  value={sceneStateId}
+                  onChange={(event) => setSceneStateId(event.target.value)}
+                  className="h-9 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:border-primary"
+                >
+                  <option value="">不指定状态</option>
+                  <option value={sourceScene.default_state.id}>
+                    {sourceScene.default_state.name}（默认）
+                  </option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-muted">
+                <input
+                  type="checkbox"
+                  checked={replaceExistingScene}
+                  onChange={(event) => setReplaceExistingScene(event.target.checked)}
+                />
+                如果镜头已有场景，允许替换并清理不兼容场景参考
+              </label>
+            </>
+          )}
+          {(semanticType === "start_frame" || semanticType === "end_frame") && (
+            <label className="grid gap-1">
+              <span className="text-muted">目标视频任务</span>
+              <select
+                value={videoTaskId}
+                onChange={(event) => setVideoTaskId(event.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:border-primary"
+              >
+                <option value="">请选择视频任务</option>
+                {videoTasks.map((task) => (
+                  <option key={task.task_id} value={task.task_id}>
+                    {task.task_name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted">首尾帧会写入视频任务输入，不会写到普通视频节点。</span>
+            </label>
+          )}
+          <label className="grid gap-1">
+            <span className="text-muted">备注</span>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={3}
+              className="rounded-md border border-border bg-background px-3 py-2 text-foreground outline-none focus:border-primary"
+            />
+          </label>
+          <StatusMessage tone="neutral">
+            “仅保留画布关系”不会修改镜头、任务或输出；“确认真实绑定”会由后端 Service 写入允许的业务关系。
+          </StatusMessage>
+        </div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => submit(false)} disabled={pending || !semanticType}>
+            仅保留画布关系
+          </Button>
+          <Button type="button" onClick={() => submit(true)} disabled={pending || !semanticType}>
+            确认真实绑定
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1146,9 +1516,7 @@ function StoryboardView({
 }) {
   const orderedShots = [...shots].sort((left, right) => left.order_index - right.order_index);
 
-  if (loading) {
-    return <Skeleton className="h-full" />;
-  }
+  if (loading) return <Skeleton className="h-full" />;
 
   if (orderedShots.length === 0) {
     return (
@@ -1184,11 +1552,7 @@ function StoryboardView({
               key={shot.id}
               className="rounded-md border border-border bg-panel p-3 transition-colors hover:border-primary"
             >
-              <button
-                type="button"
-                className="block w-full text-left"
-                onClick={() => onOpenShot(shot.id)}
-              >
+              <button type="button" className="block w-full text-left" onClick={() => onOpenShot(shot.id)}>
                 <div className="aspect-video overflow-hidden rounded-md border border-border bg-background">
                   {imageUrl ? (
                     videoUrl ? (
@@ -1197,9 +1561,7 @@ function StoryboardView({
                       <img src={imageUrl} alt="" className="h-full w-full object-cover" />
                     )
                   ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-muted">
-                      暂无画面
-                    </div>
+                    <div className="flex h-full items-center justify-center text-sm text-muted">暂无画面</div>
                   )}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
@@ -1226,49 +1588,88 @@ function NodeInspector({
   projectId,
   node,
   edge,
+  canvas,
   assetItems,
+  shots,
   onOpenShot,
-  onToggleCollapse
+  onToggleCollapse,
+  onApplyEdge,
+  onDeleteEdge
 }: {
   projectId: string;
   node: ProjectCanvasNode | null;
   edge: ProjectCanvasEdge | null;
+  canvas: ProjectCanvas;
   assetItems: EntityAssetItem[];
+  shots: Shot[];
   onOpenShot: (shotId: string) => void;
   onToggleCollapse: (node: ProjectCanvasNode) => void;
+  onApplyEdge: (edge: ProjectCanvasEdge) => void;
+  onDeleteEdge: (edge: ProjectCanvasEdge, mode: "hide_only" | "unbind_business") => void;
 }) {
   const linkedAsset = node?.entity_id
     ? assetItems.find((item) => item.id === node.entity_id && item.entityType === node.entity_type)
     : null;
+  const sourceNode = edge ? canvas.nodes.find((item) => item.id === edge.source_node_id) : null;
+  const targetNode = edge ? canvas.nodes.find((item) => item.id === edge.target_node_id) : null;
+  const shot = node?.node_type === "shot" && node.entity_id ? shots.find((item) => item.id === node.entity_id) : null;
+  const shotEdges =
+    node?.node_type === "shot"
+      ? canvas.edges.filter(
+          (item) => item.source_node_id === node.id || item.target_node_id === node.id
+        )
+      : [];
 
   return (
     <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel">
       <div className="border-b border-border p-4">
         <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted">Inspector / 助手</div>
         <h2 className="mt-2 text-base font-semibold text-foreground">
-          {node ? node.title : edge ? projectCanvasCopy.edgeType[edge.semantic_type] : projectCanvasCopy.assistantTitle}
+          {node ? node.title : edge ? edgeTypeLabel[edge.semantic_type] : "项目助手"}
         </h2>
       </div>
       <div className="grid gap-4 p-4">
         {!node && !edge && (
           <>
-            <StatusMessage tone="neutral">{projectCanvasCopy.assistantSoon}</StatusMessage>
+            <StatusMessage tone="neutral">
+              选择节点或连线后，可以查看业务关联、应用状态和下一步操作。
+            </StatusMessage>
             <InspectorPanel title="下一步建议">
               <ul className="grid gap-2 text-sm text-muted">
-                <li>1. 从左侧资产抽屉添加角色、场景和镜头。</li>
-                <li>2. 在工作流视图中连接资产与镜头。</li>
-                <li>3. 在故事板视图中检查镜头顺序和生产状态。</li>
+                <li>1. 从左侧资产抽屉拖入角色、场景和镜头。</li>
+                <li>2. 连接资产与镜头，并在确认面板中选择真实绑定或草稿关系。</li>
+                <li>3. 使用“同步绑定”把已有镜头关系导入为画布连线。</li>
               </ul>
             </InspectorPanel>
           </>
         )}
         {edge && !node && (
           <InspectorPanel title="语义连线">
-            <div className="grid gap-2 text-sm text-muted">
-              <InfoRow label="类型" value={projectCanvasCopy.edgeType[edge.semantic_type]} />
-              <InfoRow label="来源节点" value={edge.source_node_id} />
-              <InfoRow label="目标节点" value={edge.target_node_id} />
-              <p>本轮连线只保存画布语义，不会修改镜头或生成任务。</p>
+            <div className="grid gap-2 text-sm">
+              <InfoRow label="来源" value={sourceNode?.title ?? edge.source_node_id} />
+              <InfoRow label="目标" value={targetNode?.title ?? edge.target_node_id} />
+              <InfoRow label="语义" value={edgeTypeLabel[edge.semantic_type]} />
+              <InfoRow label="状态" value={edgeStatusLabel[(edge.data.status ?? "draft") as CanvasEdgeStatus]} />
+              <InfoRow label="真实业务关联" value={edge.data.business_entity_type ?? "未写入"} />
+              {edge.data.error_message && <StatusMessage tone="error">{edge.data.error_message}</StatusMessage>}
+              <div className="grid gap-2 pt-2">
+                {edge.semantic_type === "generated_from" ? (
+                  <StatusMessage tone="neutral">生成来源关系只能由系统建立。</StatusMessage>
+                ) : (
+                  <Button type="button" onClick={() => onApplyEdge(edge)}>
+                    <GitBranch className="h-4 w-4" aria-hidden="true" />
+                    {edge.data.status === "failed" ? "重试应用" : "应用 / 编辑绑定"}
+                  </Button>
+                )}
+                <Button type="button" variant="secondary" onClick={() => onDeleteEdge(edge, "hide_only")}>
+                  隐藏画布连线
+                </Button>
+                {edge.data.status === "applied" && (
+                  <Button type="button" variant="danger" onClick={() => onDeleteEdge(edge, "unbind_business")}>
+                    解除业务绑定
+                  </Button>
+                )}
+              </div>
             </div>
           </InspectorPanel>
         )}
@@ -1276,18 +1677,36 @@ function NodeInspector({
           <>
             <InspectorPanel title="节点信息">
               <div className="grid gap-2 text-sm">
-                <InfoRow label="类型" value={projectCanvasCopy.nodeType[node.node_type]} />
+                <InfoRow label="类型" value={nodeTypeLabel[node.node_type]} />
                 <InfoRow label="标题" value={node.title} />
                 <InfoRow label="业务关联" value={node.entity_type ? "已关联" : "画布草稿"} />
                 {linkedAsset && <InfoRow label="来源" value={linkedAsset.subtitle} />}
               </div>
             </InspectorPanel>
+            {shot && (
+              <InspectorPanel title="本镜头资产">
+                <div className="grid gap-2 text-sm">
+                  <InfoRow label="已绑定角色" value={`${shot.character_count} 个`} />
+                  <InfoRow label="场景" value={shot.scene?.name ?? "未设置"} />
+                  <InfoRow label="场景状态" value={shot.scene_state?.name ?? "未设置"} />
+                  <InfoRow label="参考图" value={`${shot.reference_count} 张`} />
+                  <InfoRow
+                    label="连续性关系"
+                    value={`${shotEdges.filter((item) => item.semantic_type === "continuity_from").length} 条`}
+                  />
+                  <InfoRow
+                    label="草稿画布关系"
+                    value={`${shotEdges.filter((item) => item.data.status !== "applied").length} 条`}
+                  />
+                </div>
+              </InspectorPanel>
+            )}
             <InspectorPanel title="可执行操作">
               <div className="grid gap-2">
                 {node.node_type === "shot" && node.entity_id && (
                   <Button type="button" onClick={() => onOpenShot(node.entity_id ?? "")}>
                     <Clapperboard className="h-4 w-4" aria-hidden="true" />
-                    {projectCanvasCopy.openShotWorkspace}
+                    打开镜头创作工作台
                   </Button>
                 )}
                 {node.node_type === "character" && node.entity_id && (
@@ -1308,7 +1727,7 @@ function NodeInspector({
                 )}
                 <Button type="button" variant="secondary" onClick={() => onToggleCollapse(node)}>
                   <Check className="h-4 w-4" aria-hidden="true" />
-                  {projectCanvasCopy.collapse}
+                  收起 / 展开节点
                 </Button>
               </div>
             </InspectorPanel>
@@ -1363,17 +1782,24 @@ function toFlowNodes(canvas: ProjectCanvas): CanvasFlowNode[] {
 }
 
 function toFlowEdges(canvas: ProjectCanvas): CanvasFlowEdge[] {
-  return canvas.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source_node_id,
-    target: edge.target_node_id,
-    label: projectCanvasCopy.edgeType[edge.semantic_type],
-    animated: edge.semantic_type === "generated_from" || edge.semantic_type === "continuity_from",
-    data: edge.data as Record<string, unknown>,
-    style: { stroke: "#6f93c2" },
-    labelBgStyle: { fill: "#151a20", fillOpacity: 0.92 },
-    labelStyle: { fill: "#d7dee8", fontSize: 11 }
-  }));
+  return canvas.edges.map((edge) => {
+    const status = edge.data.status ?? "draft";
+    return {
+      id: edge.id,
+      source: edge.source_node_id,
+      target: edge.target_node_id,
+      label: `${edgeTypeLabel[edge.semantic_type]} · ${edgeStatusLabel[status]}`,
+      animated: edge.semantic_type === "generated_from" || edge.semantic_type === "continuity_from",
+      data: edge.data as Record<string, unknown>,
+      style: {
+        stroke: status === "failed" ? "#ef4444" : status === "applied" ? "#6f93c2" : "#8b949e",
+        strokeDasharray: status === "draft" ? "6 5" : undefined,
+        strokeWidth: status === "applied" ? 2.2 : 1.6
+      },
+      labelBgStyle: { fill: "#151a20", fillOpacity: 0.92 },
+      labelStyle: { fill: status === "failed" ? "#fca5a5" : "#d7dee8", fontSize: 11 }
+    };
+  });
 }
 
 function toNodeInput(node: ProjectCanvasNode): CanvasNodeInput {
@@ -1449,15 +1875,32 @@ function suggestedEdgeType(
   sourceId: string,
   targetId: string,
   nodes: ProjectCanvasNode[]
-): CanvasEdgeType {
+): CanvasEdgeType | null {
   const source = nodes.find((node) => node.id === sourceId);
   const target = nodes.find((node) => node.id === targetId);
-  if (source?.node_type === "character" && target?.node_type === "shot") return "uses_character";
-  if (source?.node_type === "scene" && target?.node_type === "shot") return "uses_scene";
-  if (source?.node_type === "image" && target?.node_type === "shot") return "scene_reference";
-  if (source?.node_type === "shot" && target?.node_type === "video") return "generated_from";
-  if (source?.node_type === "video" && target?.node_type === "export") return "included_in_export";
-  return "continuity_from";
+  return allowedSemanticTypes(source ?? null, target ?? null)[0] ?? null;
+}
+
+function allowedSemanticTypes(
+  source: Pick<ProjectCanvasNode, "id" | "node_type"> | null,
+  target: Pick<ProjectCanvasNode, "id" | "node_type"> | null
+): CanvasEdgeType[] {
+  if (!source || !target || source.id === target.id) return [];
+  if (source.node_type === "character" && target.node_type === "shot") return ["uses_character"];
+  if (source.node_type === "scene" && target.node_type === "shot") return ["uses_scene"];
+  if (source.node_type === "image" && target.node_type === "shot") {
+    return [
+      "identity_reference",
+      "look_reference",
+      "pose_reference",
+      "scene_reference",
+      "start_frame",
+      "end_frame"
+    ];
+  }
+  if (source.node_type === "shot" && target.node_type === "shot") return ["continuity_from"];
+  if (source.node_type === "video" && target.node_type === "export") return ["included_in_export"];
+  return [];
 }
 
 function buildAssetItems({
@@ -1471,6 +1914,7 @@ function buildAssetItems({
   shots: Shot[];
   tasks: GenerationTaskSummary[];
 }): EntityAssetItem[] {
+  const mediaItems = uniqueMediaAssets(shots.flatMap((shot) => shot.references.map((reference) => reference.media_asset)));
   return [
     ...characters.map((item) => ({
       id: item.id,
@@ -1493,6 +1937,14 @@ function buildAssetItems({
       nodeType: "shot" as const,
       entityType: "shot"
     })),
+    ...mediaItems.map((item) => ({
+      id: item.id,
+      title: item.original_filename,
+      subtitle: `已有媒体 / ${item.media_type}`,
+      nodeType: item.media_type === "video" ? ("video" as const) : ("image" as const),
+      entityType: item.media_type === "video" ? "video" : "image",
+      thumbnailUrl: item.thumbnail_url
+    })),
     ...tasks
       .filter((item) => item.has_outputs)
       .map((item) => ({
@@ -1505,10 +1957,21 @@ function buildAssetItems({
   ];
 }
 
+function uniqueMediaAssets(items: Array<MediaAsset | null>): MediaAsset[] {
+  const seen = new Set<string>();
+  const result: MediaAsset[] = [];
+  for (const item of items) {
+    if (!item || seen.has(item.id)) continue;
+    seen.add(item.id);
+    result.push(item);
+  }
+  return result;
+}
+
 function canvasErrorText(error: unknown) {
   if (error instanceof ApiClientError) {
     if (error.status === 409 || error.code === "PROJECT_CANVAS_REVISION_CONFLICT") {
-      return projectCanvasCopy.conflict;
+      return "画布数据已在其他页面更新，请重新加载后再试。";
     }
     return error.message;
   }
@@ -1521,6 +1984,3 @@ function productionStatusLabel(status: string | undefined) {
   if (status === "in_progress") return "生产中";
   return "待补齐";
 }
-
-void semanticEdgeTypes;
-void entityNodeTypes;

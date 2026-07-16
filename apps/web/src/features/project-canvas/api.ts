@@ -1,6 +1,18 @@
-import { apiDeleteJson, apiGet, apiPatch, apiPost, apiPut } from "@/lib/api-client";
+import {
+  apiDeleteJson,
+  apiDeleteWithBody,
+  apiGet,
+  apiPatch,
+  apiPost,
+  apiPut
+} from "@/lib/api-client";
 
 import type {
+  CanvasBindingApplyInput,
+  CanvasBindingDeleteInput,
+  CanvasBindingPreview,
+  CanvasBindingPreviewInput,
+  CanvasBusinessRelationsPreview,
   CanvasEdgeCreateInput,
   CanvasEntityBatchInput,
   CanvasEntityBatchPreview,
@@ -14,7 +26,9 @@ export const projectCanvasKeys = {
   all: (projectId: string) => ["projects", projectId, "canvas"] as const,
   detail: (projectId: string) => [...projectCanvasKeys.all(projectId), "detail"] as const,
   batchPreview: (projectId: string) =>
-    [...projectCanvasKeys.all(projectId), "entity-batch-preview"] as const
+    [...projectCanvasKeys.all(projectId), "entity-batch-preview"] as const,
+  businessRelationsPreview: (projectId: string) =>
+    [...projectCanvasKeys.all(projectId), "business-relations-preview"] as const
 };
 
 export function fetchProjectCanvas(projectId: string): Promise<ProjectCanvas> {
@@ -97,5 +111,54 @@ export function addCanvasEntityBatch(
   return apiPost<ProjectCanvas, CanvasEntityBatchInput>(
     `/api/projects/${projectId}/canvas/entity-batch`,
     payload
+  );
+}
+
+export function previewCanvasBinding(
+  projectId: string,
+  payload: CanvasBindingPreviewInput
+): Promise<CanvasBindingPreview> {
+  return apiPost<CanvasBindingPreview, CanvasBindingPreviewInput>(
+    `/api/projects/${projectId}/canvas/bindings/preview`,
+    payload
+  );
+}
+
+export function applyCanvasBinding(
+  projectId: string,
+  payload: CanvasBindingApplyInput
+): Promise<ProjectCanvas> {
+  return apiPost<ProjectCanvas, CanvasBindingApplyInput>(
+    `/api/projects/${projectId}/canvas/bindings/apply`,
+    payload
+  );
+}
+
+export function deleteCanvasBinding(
+  projectId: string,
+  edgeId: string,
+  payload: CanvasBindingDeleteInput
+): Promise<ProjectCanvas> {
+  return apiDeleteWithBody<ProjectCanvas, CanvasBindingDeleteInput>(
+    `/api/projects/${projectId}/canvas/bindings/${edgeId}`,
+    payload
+  );
+}
+
+export function fetchCanvasBusinessRelationsPreview(
+  projectId: string
+): Promise<CanvasBusinessRelationsPreview> {
+  return apiGet<CanvasBusinessRelationsPreview>(
+    `/api/projects/${projectId}/canvas/import-business-relations/preview`
+  );
+}
+
+export function importCanvasBusinessRelations(
+  projectId: string,
+  expectedRevision: number
+): Promise<ProjectCanvas> {
+  return apiPost<ProjectCanvas, Record<string, never>>(
+    `/api/projects/${projectId}/canvas/import-business-relations?expected_revision=${expectedRevision}`,
+    {}
   );
 }
