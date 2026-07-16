@@ -109,12 +109,12 @@ def delete_video_task(
     "/projects/{project_id}/video-tasks/{task_id}/mark-ready",
     response_model=VideoTaskResponse,
 )
-def mark_video_task_ready(
+async def mark_video_task_ready(
     project_id: UUID,
     task_id: UUID,
     service: Annotated[VideoGenerationService, Depends(get_video_generation_service)],
 ) -> VideoTaskResponse:
-    return service.mark_ready(project_id, task_id)
+    return await service.mark_ready(project_id, task_id)
 
 
 @router.post(

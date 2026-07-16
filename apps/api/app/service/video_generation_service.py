@@ -58,6 +58,13 @@ from app.service.video_generation_readiness_service import (
 )
 
 MAX_COMFYUI_SEED = 2**32 - 1
+MODEL_LOADER_INPUTS: dict[str, tuple[str, ...]] = {
+    "CheckpointLoaderSimple": ("ckpt_name",),
+    "CLIPLoader": ("clip_name",),
+    "CLIPVisionLoader": ("clip_name", "clip_vision_name"),
+    "UNETLoader": ("unet_name",),
+    "VAELoader": ("vae_name",),
+}
 
 
 class VideoGenerationService:
@@ -77,7 +84,7 @@ class VideoGenerationService:
 
     async def list_workflows(self, project_id: UUID) -> VideoWorkflowListResponse:
         self._ensure_project_exists(project_id)
-        provider_available, node_types = await self._provider_availability()
+        provider_available, node_types, object_info = await self._provider_availability()
         workflows = self.workflow_registry.list_workflows()
         items = [
             VideoWorkflowResponse(
@@ -90,11 +97,13 @@ class VideoGenerationService:
                     workflow,
                     provider_available=provider_available,
                     node_types=node_types,
+                    object_info=object_info,
                 ),
                 missing_requirements=self._workflow_missing_requirements(
                     workflow,
                     provider_available=provider_available,
                     node_types=node_types,
+                    object_info=object_info,
                 ),
                 reference_inputs_used=True,
             )
@@ -274,7 +283,7 @@ class VideoGenerationService:
         except SQLAlchemyError:
             raise_video_error(VideoGenerationErrorCode.DATABASE_CONFLICT, status.HTTP_409_CONFLICT)
 
-    def mark_ready(self, project_id: UUID, task_id: UUID) -> VideoTaskResponse:
+    async def mark_ready(self, project_id: UUID, task_id: UUID) -> VideoTaskResponse:
         task = self._get_task(project_id, task_id)
         media_asset = (
             self.repository.get_media_asset(str(project_id), task.input_media_asset_id)
@@ -285,6 +294,25 @@ class VideoGenerationService:
         input_assets = self.repository.get_media_assets_by_ids(
             sorted({record.media_asset_id for record in input_records if record.media_asset_id})
         )
+        workflow = (
+            self.workflow_registry.get_workflow(task.workflow_id) if task.workflow_id else None
+        )
+        if workflow is not None and workflow.available_locally:
+            provider_available, node_types, object_info = await self._provider_availability(
+                raise_when_offline=True
+            )
+            missing = self._workflow_missing_requirements(
+                workflow,
+                provider_available=provider_available,
+                node_types=node_types,
+                object_info=object_info,
+            )
+            if missing:
+                raise_video_error(
+                    VideoGenerationErrorCode.VIDEO_WORKFLOW_UNAVAILABLE,
+                    status.HTTP_400_BAD_REQUEST,
+                    details={"missing": missing},
+                )
         readiness = self._readiness(task, media_asset, input_records, input_assets)
         if readiness.readiness_status != VideoTaskReadinessStatus.READY:
             raise AppError(
@@ -365,11 +393,14 @@ class VideoGenerationService:
                 VideoGenerationErrorCode.VIDEO_GENERATION_ALREADY_RUNNING,
                 status.HTTP_409_CONFLICT,
             )
-        provider_available, node_types = await self._provider_availability(raise_when_offline=True)
+        provider_available, node_types, object_info = await self._provider_availability(
+            raise_when_offline=True
+        )
         missing = self._workflow_missing_requirements(
             workflow,
             provider_available=provider_available,
             node_types=node_types,
+            object_info=object_info,
         )
         if missing:
             raise_video_error(
@@ -539,7 +570,7 @@ class VideoGenerationService:
         self,
         *,
         raise_when_offline: bool = False,
-    ) -> tuple[bool, set[str]]:
+    ) -> tuple[bool, set[str], dict[str, object]]:
         try:
             provider = create_video_generation_provider(self.settings)
         except GenerationProviderRuntimeError:
@@ -548,7 +579,7 @@ class VideoGenerationService:
                     VideoGenerationErrorCode.VIDEO_PROVIDER_NOT_CONFIGURED,
                     status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
-            return False, set()
+            return False, set(), {}
         health = await provider.check_health()
         if not health.available:
             if raise_when_offline:
@@ -556,16 +587,17 @@ class VideoGenerationService:
                     VideoGenerationErrorCode.VIDEO_COMFYUI_UNAVAILABLE,
                     status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
-            return False, set()
+            return False, set(), {}
         try:
-            return True, await provider.get_required_node_types()
+            object_info = await provider.get_object_info()
+            return True, {str(key) for key in object_info}, object_info
         except GenerationProviderRuntimeError:
             if raise_when_offline:
                 raise_video_error(
                     VideoGenerationErrorCode.VIDEO_COMFYUI_UNAVAILABLE,
                     status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
-            return True, set()
+            return True, set(), {}
 
     def _workflow_missing_requirements(
         self,
@@ -573,6 +605,7 @@ class VideoGenerationService:
         *,
         provider_available: bool,
         node_types: set[str],
+        object_info: dict[str, object] | None = None,
     ) -> list[str]:
         missing = list(workflow.missing_requirements)
         if not provider_available:
@@ -584,6 +617,7 @@ class VideoGenerationService:
                 for node_type in workflow.manifest.required_node_types:
                     if node_type not in node_types:
                         missing.append(f"node_type_missing:{node_type}")
+            missing.extend(_workflow_model_missing_requirements(workflow, object_info or {}))
         return sorted(set(missing))
 
     def _readiness(
@@ -1050,6 +1084,57 @@ def _normalize_optional(value: object) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _workflow_model_missing_requirements(
+    workflow: LoadedVideoWorkflow,
+    object_info: dict[str, object],
+) -> list[str]:
+    if workflow.workflow is None or not object_info:
+        return []
+    missing: list[str] = []
+    for node in workflow.workflow.values():
+        if not isinstance(node, dict):
+            continue
+        class_type = node.get("class_type")
+        if not isinstance(class_type, str) or class_type not in MODEL_LOADER_INPUTS:
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for input_name in MODEL_LOADER_INPUTS[class_type]:
+            model_name = inputs.get(input_name)
+            if not isinstance(model_name, str) or not model_name.strip():
+                continue
+            available = _object_info_input_options(object_info, class_type, input_name)
+            if available is None:
+                continue
+            if model_name not in available:
+                missing.append(f"model_file_missing:{class_type}.{input_name}:{model_name}")
+    return missing
+
+
+def _object_info_input_options(
+    object_info: dict[str, object],
+    class_type: str,
+    input_name: str,
+) -> set[str] | None:
+    node_info = object_info.get(class_type)
+    if not isinstance(node_info, dict):
+        return None
+    input_info = node_info.get("input")
+    if not isinstance(input_info, dict):
+        return None
+    required = input_info.get("required")
+    if not isinstance(required, dict):
+        return None
+    spec = required.get(input_name)
+    if not isinstance(spec, list) or not spec:
+        return None
+    options = spec[0]
+    if not isinstance(options, list):
+        return None
+    return {str(option) for option in options}
 
 
 def utc_now() -> datetime:

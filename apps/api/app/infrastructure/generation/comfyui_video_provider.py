@@ -39,6 +39,9 @@ class ComfyUIVideoGenerationProvider:
         return GenerationProviderHealth(True, "comfyui", "online")
 
     async def get_required_node_types(self) -> set[str]:
+        return set(await self.get_object_info())
+
+    async def get_object_info(self) -> dict[str, object]:
         try:
             async with self._client() as client:
                 response = await client.get("/object_info")
@@ -53,7 +56,7 @@ class ComfyUIVideoGenerationProvider:
                 VideoGenerationErrorCode.COMFYUI_INVALID_RESPONSE,
                 "Invalid ComfyUI object_info response.",
             )
-        return {str(key) for key in data}
+        return data
 
     async def upload_input_image(
         self,

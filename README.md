@@ -10,6 +10,8 @@ Sprint 21-22 adds Timeline & Final Export v1. The project can read adopted video
 
 Sprint 23 adds Creative Workspace v1 on the shot page. It introduces a faster creator-facing frame for reference slots, first-frame/end-frame/video modes, a central result stage, and simplified prompt controls while keeping the existing professional task panels available in advanced mode. It does not change ComfyUI, workflows, manifests, runner/provider code, backend APIs, or the database.
 
+Sprint 26 adds Canvas Quick Generate v1. Selecting a shot node on the project canvas now exposes a compact Inspector workflow for editing prompts, generating first-frame and end-frame candidates, adopting them, and generating/adopting a first-last-frame video by reusing the existing task, run, workflow, and output APIs. It does not add new ComfyUI workflows, backend APIs, migrations, runners, providers, or automatic adoption.
+
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure

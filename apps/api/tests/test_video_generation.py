@@ -45,24 +45,53 @@ class StubVideoProvider:
     uploaded_filenames: list[str] = []
     fail_upload_role: str | None = None
     output_node_ids: list[str] = []
+    object_info_override: dict[str, object] | None = None
 
     async def check_health(self) -> GenerationProviderHealth:
         return GenerationProviderHealth(available=True, provider="comfyui", status="online")
 
-    async def get_required_node_types(self) -> set[str]:
+    async def get_object_info(self) -> dict[str, object]:
+        if self.object_info_override is not None:
+            return self.object_info_override
         return {
-            "CLIPLoader",
-            "CLIPTextEncode",
-            "CreateVideo",
-            "KSamplerAdvanced",
-            "LoadImage",
-            "SaveVideo",
-            "UNETLoader",
-            "VAEDecode",
-            "VAELoader",
-            "VideoCombine",
-            "WanFirstLastFrameToVideo",
+            "CLIPLoader": {
+                "input": {
+                    "required": {
+                        "clip_name": [["umt5_xxl_fp8_e4m3fn_scaled.safetensors"]],
+                    }
+                }
+            },
+            "CLIPTextEncode": {},
+            "CreateVideo": {},
+            "KSamplerAdvanced": {},
+            "LoadImage": {},
+            "SaveVideo": {},
+            "UNETLoader": {
+                "input": {
+                    "required": {
+                        "unet_name": [
+                            [
+                                "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+                                "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+                            ]
+                        ],
+                    }
+                }
+            },
+            "VAEDecode": {},
+            "VAELoader": {
+                "input": {
+                    "required": {
+                        "vae_name": [["wan_2.1_vae.safetensors", "sdxl_vae.safetensors"]],
+                    }
+                }
+            },
+            "VideoCombine": {},
+            "WanFirstLastFrameToVideo": {},
         }
+
+    async def get_required_node_types(self) -> set[str]:
+        return set(await self.get_object_info())
 
     async def upload_input_image(
         self,
@@ -131,6 +160,7 @@ def enable_video_generation(monkeypatch, workflow_dir: Path | None = None) -> No
     StubVideoProvider.uploaded_filenames = []
     StubVideoProvider.fail_upload_role = None
     StubVideoProvider.output_node_ids = []
+    StubVideoProvider.object_info_override = None
     if workflow_dir:
         monkeypatch.setenv("LDS_API_COMFYUI_WORKFLOW_DIR", str(workflow_dir))
     monkeypatch.setenv("LDS_API_COMFYUI_POLL_INTERVAL_SECONDS", "1")
@@ -511,6 +541,61 @@ def test_video_workflow_missing_file_is_unavailable(
     assert workflow["workflow_id"] == "video_i2v_14b_v1"
     assert workflow["available"] is False
     assert "workflow_file_missing" in workflow["missing_requirements"]
+
+
+def test_video_workflow_missing_loader_model_is_unavailable(
+    migrated_client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "video_missing_model.manifest.json").write_text(
+        """
+        {
+          "schema_version": 1,
+          "workflow_id": "video_missing_model",
+          "display_name": "Missing Model Workflow",
+          "version": "test",
+          "workflow_file": "video_missing_model.json",
+          "provider": "comfyui",
+          "required_node_types": ["LoadImage", "UNETLoader", "SaveVideo"],
+          "input_image_binding": {"node_id": "1", "input_name": "image"},
+          "output_node_ids": ["3"],
+          "output_file_keys": ["videos"],
+          "allowed_output_extensions": ["mp4"]
+        }
+        """,
+        encoding="utf-8",
+    )
+    (workflow_dir / "video_missing_model.json").write_text(
+        """
+        {
+          "1": {"class_type": "LoadImage", "inputs": {"image": ""}},
+          "2": {"class_type": "UNETLoader", "inputs": {"unet_name": "missing_wan.safetensors"}},
+          "3": {"class_type": "SaveVideo", "inputs": {}}
+        }
+        """,
+        encoding="utf-8",
+    )
+    enable_video_generation(monkeypatch, workflow_dir)
+    StubVideoProvider.object_info_override = {
+        "LoadImage": {},
+        "SaveVideo": {},
+        "UNETLoader": {"input": {"required": {"unet_name": [["available_wan.safetensors"]]}}},
+    }
+    data = create_ready_shot_fixture(migrated_client)
+
+    response = migrated_client.get(f"/api/projects/{data['project_id']}/video-workflows")
+
+    assert response.status_code == 200
+    workflow = response.json()["items"][0]
+    assert workflow["workflow_id"] == "video_missing_model"
+    assert workflow["available"] is False
+    assert (
+        "model_file_missing:UNETLoader.unet_name:missing_wan.safetensors"
+        in workflow["missing_requirements"]
+    )
 
 
 def test_video_task_upload_and_readiness_reject_missing_workflow(

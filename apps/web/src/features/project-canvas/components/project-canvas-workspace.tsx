@@ -63,6 +63,7 @@ import {
   projectCanvasKeys,
   saveProjectCanvas
 } from "@/features/project-canvas/api";
+import { CanvasQuickGeneratePanel } from "@/features/project-canvas/components/canvas-quick-generate-panel";
 import {
   type CanvasBindingPayload,
   type CanvasEdgeInput,
@@ -773,6 +774,23 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "copy";
                 }}
+                onNodeClick={(event, node) => {
+                  setContextMenu(null);
+                  setNodeMenu(null);
+                  setSelectedEdgeIds([]);
+                  setSelectedNodeIds((current) => {
+                    if (!event.shiftKey) return [node.id];
+                    return current.includes(node.id)
+                      ? current.filter((id) => id !== node.id)
+                      : [...current, node.id];
+                  });
+                }}
+                onEdgeClick={(_event, edge) => {
+                  setContextMenu(null);
+                  setNodeMenu(null);
+                  setSelectedNodeIds([]);
+                  setSelectedEdgeIds([edge.id]);
+                }}
                 onEdgeContextMenu={(event, edge) => {
                   event.preventDefault();
                   setSelectedNodeIds([]);
@@ -815,10 +833,6 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                   setNodeMenu({ clientX: event.clientX, clientY: event.clientY, nodeId: node.id });
                   setSelectedNodeIds([node.id]);
                   setSelectedEdgeIds([]);
-                }}
-                onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
-                  setSelectedNodeIds(selectedNodes.map((node) => node.id));
-                  setSelectedEdgeIds(selectedEdges.map((edge) => edge.id));
                 }}
               >
                 <Background color="#2d3540" gap={24} />
@@ -1699,6 +1713,11 @@ function NodeInspector({
                     value={`${shotEdges.filter((item) => item.data.status !== "applied").length} 条`}
                   />
                 </div>
+              </InspectorPanel>
+            )}
+            {shot && (
+              <InspectorPanel title="画布快速生成">
+                <CanvasQuickGeneratePanel projectId={projectId} shot={shot} />
               </InspectorPanel>
             )}
             <InspectorPanel title="可执行操作">

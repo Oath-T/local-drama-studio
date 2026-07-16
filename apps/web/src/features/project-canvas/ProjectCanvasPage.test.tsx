@@ -19,6 +19,8 @@ vi.mock("@xyflow/react", async () => {
       onSelectionChange,
       onPaneContextMenu,
       onConnect,
+      onNodeClick,
+      onEdgeClick,
       onNodeDragStop,
       onDrop,
       onDragOver
@@ -29,6 +31,8 @@ vi.mock("@xyflow/react", async () => {
       onSelectionChange?: (selection: { nodes: Array<{ id: string }>; edges: Array<{ id: string }> }) => void;
       onPaneContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void;
       onConnect?: (connection: { source: string; target: string }) => void;
+      onNodeClick?: (event: React.MouseEvent<HTMLButtonElement>, node: { id: string }) => void;
+      onEdgeClick?: (event: React.MouseEvent<HTMLButtonElement>, edge: { id: string }) => void;
       onNodeDragStop?: (event: MouseEvent, node: { id: string; position: { x: number; y: number } }) => void;
       onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
       onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
@@ -47,7 +51,10 @@ vi.mock("@xyflow/react", async () => {
             {
               key: node.id,
               type: "button",
-              onClick: () => onSelectionChange?.({ nodes: [{ id: node.id }], edges: [] })
+              onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+                onNodeClick?.(event, node);
+                onSelectionChange?.({ nodes: [{ id: node.id }], edges: [] });
+              }
             },
             node.data?.canvasNode?.title ?? node.id
           )
@@ -82,7 +89,10 @@ vi.mock("@xyflow/react", async () => {
             {
               key: edge.id,
               type: "button",
-              onClick: () => onSelectionChange?.({ nodes: [], edges: [{ id: edge.id }] })
+              onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+                onEdgeClick?.(event, edge);
+                onSelectionChange?.({ nodes: [], edges: [{ id: edge.id }] });
+              }
             },
             edge.label ?? edge.id
           )
@@ -190,6 +200,10 @@ function jsonResponse(body: unknown, status = 200) {
 
 function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: boolean } = {}) {
   let canvas: ProjectCanvas = { ...emptyCanvas };
+  let keyframeTasks: Array<Record<string, any>> = [];
+  const keyframeRuns = new Map<string, Array<Record<string, any>>>();
+  let videoTasks: Array<Record<string, any>> = [];
+  const videoRuns = new Map<string, Array<Record<string, any>>>();
   const requests: Array<{ url: string; method: string; body?: string }> = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -199,6 +213,13 @@ function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: b
 
     if (url === "/api/health") {
       return jsonResponse({ status: "ok", service: "local-drama-studio-api" });
+    }
+    if (url === "/api/system/capabilities" && method === "GET") {
+      return jsonResponse({
+        vision_analysis: { available: false, provider: "none" },
+        keyframe_generation: { available: true, provider: "comfyui", status: "online" },
+        video_generation: { available: true, provider: "comfyui", status: "online" }
+      });
     }
     if (url === `/api/projects/${projectId}` && method === "GET") return jsonResponse(project);
     if (url === `/api/projects/${projectId}/canvas` && method === "GET") {
@@ -566,6 +587,156 @@ function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: b
         total: 1
       });
     }
+    if (url === `/api/projects/${projectId}/keyframe-workflows` && method === "GET") {
+      return jsonResponse({
+        items: [
+          {
+            workflow_id: "keyframe_basic_v1",
+            display_name: "基础关键帧",
+            version: "1.0.0",
+            available: true,
+            missing_requirements: [],
+            uses_reference_inputs: false
+          }
+        ],
+        total: 1
+      });
+    }
+    if (url === `/api/projects/${projectId}/video-workflows` && method === "GET") {
+      return jsonResponse({
+        items: [
+          {
+            workflow_id: "video_wan22_14b_flf2v_v1",
+            display_name: "Wan2.2 14B 首尾帧视频",
+            version: "0.2.0",
+            mode: "first_last_frame_to_video",
+            required_input_roles: ["start_frame", "end_frame"],
+            available: true,
+            missing_requirements: [],
+            reference_inputs_used: true
+          }
+        ],
+        total: 1
+      });
+    }
+    if (url === `/api/projects/${projectId}/shots/shot-1/keyframe-tasks` && method === "GET") {
+      return jsonResponse({ items: keyframeTasks, total: keyframeTasks.length });
+    }
+    if (url === `/api/projects/${projectId}/shots/shot-1/keyframe-tasks` && method === "POST") {
+      const payload = JSON.parse(String(init?.body)) as { purpose?: string };
+      const purpose = payload.purpose ?? "concept";
+      const task = makeKeyframeTask(
+        purpose === "end_frame" ? "quick-end-task" : "quick-first-task",
+        purpose
+      );
+      keyframeTasks = [...keyframeTasks.filter((item) => item.id !== task.id), task];
+      return jsonResponse(task, 201);
+    }
+    const keyframeTaskMatch = url.match(/^\/api\/projects\/[^/]+\/keyframe-tasks\/([^/]+)$/);
+    if (keyframeTaskMatch && method === "PATCH") {
+      const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const taskId = keyframeTaskMatch[1];
+      keyframeTasks = keyframeTasks.map((task) =>
+        task.id === taskId ? { ...task, ...payload, status: "draft" } : task
+      );
+      return jsonResponse(keyframeTasks.find((task) => task.id === taskId));
+    }
+    const keyframeReadyMatch = url.match(/^\/api\/projects\/[^/]+\/keyframe-tasks\/([^/]+)\/mark-ready$/);
+    if (keyframeReadyMatch && method === "POST") {
+      const taskId = keyframeReadyMatch[1];
+      keyframeTasks = keyframeTasks.map((task) =>
+        task.id === taskId ? { ...task, status: "ready" } : task
+      );
+      return jsonResponse(keyframeTasks.find((task) => task.id === taskId));
+    }
+    const keyframeRunsMatch = url.match(/^\/api\/projects\/[^/]+\/keyframe-tasks\/([^/]+)\/runs$/);
+    if (keyframeRunsMatch && method === "GET") {
+      const runs = keyframeRuns.get(keyframeRunsMatch[1]) ?? [];
+      return jsonResponse({ items: runs, total: runs.length });
+    }
+    if (keyframeRunsMatch && method === "POST") {
+      const taskId = keyframeRunsMatch[1];
+      const task = keyframeTasks.find((item) => item.id === taskId);
+      const outputId = task?.purpose === "end_frame" ? "quick-end-output" : "quick-first-output";
+      const run = makeKeyframeRun(taskId, outputId);
+      keyframeRuns.set(taskId, [run, ...(keyframeRuns.get(taskId) ?? [])]);
+      return jsonResponse({ run_id: run.id, status: "queued" }, 202);
+    }
+    const keyframeSelectMatch = url.match(/^\/api\/projects\/[^/]+\/keyframe-outputs\/([^/]+)\/select$/);
+    if (keyframeSelectMatch && method === "POST") {
+      const outputId = keyframeSelectMatch[1];
+      for (const [taskId, runs] of keyframeRuns) {
+        keyframeRuns.set(
+          taskId,
+          runs.map((run) => ({
+            ...run,
+            outputs: run.outputs.map((output: Record<string, any>) => ({
+              ...output,
+              is_selected: output.id === outputId ? true : output.is_selected
+            }))
+          }))
+        );
+      }
+      return jsonResponse({ ...makeKeyframeOutput(outputId), is_selected: true });
+    }
+    if (url === `/api/projects/${projectId}/shots/shot-1/video-tasks` && method === "GET") {
+      return jsonResponse({ items: videoTasks, total: videoTasks.length });
+    }
+    if (url === `/api/projects/${projectId}/shots/shot-1/video-tasks` && method === "POST") {
+      const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const task = makeVideoTask("quick-video-task", payload);
+      videoTasks = [task];
+      return jsonResponse(task, 201);
+    }
+    const videoTaskMatch = url.match(/^\/api\/projects\/[^/]+\/video-tasks\/([^/]+)$/);
+    if (videoTaskMatch && method === "PATCH") {
+      const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const taskId = videoTaskMatch[1];
+      videoTasks = videoTasks.map((task) =>
+        task.id === taskId ? makeVideoTask(taskId, { ...task, ...payload }) : task
+      );
+      return jsonResponse(videoTasks.find((task) => task.id === taskId));
+    }
+    const videoReadyMatch = url.match(/^\/api\/projects\/[^/]+\/video-tasks\/([^/]+)\/mark-ready$/);
+    if (videoReadyMatch && method === "POST") {
+      const taskId = videoReadyMatch[1];
+      videoTasks = videoTasks.map((task) =>
+        task.id === taskId ? { ...task, status: "ready" } : task
+      );
+      return jsonResponse(videoTasks.find((task) => task.id === taskId));
+    }
+    const videoRunsMatch = url.match(/^\/api\/projects\/[^/]+\/video-tasks\/([^/]+)\/runs$/);
+    if (videoRunsMatch && method === "GET") {
+      const runs = videoRuns.get(videoRunsMatch[1]) ?? [];
+      return jsonResponse({ items: runs, total: runs.length });
+    }
+    if (videoRunsMatch && method === "POST") {
+      const taskId = videoRunsMatch[1];
+      const run = makeVideoRun(taskId);
+      videoRuns.set(taskId, [run, ...(videoRuns.get(taskId) ?? [])]);
+      return jsonResponse({ run_id: run.id, status: "queued" }, 202);
+    }
+    const videoSelectMatch = url.match(/^\/api\/projects\/[^/]+\/video-outputs\/([^/]+)\/select$/);
+    if (videoSelectMatch && method === "POST") {
+      const outputId = videoSelectMatch[1];
+      for (const [taskId, runs] of videoRuns) {
+        videoRuns.set(
+          taskId,
+          runs.map((run) => ({
+            ...run,
+            outputs: run.outputs.map((output: Record<string, any>) => ({
+              ...output,
+              is_selected: output.id === outputId
+            }))
+          }))
+        );
+      }
+      videoTasks = videoTasks.map((task) => ({
+        ...task,
+        selected_output: makeVideoOutput(outputId, true)
+      }));
+      return jsonResponse(makeVideoOutput(outputId, true));
+    }
     if (url === `/api/projects/${projectId}/production-status` && method === "GET") {
       return jsonResponse({
         project_id: projectId,
@@ -592,6 +763,248 @@ function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: b
   });
 
   return requests;
+}
+
+function makeKeyframeTask(id: string, purpose: string) {
+  return {
+    id,
+    project_id: projectId,
+    shot_id: "shot-1",
+    name: purpose === "end_frame" ? "尾帧" : "首帧",
+    purpose,
+    status: "draft",
+    shot_snapshot: {
+      schema_version: 1,
+      shot_id: "shot-1",
+      order_index: 1,
+      title: "开场镜头",
+      story_description: null,
+      visual_description: "男主推门进入会议室",
+      action_summary: null,
+      dialogue: null,
+      mood_description: null,
+      duration_seconds: 3,
+      shot_scale: "wide",
+      camera_angle: "front",
+      custom_camera_angle: null,
+      camera_height: "eye_level",
+      custom_camera_height: null,
+      lens: null,
+      composition_type: "centered",
+      custom_composition: null,
+      camera_movement: "static",
+      custom_camera_movement: null,
+      scene_id: "scene-1",
+      scene_name: "会议室",
+      scene_state_id: null,
+      scene_state_name: null,
+      characters: []
+    },
+    source_shot_updated_at: "2026-07-15T00:00:00+00:00",
+    prompt_zh: null,
+    prompt_en: null,
+    negative_prompt: null,
+    aspect_ratio: "9:16",
+    width: 768,
+    height: 1360,
+    seed: null,
+    steps: 28,
+    guidance_scale: 6.5,
+    sampler_name: null,
+    scheduler_name: null,
+    model_provider: null,
+    model_name: null,
+    model_version: null,
+    output_count: 1,
+    readiness: { readiness_status: "ready", blocking_issues: [], warnings: [] },
+    shot_changed_since_snapshot: false,
+    references: [],
+    reference_count: 0,
+    created_at: "2026-07-15T00:00:00+00:00",
+    updated_at: "2026-07-15T00:00:00+00:00"
+  };
+}
+
+function makeKeyframeOutput(id: string, selected = false) {
+  return {
+    id,
+    project_id: projectId,
+    run_id: id === "quick-end-output" ? "quick-end-run" : "quick-first-run",
+    media_asset_id: `${id}-media`,
+    output_index: 0,
+    width: 768,
+    height: 1360,
+    seed: 12345,
+    is_selected: selected,
+    media_asset: {
+      id: `${id}-media`,
+      project_id: projectId,
+      media_type: "image",
+      original_filename: `${id}.png`,
+      mime_type: "image/png",
+      extension: ".png",
+      size_bytes: 10,
+      width: 768,
+      height: 1360,
+      sha256: `${id}-hash`,
+      thumbnail_url: `/api/media/${id}-media/thumbnail`,
+      content_url: `/api/media/${id}-media/content`,
+      created_at: "2026-07-15T00:00:00+00:00"
+    },
+    created_at: "2026-07-15T00:00:00+00:00"
+  };
+}
+
+function makeKeyframeRun(taskId: string, outputId: string) {
+  return {
+    id: outputId === "quick-end-output" ? "quick-end-run" : "quick-first-run",
+    project_id: projectId,
+    keyframe_task_id: taskId,
+    run_number: 1,
+    provider: "comfyui",
+    workflow_id: "keyframe_basic_v1",
+    workflow_version: "1.0.0",
+    status: "completed",
+    provider_job_id: null,
+    submitted_payload_snapshot: {
+      schema_version: 1,
+      task_id: taskId,
+      task_updated_at: "2026-07-15T00:00:00+00:00",
+      workflow_id: "keyframe_basic_v1",
+      workflow_version: "1.0.0",
+      prompt_zh: null,
+      prompt_en: "dramatic office scene",
+      effective_prompt_language: "en",
+      effective_positive_prompt: "dramatic office scene",
+      negative_prompt: null,
+      width: 768,
+      height: 1360,
+      seed: 12345,
+      steps: 28,
+      guidance_scale: 6.5,
+      sampler_name: "euler",
+      scheduler_name: "normal",
+      output_count: 1,
+      task_reference_ids: [],
+      media_asset_ids: [],
+      reference_inputs_used: false
+    },
+    error_code: null,
+    error_message_safe: null,
+    queued_at: null,
+    started_at: null,
+    completed_at: "2026-07-15T00:00:00+00:00",
+    created_at: "2026-07-15T00:00:00+00:00",
+    updated_at: "2026-07-15T00:00:00+00:00",
+    outputs: [makeKeyframeOutput(outputId)]
+  };
+}
+
+function makeVideoTask(id: string, payload: Record<string, any> = {}) {
+  return {
+    id,
+    project_id: projectId,
+    shot_id: "shot-1",
+    name: payload.name ?? "首尾帧视频",
+    status: payload.status ?? "draft",
+    input_media_asset_id: null,
+    source_keyframe_output_id: null,
+    source_keyframe_task_id: null,
+    prompt: payload.prompt ?? null,
+    negative_prompt: payload.negative_prompt ?? null,
+    duration_seconds: payload.duration_seconds ?? 2,
+    fps: payload.fps ?? 16,
+    width: payload.width ?? 640,
+    height: payload.height ?? 640,
+    seed: payload.seed ?? null,
+    motion_strength: payload.motion_strength ?? 0.45,
+    camera_motion: payload.camera_motion ?? null,
+    workflow_id: payload.workflow_id ?? "video_wan22_14b_flf2v_v1",
+    input_media_asset: null,
+    inputs: payload.inputs ?? [],
+    readiness: { readiness_status: "ready", blocking_issues: [], warnings: [] },
+    latest_run_status: null,
+    selected_output: payload.selected_output ?? null,
+    created_at: "2026-07-15T00:00:00+00:00",
+    updated_at: "2026-07-15T00:00:00+00:00"
+  };
+}
+
+function makeVideoOutput(id: string, selected = false) {
+  return {
+    id,
+    project_id: projectId,
+    run_id: "quick-video-run",
+    media_asset_id: `${id}-media`,
+    output_index: 0,
+    width: 640,
+    height: 640,
+    duration_seconds: 2,
+    fps: 16,
+    seed: 12345,
+    is_selected: selected,
+    media_asset: {
+      id: `${id}-media`,
+      project_id: projectId,
+      media_type: "video",
+      original_filename: `${id}.mp4`,
+      mime_type: "video/mp4",
+      extension: ".mp4",
+      size_bytes: 10,
+      width: 640,
+      height: 640,
+      sha256: `${id}-hash`,
+      thumbnail_url: null,
+      content_url: `/api/media/${id}-media/content`,
+      created_at: "2026-07-15T00:00:00+00:00"
+    },
+    created_at: "2026-07-15T00:00:00+00:00"
+  };
+}
+
+function makeVideoRun(taskId: string) {
+  return {
+    id: "quick-video-run",
+    project_id: projectId,
+    video_task_id: taskId,
+    run_number: 1,
+    provider: "comfyui",
+    workflow_id: "video_wan22_14b_flf2v_v1",
+    workflow_version: "0.2.0",
+    status: "completed",
+    provider_job_id: null,
+    submitted_payload_snapshot: {
+      schema_version: 2,
+      video_task_id: taskId,
+      shot_id: "shot-1",
+      workflow_id: "video_wan22_14b_flf2v_v1",
+      workflow_version: "0.2.0",
+      workflow_mode: "first_last_frame_to_video",
+      input_media_asset_id: "quick-first-output-media",
+      inputs: [
+        { role: "start_frame", media_asset_id: "quick-first-output-media" },
+        { role: "end_frame", media_asset_id: "quick-end-output-media" }
+      ],
+      prompt: "motion prompt",
+      negative_prompt: null,
+      duration_seconds: 2,
+      fps: 16,
+      width: 640,
+      height: 640,
+      seed: 12345,
+      motion_strength: 0.45,
+      camera_motion: null,
+      reference_inputs_used: true
+    },
+    error_code: null,
+    error_message_safe: null,
+    queued_at: null,
+    started_at: null,
+    completed_at: "2026-07-15T00:00:00+00:00",
+    created_at: "2026-07-15T00:00:00+00:00",
+    updated_at: "2026-07-15T00:00:00+00:00",
+    outputs: [makeVideoOutput("quick-video-output")]
+  };
 }
 
 test("项目创作画布路由显示空状态并可添加七种节点", async () => {
@@ -861,4 +1274,89 @@ test("canvas API 失败时只显示画布错误，不影响外层导航", async 
   expect(await screen.findByText("创作画布加载失败，请重试。")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+});
+
+test("镜头节点可以在画布 Inspector 内生成并采用首帧、尾帧和视频", async () => {
+  const requests = mockCanvasApi();
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const user = userEvent.setup();
+
+  renderCanvas();
+
+  await screen.findByText("从这里开始创作");
+  await user.click(screen.getByRole("button", { name: /导入现有内容 \(3\)/ }));
+  const shotButtons = await screen.findAllByRole("button", { name: /开场镜头/ });
+  await user.click(shotButtons.at(-1)!);
+
+  expect(await screen.findByText("画布快速生成")).toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "生成首帧" }));
+  expect(await screen.findByText("首帧生成已提交，请在候选区等待结果。")).toBeInTheDocument();
+  await user.click((await screen.findAllByRole("button", { name: "采用" }))[0]);
+  expect(await screen.findByText("候选图已采用。")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "生成尾帧" }));
+  expect(await screen.findByText("尾帧生成已提交，请在候选区等待结果。")).toBeInTheDocument();
+  await user.click(
+    (await screen.findAllByRole("button", { name: "采用" })).find(
+      (button) => !button.hasAttribute("disabled")
+    )!
+  );
+  expect(await screen.findByText("候选图已采用。")).toBeInTheDocument();
+
+  const generateVideoButton = screen.getByRole("button", { name: "生成视频" });
+  await waitFor(() => expect(generateVideoButton).not.toBeDisabled());
+  await user.click(generateVideoButton);
+  expect(await screen.findByText("视频生成已提交，请在候选区等待结果。")).toBeInTheDocument();
+  await user.click(
+    (await screen.findAllByRole("button", { name: "采用" })).find(
+      (button) => !button.hasAttribute("disabled")
+    )!
+  );
+  expect(await screen.findByText("视频输出已采用。")).toBeInTheDocument();
+
+  expect(
+    requests.some(
+      (request) =>
+        request.method === "POST" &&
+        request.url.endsWith("/shots/shot-1/keyframe-tasks") &&
+        request.body?.includes('"purpose":"first_frame"')
+    )
+  ).toBe(true);
+  expect(
+    requests.some(
+      (request) =>
+        request.method === "POST" &&
+        request.url.endsWith("/shots/shot-1/keyframe-tasks") &&
+        request.body?.includes('"purpose":"end_frame"')
+    )
+  ).toBe(true);
+  expect(
+    requests.some(
+      (request) =>
+        request.method === "POST" &&
+        request.url.endsWith("/keyframe-tasks/quick-first-task/runs") &&
+        request.body?.includes("keyframe_basic_v1")
+    )
+  ).toBe(true);
+  expect(
+    requests.some(
+      (request) =>
+        request.method === "PATCH" &&
+        request.url.endsWith("/video-tasks/quick-video-task") &&
+        request.body?.includes('"role":"start_frame"') &&
+        request.body?.includes('"role":"end_frame"') &&
+        request.body?.includes("video_wan22_14b_flf2v_v1")
+    )
+  ).toBe(true);
+  expect(
+    requests.some(
+      (request) => request.method === "POST" && request.url.endsWith("/video-tasks/quick-video-task/runs")
+    )
+  ).toBe(true);
+  expect(
+    requests.some(
+      (request) =>
+        request.method === "POST" && request.url.endsWith("/video-outputs/quick-video-output/select")
+    )
+  ).toBe(true);
 });
