@@ -73,6 +73,9 @@ class ProjectCanvasRepository:
             delete(ProjectCanvasNodeRecord).where(ProjectCanvasNodeRecord.canvas_id == canvas_id)
         )
 
+    def flush(self) -> None:
+        self.session.flush()
+
     def commit(self) -> None:
         try:
             self.session.commit()

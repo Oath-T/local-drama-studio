@@ -89,7 +89,7 @@ class ProjectCanvasEdgeRecord(Base):
     __table_args__ = (
         CheckConstraint(
             "semantic_type IN ('uses_character', 'uses_scene', 'identity_reference', "
-            "'look_reference', "
+            "'shot_reference', 'look_reference', "
             "'scene_reference', 'pose_reference', 'start_frame', 'end_frame', 'continuity_from', "
             "'generated_from', 'included_in_export')",
             name="ck_project_canvas_edges_semantic_type",

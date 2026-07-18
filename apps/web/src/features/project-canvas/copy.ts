@@ -35,6 +35,7 @@ export const projectCanvasCopy = {
     export: "导出"
   } satisfies Record<CanvasNodeType, string>,
   edgeType: {
+    shot_reference: "设为镜头参考图",
     uses_character: "使用角色",
     uses_scene: "使用场景",
     identity_reference: "身份参考",
@@ -58,4 +59,3 @@ export const canvasNodeTypes: CanvasNodeType[] = [
   "video",
   "export"
 ];
-

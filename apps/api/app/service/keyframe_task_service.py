@@ -35,7 +35,7 @@ from app.domain.keyframe_task import (
     normalize_optional_text,
     normalize_required_text,
 )
-from app.domain.shot import CharacterReferencePurpose, SceneReferencePurpose
+from app.domain.shot import CharacterReferencePurpose, MediaReferencePurpose, SceneReferencePurpose
 from app.infrastructure.models.character import CharacterReferenceRecord, MediaAssetRecord
 from app.infrastructure.models.keyframe_task import (
     KeyframeGenerationTaskRecord,
@@ -450,6 +450,29 @@ class KeyframeTaskService:
                 source_scene_state_id=source_scene.state_id,
                 created_at=now,
             )
+        if shot_reference.reference_type == KeyframeTaskReferenceType.MEDIA.value:
+            if not shot_reference.media_asset_id:
+                raise_keyframe_error(
+                    KeyframeTaskErrorCode.SHOT_REFERENCE_NOT_FOUND,
+                    status.HTTP_404_NOT_FOUND,
+                )
+            return KeyframeGenerationTaskReferenceRecord(
+                id=str(uuid4()),
+                task_id=task_id,
+                reference_type=KeyframeTaskReferenceType.MEDIA.value,
+                shot_reference_id=shot_reference.id,
+                character_reference_id=None,
+                scene_reference_id=None,
+                media_asset_id=shot_reference.media_asset_id,
+                purpose=purpose,
+                order_index=order_index,
+                source_shot_character_id=None,
+                source_character_id=None,
+                source_look_id=None,
+                source_scene_id=None,
+                source_scene_state_id=None,
+                created_at=now,
+            )
         raise_keyframe_error(KeyframeTaskErrorCode.INVALID_REFERENCE_TYPE, HTTP_422)
 
     def _get_character_reference_source(
@@ -552,7 +575,11 @@ class KeyframeTaskService:
             source_reference_deleted=(
                 reference.character_reference_id is None
                 if reference.reference_type == KeyframeTaskReferenceType.CHARACTER.value
-                else reference.scene_reference_id is None
+                else (
+                    reference.scene_reference_id is None
+                    if reference.reference_type == KeyframeTaskReferenceType.SCENE.value
+                    else False
+                )
             ),
             media_asset=self._media_asset_response(media_assets.get(reference.media_asset_id)),
             created_at=ensure_utc(reference.created_at),
@@ -674,6 +701,7 @@ class KeyframeTaskService:
             reference.reference_type,
             reference.character_reference_id,
             reference.scene_reference_id,
+            reference.media_asset_id,
             next_purpose or reference.purpose,
             reference.source_shot_character_id,
         )
@@ -727,6 +755,11 @@ class KeyframeTaskService:
         if reference_type == KeyframeTaskReferenceType.SCENE.value:
             try:
                 return SceneReferencePurpose(value).value
+            except ValueError:
+                raise_keyframe_error(KeyframeTaskErrorCode.INVALID_REFERENCE_PURPOSE, HTTP_422)
+        if reference_type == KeyframeTaskReferenceType.MEDIA.value:
+            try:
+                return MediaReferencePurpose(value).value
             except ValueError:
                 raise_keyframe_error(KeyframeTaskErrorCode.INVALID_REFERENCE_PURPOSE, HTTP_422)
         raise_keyframe_error(KeyframeTaskErrorCode.INVALID_REFERENCE_TYPE, HTTP_422)

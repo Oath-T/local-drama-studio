@@ -117,6 +117,8 @@ def test_workflow_unavailable_when_checkpoint_missing(
     monkeypatch,
 ) -> None:
     data = create_ready_shot_fixture(migrated_client)
+    monkeypatch.setenv("LDS_API_COMFYUI_DEFAULT_CHECKPOINT", "")
+    get_settings.cache_clear()
     monkeypatch.setattr(
         "app.service.keyframe_generation_service.create_keyframe_generation_provider",
         lambda settings: StubGenerationProvider(),
@@ -298,7 +300,7 @@ def test_capabilities_online_can_coexist_with_workflow_model_missing(
     monkeypatch,
 ) -> None:
     data = create_ready_shot_fixture(migrated_client)
-    monkeypatch.delenv("LDS_API_COMFYUI_DEFAULT_CHECKPOINT", raising=False)
+    monkeypatch.setenv("LDS_API_COMFYUI_DEFAULT_CHECKPOINT", "")
     get_settings.cache_clear()
     monkeypatch.setattr(
         "app.api.system.create_keyframe_generation_provider",

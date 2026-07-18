@@ -28,6 +28,7 @@ from app.infrastructure.models.video_generation import (
     VideoGenerationRunRecord,
 )
 from app.repository.video_generation_repository import VideoGenerationRepository
+from app.service.canvas_output_sync_service import CanvasOutputSyncService
 from app.service.media_storage_service import MediaStorageService
 from app.service.video_generation_service import (
     VideoGenerationService,
@@ -298,6 +299,8 @@ class VideoGenerationRunner:
                 VideoGenerationErrorCode.OUTPUT_MISSING,
                 "ComfyUI output is missing.",
             )
+        with self.session_factory() as session:
+            CanvasOutputSyncService(session).sync_video_run_outputs(run_id)
 
     def _load_run(self, run_id: str) -> VideoGenerationRunRecord:
         with self.session_factory() as session:

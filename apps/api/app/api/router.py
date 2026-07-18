@@ -15,6 +15,7 @@ from app.api.project_exports import router as project_exports_router
 from app.api.project_timeline import router as project_timeline_router
 from app.api.projects import router as projects_router
 from app.api.prompt_builder import router as prompt_builder_router
+from app.api.quick_generate import router as quick_generate_router
 from app.api.scenes import router as scenes_router
 from app.api.shot_recommendations import router as shot_recommendations_router
 from app.api.shots import router as shots_router
@@ -40,6 +41,7 @@ api_router.include_router(project_canvas_router)
 api_router.include_router(canvas_bindings_router)
 api_router.include_router(project_timeline_router)
 api_router.include_router(project_exports_router)
+api_router.include_router(quick_generate_router)
 api_router.include_router(shot_recommendations_router)
 api_router.include_router(vision_analysis_router)
 api_router.include_router(system_router)

@@ -12,6 +12,7 @@ export type CanvasNodeType =
 export type CanvasEdgeType =
   | "uses_character"
   | "uses_scene"
+  | "shot_reference"
   | "identity_reference"
   | "look_reference"
   | "scene_reference"

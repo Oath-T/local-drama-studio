@@ -9,6 +9,7 @@ from app.domain.shot import (
     CameraHeight,
     CameraMovement,
     CharacterReferencePurpose,
+    MediaReferencePurpose,
     MissingItem,
     ReadinessStatus,
     SceneReferencePurpose,
@@ -105,13 +106,14 @@ class ShotReferenceCreateRequest(BaseModel):
     reference_type: ShotReferenceType
     character_reference_id: str | None = None
     scene_reference_id: str | None = None
+    media_asset_id: str | None = None
     shot_character_id: str | None = None
-    purpose: CharacterReferencePurpose | SceneReferencePurpose
+    purpose: CharacterReferencePurpose | SceneReferencePurpose | MediaReferencePurpose
     notes: str | None = Field(default=None, max_length=1000)
 
 
 class ShotReferenceUpdateRequest(BaseModel):
-    purpose: CharacterReferencePurpose | SceneReferencePurpose | None = None
+    purpose: CharacterReferencePurpose | SceneReferencePurpose | MediaReferencePurpose | None = None
     notes: str | None = Field(default=None, max_length=1000)
 
 
@@ -154,6 +156,7 @@ class ShotReferenceResponse(BaseModel):
     reference_type: ShotReferenceType
     character_reference_id: str | None
     scene_reference_id: str | None
+    media_asset_id: str | None
     shot_character_id: str | None
     purpose: str
     order_index: int

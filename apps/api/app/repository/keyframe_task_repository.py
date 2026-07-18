@@ -291,6 +291,7 @@ class KeyframeTaskRepository:
         reference_type: str,
         character_reference_id: str | None,
         scene_reference_id: str | None,
+        media_asset_id: str | None,
         purpose: str,
         source_shot_character_id: str | None,
     ) -> KeyframeGenerationTaskReferenceRecord | None:
@@ -313,9 +314,13 @@ class KeyframeTaskRepository:
                     KeyframeGenerationTaskReferenceRecord.source_shot_character_id
                     == source_shot_character_id
                 )
-        else:
+        elif reference_type == "scene":
             statement = statement.where(
                 KeyframeGenerationTaskReferenceRecord.scene_reference_id == scene_reference_id,
+            )
+        else:
+            statement = statement.where(
+                KeyframeGenerationTaskReferenceRecord.media_asset_id == media_asset_id,
             )
         return self.session.scalars(statement).first()
 

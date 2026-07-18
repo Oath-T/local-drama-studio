@@ -58,6 +58,22 @@ ENTITY_NODE_TYPES = {
     CanvasNodeType.EXPORT.value,
 }
 
+MANUAL_EDGE_NODE_TYPES: dict[CanvasEdgeType, set[tuple[str, str]]] = {
+    CanvasEdgeType.USES_CHARACTER: {("character", "shot")},
+    CanvasEdgeType.USES_SCENE: {("scene", "shot")},
+    CanvasEdgeType.SHOT_REFERENCE: {("image", "shot")},
+    CanvasEdgeType.IDENTITY_REFERENCE: {("image", "shot")},
+    CanvasEdgeType.LOOK_REFERENCE: {("image", "shot")},
+    CanvasEdgeType.SCENE_REFERENCE: {("image", "shot")},
+    CanvasEdgeType.POSE_REFERENCE: {("image", "shot")},
+    CanvasEdgeType.START_FRAME: {("image", "shot")},
+    CanvasEdgeType.END_FRAME: {("image", "shot")},
+    CanvasEdgeType.CONTINUITY_FROM: {("shot", "shot")},
+    CanvasEdgeType.INCLUDED_IN_EXPORT: {("video", "export")},
+}
+
+SYSTEM_GENERATED_ENTITY_TYPES = {"keyframe_output", "video_output"}
+
 
 class ProjectCanvasService:
     def __init__(self, session: Session) -> None:
@@ -79,18 +95,28 @@ class ProjectCanvasService:
             self._node_record_from_payload(str(project_id), canvas.id, node)
             for node in payload.nodes
         ]
-        node_ids = {record.id for record in node_records}
+        node_by_id = {record.id: record for record in node_records}
         edge_records = [
-            self._edge_record_from_payload(canvas.id, edge, node_ids) for edge in payload.edges
+            self._edge_record_from_payload(canvas.id, edge, node_by_id) for edge in payload.edges
         ]
+        payload_edge_ids = {edge.id for edge in payload.edges if edge.id}
+        edge_records.extend(
+            self._preserved_edge_record_from_existing(canvas.id, edge, node_by_id)
+            for edge in canvas.edges
+            if edge.id not in payload_edge_ids
+            and edge.source_node_id in node_by_id
+            and edge.target_node_id in node_by_id
+        )
         now = utc_now()
         canvas.view_mode = payload.view_mode.value
         canvas.viewport_json = payload.viewport.model_dump_json()
         canvas.revision += 1
         canvas.updated_at = now
         self.repository.clear_canvas(canvas.id)
+        self.repository.flush()
         for record in node_records:
             self.repository.add(record)
+        self.repository.flush()
         for record in edge_records:
             self.repository.add(record)
         self.repository.commit()
@@ -169,8 +195,8 @@ class ProjectCanvasService:
     ) -> ProjectCanvasResponse:
         canvas = self._get_or_create_canvas(str(project_id))
         self._ensure_revision(canvas, payload.expected_revision)
-        node_ids = {node.id for node in canvas.nodes}
-        record = self._edge_record_from_payload(canvas.id, payload, node_ids)
+        node_by_id = {node.id: node for node in canvas.nodes}
+        record = self._edge_record_from_payload(canvas.id, payload, node_by_id)
         canvas.revision += 1
         canvas.updated_at = utc_now()
         self.repository.add(record)
@@ -325,14 +351,13 @@ class ProjectCanvasService:
         self,
         canvas_id: str,
         edge: CanvasEdgeUpsert,
-        node_ids: set[str],
+        node_by_id: dict[str, ProjectCanvasNodeRecord],
     ) -> ProjectCanvasEdgeRecord:
-        if (
-            edge.source_node_id not in node_ids
-            or edge.target_node_id not in node_ids
-            or edge.source_node_id == edge.target_node_id
-        ):
+        source = node_by_id.get(edge.source_node_id)
+        target = node_by_id.get(edge.target_node_id)
+        if source is None or target is None or edge.source_node_id == edge.target_node_id:
             raise_canvas_error(ProjectCanvasErrorCode.INVALID_CONNECTION, 422)
+        self._ensure_edge_allowed(source, target, edge.semantic_type, edge.data)
         now = utc_now()
         return ProjectCanvasEdgeRecord(
             id=edge.id or str(uuid4()),
@@ -346,6 +371,61 @@ class ProjectCanvasService:
             created_at=now,
             updated_at=now,
         )
+
+    def _preserved_edge_record_from_existing(
+        self,
+        canvas_id: str,
+        edge: ProjectCanvasEdgeRecord,
+        node_by_id: dict[str, ProjectCanvasNodeRecord],
+    ) -> ProjectCanvasEdgeRecord:
+        semantic_type = CanvasEdgeType(edge.semantic_type)
+        data = CanvasEdgeData.model_validate_json(edge.data_json or "{}")
+        source = node_by_id[edge.source_node_id]
+        target = node_by_id[edge.target_node_id]
+        self._ensure_edge_allowed(source, target, semantic_type, data)
+        return ProjectCanvasEdgeRecord(
+            id=edge.id,
+            canvas_id=canvas_id,
+            source_node_id=edge.source_node_id,
+            target_node_id=edge.target_node_id,
+            source_handle=edge.source_handle,
+            target_handle=edge.target_handle,
+            semantic_type=edge.semantic_type,
+            data_json=edge.data_json,
+            created_at=edge.created_at,
+            updated_at=edge.updated_at,
+        )
+
+    def _ensure_edge_allowed(
+        self,
+        source: ProjectCanvasNodeRecord,
+        target: ProjectCanvasNodeRecord,
+        semantic_type: CanvasEdgeType,
+        data: CanvasEdgeData,
+    ) -> None:
+        if semantic_type == CanvasEdgeType.GENERATED_FROM:
+            payload = data.binding_payload or {}
+            if (
+                (source.node_type, target.node_type) not in {("shot", "image"), ("shot", "video")}
+                or data.status != "applied"
+                or data.business_entity_type not in SYSTEM_GENERATED_ENTITY_TYPES
+                or not data.business_entity_id
+                or payload.get("system") is not True
+            ):
+                raise AppError(
+                    code=ProjectCanvasErrorCode.INVALID_CONNECTION.value,
+                    message="生成来源关系只能由系统创建和维护。",
+                    status_code=422,
+                )
+            return
+        if (source.node_type, target.node_type) not in MANUAL_EDGE_NODE_TYPES.get(
+            semantic_type, set()
+        ):
+            raise AppError(
+                code=ProjectCanvasErrorCode.INVALID_CONNECTION.value,
+                message="这两类节点目前不能直接连接。",
+                status_code=422,
+            )
 
     def _batch_node(
         self,

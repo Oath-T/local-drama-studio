@@ -34,6 +34,7 @@ class CanvasNodeType(StrEnum):
 class CanvasEdgeType(StrEnum):
     USES_CHARACTER = "uses_character"
     USES_SCENE = "uses_scene"
+    SHOT_REFERENCE = "shot_reference"
     IDENTITY_REFERENCE = "identity_reference"
     LOOK_REFERENCE = "look_reference"
     SCENE_REFERENCE = "scene_reference"

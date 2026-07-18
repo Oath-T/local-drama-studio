@@ -228,6 +228,82 @@ def test_image_to_shot_reference_and_unbind(migrated_client: TestClient) -> None
     assert references_after["total"] == 0
 
 
+def test_media_image_to_shot_reference_is_applied_and_idempotent(
+    migrated_client: TestClient,
+) -> None:
+    data = setup_canvas_nodes(migrated_client)
+    project_id = str(data["project_id"])
+    nodes = data["nodes"]
+
+    applied = apply_binding(
+        migrated_client,
+        project_id,
+        {
+            "expected_revision": data["canvas"]["revision"],
+            "source_node_id": nodes["Character Ref"]["id"],
+            "target_node_id": nodes["Shot"]["id"],
+            "semantic_type": "shot_reference",
+            "payload": {},
+        },
+    )
+    edge = next(edge for edge in applied["edges"] if edge["semantic_type"] == "shot_reference")
+    references = migrated_client.get(
+        f"/api/projects/{project_id}/shots/{data['shot']['id']}/references"
+    ).json()
+    assert references["total"] == 1
+    assert references["items"][0]["reference_type"] == "media"
+    assert references["items"][0]["media_asset_id"] == data["character_ref"]["media_asset"]["id"]
+    assert references["items"][0]["media_asset"]["id"] == data["character_ref"]["media_asset"]["id"]
+    assert edge["data"]["status"] == "applied"
+    assert edge["data"]["business_entity_type"] == "shot_reference"
+    assert edge["data"]["business_entity_id"] == references["items"][0]["id"]
+
+    duplicate = apply_binding(
+        migrated_client,
+        project_id,
+        {
+            "expected_revision": applied["revision"],
+            "source_node_id": nodes["Character Ref"]["id"],
+            "target_node_id": nodes["Shot"]["id"],
+            "semantic_type": "shot_reference",
+            "payload": {},
+        },
+    )
+    references_after = migrated_client.get(
+        f"/api/projects/{project_id}/shots/{data['shot']['id']}/references"
+    ).json()
+    shot_reference_edges = [
+        edge for edge in duplicate["edges"] if edge["semantic_type"] == "shot_reference"
+    ]
+    assert references_after["total"] == 1
+    assert len(shot_reference_edges) == 1
+
+
+def test_shot_to_image_cannot_create_generated_from_or_reference(
+    migrated_client: TestClient,
+) -> None:
+    data = setup_canvas_nodes(migrated_client)
+    project_id = str(data["project_id"])
+    nodes = data["nodes"]
+
+    response = migrated_client.post(
+        f"/api/projects/{project_id}/canvas/bindings/apply",
+        json={
+            "expected_revision": data["canvas"]["revision"],
+            "source_node_id": nodes["Shot"]["id"],
+            "target_node_id": nodes["Character Ref"]["id"],
+            "semantic_type": "generated_from",
+            "payload": {},
+        },
+    )
+
+    assert response.status_code == 422
+    references = migrated_client.get(
+        f"/api/projects/{project_id}/shots/{data['shot']['id']}/references"
+    ).json()
+    assert references["total"] == 0
+
+
 def test_scene_reference_and_video_input_binding(migrated_client: TestClient) -> None:
     data = setup_canvas_nodes(migrated_client)
     project_id = str(data["project_id"])
@@ -393,3 +469,85 @@ def test_binding_relation_matrix_rejects_invalid_connections_without_creating_ed
     assert generated.json()["error"]["message"] == "生成来源关系只能由系统建立。"
     after_generated = migrated_client.get(f"/api/projects/{project_id}/canvas").json()
     assert len(after_generated["edges"]) == 1
+
+
+def test_raw_canvas_edge_endpoint_rejects_manual_generated_from(
+    migrated_client: TestClient,
+) -> None:
+    data = setup_canvas_nodes(migrated_client)
+    project_id = str(data["project_id"])
+    nodes = data["nodes"]
+
+    rejected = migrated_client.post(
+        f"/api/projects/{project_id}/canvas/edges",
+        json={
+            "expected_revision": data["canvas"]["revision"],
+            "source_node_id": nodes["Shot"]["id"],
+            "target_node_id": nodes["Character Ref"]["id"],
+            "semantic_type": "generated_from",
+            "data": {"status": "draft"},
+        },
+    )
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["message"] == "生成来源关系只能由系统创建和维护。"
+    after_rejected = migrated_client.get(f"/api/projects/{project_id}/canvas").json()
+    assert after_rejected["edges"] == []
+
+
+def test_system_generated_from_edge_can_only_be_hidden(
+    migrated_client: TestClient,
+) -> None:
+    data = setup_canvas_nodes(migrated_client)
+    project_id = str(data["project_id"])
+    nodes = data["nodes"]
+    created = migrated_client.post(
+        f"/api/projects/{project_id}/canvas/edges",
+        json={
+            "expected_revision": data["canvas"]["revision"],
+            "source_node_id": nodes["Shot"]["id"],
+            "target_node_id": nodes["Character Ref"]["id"],
+            "semantic_type": "generated_from",
+            "data": {
+                "status": "applied",
+                "business_entity_type": "keyframe_output",
+                "business_entity_id": "00000000-0000-0000-0000-000000000001",
+                "binding_payload": {
+                    "system": True,
+                    "output_id": "00000000-0000-0000-0000-000000000001",
+                },
+            },
+        },
+    )
+    assert created.status_code == 201
+    edge_id = created.json()["edges"][0]["id"]
+
+    saved = migrated_client.put(
+        f"/api/projects/{project_id}/canvas",
+        json={
+            "expected_revision": created.json()["revision"],
+            "view_mode": created.json()["view_mode"],
+            "viewport": created.json()["viewport"],
+            "nodes": created.json()["nodes"],
+            "edges": created.json()["edges"],
+        },
+    )
+    assert saved.status_code == 200
+    assert len(saved.json()["nodes"]) == len(created.json()["nodes"])
+    assert len(saved.json()["edges"]) == 1
+
+    unbind = migrated_client.request(
+        "DELETE",
+        f"/api/projects/{project_id}/canvas/bindings/{edge_id}",
+        json={"expected_revision": saved.json()["revision"], "mode": "unbind_business"},
+    )
+    assert unbind.status_code == 422
+    assert unbind.json()["error"]["message"] == "生成来源关系只能隐藏显示，不能解除真实业务来源。"
+
+    hidden = migrated_client.request(
+        "DELETE",
+        f"/api/projects/{project_id}/canvas/bindings/{edge_id}",
+        json={"expected_revision": saved.json()["revision"], "mode": "hide_only"},
+    )
+    assert hidden.status_code == 200
+    assert hidden.json()["edges"] == []

@@ -8,6 +8,7 @@ from app.infrastructure.models.character import (
     CharacterLookRecord,
     CharacterRecord,
     CharacterReferenceRecord,
+    MediaAssetRecord,
 )
 from app.infrastructure.models.project import ProjectRecord
 from app.infrastructure.models.scene import SceneRecord, SceneReferenceRecord, SceneStateRecord
@@ -362,6 +363,7 @@ class ShotRepository:
         reference_type: str,
         character_reference_id: str | None,
         scene_reference_id: str | None,
+        media_asset_id: str | None,
         purpose: str,
         shot_character_id: str | None,
     ) -> ShotReferenceRecord | None:
@@ -371,6 +373,7 @@ class ShotRepository:
             ShotReferenceRecord.purpose == purpose,
             ShotReferenceRecord.character_reference_id == character_reference_id,
             ShotReferenceRecord.scene_reference_id == scene_reference_id,
+            ShotReferenceRecord.media_asset_id == media_asset_id,
         )
         if shot_character_id is None:
             statement = statement.where(ShotReferenceRecord.shot_character_id.is_(None))
@@ -486,6 +489,9 @@ class ShotRepository:
                 joinedload(SceneReferenceRecord.state).joinedload(SceneStateRecord.scene),
             )
         ).first()
+
+    def get_media_asset(self, media_asset_id: str) -> MediaAssetRecord | None:
+        return self.session.get(MediaAssetRecord, media_asset_id)
 
     def get_characters_by_ids(self, ids: list[str]) -> dict[str, CharacterRecord]:
         if not ids:

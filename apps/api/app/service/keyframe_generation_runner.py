@@ -25,6 +25,7 @@ from app.infrastructure.models.keyframe_generation import (
     KeyframeGenerationRunRecord,
 )
 from app.repository.keyframe_generation_repository import KeyframeGenerationRepository
+from app.service.canvas_output_sync_service import CanvasOutputSyncService
 from app.service.keyframe_generation_service import (
     KeyframeGenerationService,
     media_record_from_stored_image,
@@ -204,6 +205,8 @@ class KeyframeGenerationRunner:
                 KeyframeGenerationErrorCode.COMFYUI_OUTPUT_MISSING,
                 "ComfyUI output is missing.",
             )
+        with self.session_factory() as session:
+            CanvasOutputSyncService(session).sync_keyframe_run_outputs(run_id)
 
     def _load_run(self, run_id: str) -> KeyframeGenerationRunRecord:
         with self.session_factory() as session:

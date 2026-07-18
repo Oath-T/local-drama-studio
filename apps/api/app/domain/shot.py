@@ -12,6 +12,7 @@ class ShotErrorCode(StrEnum):
     LOOK_NOT_FOUND = "CHARACTER_LOOK_NOT_FOUND"
     CHARACTER_REFERENCE_NOT_FOUND = "CHARACTER_REFERENCE_NOT_FOUND"
     SCENE_REFERENCE_NOT_FOUND = "SCENE_REFERENCE_NOT_FOUND"
+    MEDIA_ASSET_NOT_FOUND = "MEDIA_ASSET_NOT_FOUND"
     NAME_REQUIRED = "SHOT_NAME_REQUIRED"
     NAME_TOO_LONG = "SHOT_NAME_TOO_LONG"
     CUSTOM_CAMERA_HEIGHT_REQUIRED = "CUSTOM_CAMERA_HEIGHT_REQUIRED"
@@ -121,6 +122,7 @@ class MissingItem(StrEnum):
 class ShotReferenceType(StrEnum):
     CHARACTER = "character"
     SCENE = "scene"
+    MEDIA = "media"
 
 
 class CharacterReferencePurpose(StrEnum):
@@ -138,6 +140,10 @@ class SceneReferencePurpose(StrEnum):
     COMPOSITION = "composition"
     LIGHTING = "lighting"
     CAMERA_REFERENCE = "camera_reference"
+    GENERAL = "general"
+
+
+class MediaReferencePurpose(StrEnum):
     GENERAL = "general"
 
 

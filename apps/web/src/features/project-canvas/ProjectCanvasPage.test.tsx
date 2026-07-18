@@ -22,6 +22,7 @@ vi.mock("@xyflow/react", async () => {
       onNodeClick,
       onEdgeClick,
       onNodeDragStop,
+      onMoveEnd,
       onDrop,
       onDragOver
     }: {
@@ -34,6 +35,7 @@ vi.mock("@xyflow/react", async () => {
       onNodeClick?: (event: React.MouseEvent<HTMLButtonElement>, node: { id: string }) => void;
       onEdgeClick?: (event: React.MouseEvent<HTMLButtonElement>, edge: { id: string }) => void;
       onNodeDragStop?: (event: MouseEvent, node: { id: string; position: { x: number; y: number } }) => void;
+      onMoveEnd?: () => void;
       onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
       onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
     }) =>
@@ -63,6 +65,7 @@ vi.mock("@xyflow/react", async () => {
           ? React.createElement(
               "button",
               {
+                "data-testid": "mock-drag-node",
                 type: "button",
                 onClick: () =>
                   onNodeDragStop?.(new MouseEvent("mouseup"), {
@@ -73,12 +76,22 @@ vi.mock("@xyflow/react", async () => {
               "模拟移动节点"
             )
           : null,
+        React.createElement(
+          "button",
+          {
+            "data-testid": "mock-save-viewport",
+            type: "button",
+            onClick: () => onMoveEnd?.()
+          },
+          "模拟保存视口"
+        ),
         nodes.length >= 2
           ? React.createElement(
               "button",
-              {
-                type: "button",
-                onClick: () => onConnect?.({ source: nodes[0].id, target: nodes[1].id })
+                {
+                  "data-testid": "mock-connect",
+                  type: "button",
+                  onClick: () => onConnect?.({ source: nodes[0].id, target: nodes[1].id })
               },
               "模拟创建连线"
             )
@@ -87,6 +100,7 @@ vi.mock("@xyflow/react", async () => {
           React.createElement(
             "button",
             {
+              "data-testid": `mock-edge-${edge.id}`,
               key: edge.id,
               type: "button",
               onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -116,6 +130,38 @@ vi.mock("@xyflow/react", async () => {
 });
 
 const projectId = "11111111-1111-4111-8111-111111111111";
+
+test("Inspector image action keeps the returned edge during viewport save", async () => {
+  const unboundImageNode = { ...imageNode, id: "unbound-image-node", entity_id: "unbound-media-1", title: "unbound.png" };
+  const requests = mockCanvasApi({
+    initialCanvas: {
+      ...emptyCanvas,
+      revision: 8,
+      nodes: [unboundImageNode, shotNode]
+    }
+  });
+  const user = userEvent.setup();
+
+  renderCanvas();
+
+  await user.click(await screen.findByRole("button", { name: /unbound.png/ }));
+  await user.click(await screen.findByRole("button", { name: "\u8bbe\u4e3a\u955c\u5934\u53c2\u8003\u56fe" }));
+
+  expect(await screen.findByTestId("mock-edge-edge-1")).toBeInTheDocument();
+
+  await user.click(screen.getByTestId("mock-save-viewport"));
+
+  await waitFor(() => {
+    const saveRequest = requests.find(
+      (request) => request.method === "PUT" && request.url.endsWith("/canvas")
+    );
+    expect(saveRequest).toBeTruthy();
+    const payload = JSON.parse(saveRequest?.body ?? "{}") as ProjectCanvas;
+    expect(payload.edges).toHaveLength(1);
+    expect(payload.edges[0].semantic_type).toBe("shot_reference");
+  });
+  expect(screen.getByTestId("mock-edge-edge-1")).toBeInTheDocument();
+});
 
 const project: Project = {
   id: projectId,
@@ -175,6 +221,22 @@ const shotNode = {
   updated_at: "2026-07-15T00:00:00+00:00"
 };
 
+const imageNode = {
+  id: "image-node",
+  node_type: "image" as const,
+  title: "identity.png",
+  position_x: 80,
+  position_y: 260,
+  width: 240,
+  height: 120,
+  z_index: 2,
+  entity_type: "image",
+  entity_id: "media-image-1",
+  data: {},
+  created_at: "2026-07-15T00:00:00+00:00",
+  updated_at: "2026-07-15T00:00:00+00:00"
+};
+
 function renderCanvas(path = `/projects/${projectId}/canvas`) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
@@ -198,13 +260,37 @@ function jsonResponse(body: unknown, status = 200) {
   );
 }
 
-function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: boolean } = {}) {
-  let canvas: ProjectCanvas = { ...emptyCanvas };
+function mockCanvasApi(
+  options: {
+    conflictOnNodeCreate?: boolean;
+    failCanvas?: boolean;
+    withKeyframeHistory?: boolean;
+    initialCanvas?: ProjectCanvas;
+  } = {}
+) {
+  let canvas: ProjectCanvas = options.initialCanvas ?? { ...emptyCanvas };
   let keyframeTasks: Array<Record<string, any>> = [];
   const keyframeRuns = new Map<string, Array<Record<string, any>>>();
   let videoTasks: Array<Record<string, any>> = [];
   const videoRuns = new Map<string, Array<Record<string, any>>>();
   const requests: Array<{ url: string; method: string; body?: string }> = [];
+
+  if (options.withKeyframeHistory) {
+    const task = makeKeyframeTask("quick-first-task", "first_frame");
+    keyframeTasks = [task];
+    keyframeRuns.set(task.id, [
+      makeKeyframeRun(task.id, "quick-first-current-output", {
+        runId: "quick-first-current-run",
+        createdAt: "2026-07-15T00:02:00+00:00",
+        prompt: "current first frame prompt"
+      }),
+      makeKeyframeRun(task.id, "quick-first-old-output", {
+        runId: "quick-first-old-run",
+        createdAt: "2026-07-15T00:01:00+00:00",
+        prompt: "old first frame prompt"
+      })
+    ]);
+  }
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -340,8 +426,18 @@ function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: b
         semantic_type: payload.semantic_type,
         data: {
           status,
-          business_entity_type: status === "applied" ? "shot_character" : null,
-          business_entity_id: status === "applied" ? "shot-character-1" : null,
+          business_entity_type:
+            status === "applied"
+              ? payload.semantic_type === "shot_reference"
+                ? "shot_reference"
+                : "shot_character"
+              : null,
+          business_entity_id:
+            status === "applied"
+              ? payload.semantic_type === "shot_reference"
+                ? "shot-reference-1"
+                : "shot-character-1"
+              : null,
           error_message: status === "failed" ? "普通媒体不能绑定为姿态参考。" : null
         },
         created_at: "2026-07-15T00:00:00+00:00",
@@ -619,6 +715,82 @@ function mockCanvasApi(options: { conflictOnNodeCreate?: boolean; failCanvas?: b
         total: 1
       });
     }
+    const quickPreviewMatch = url.match(
+      /^\/api\/projects\/[^/]+\/shots\/shot-1\/quick-generate\/preview$/
+    );
+    if (quickPreviewMatch && method === "POST") {
+      const payload = JSON.parse(String(init?.body)) as { mode: string };
+      const missingInputs: string[] = [];
+      if (payload.mode === "video") {
+        const firstSelected = Array.from(keyframeRuns.values()).some((runs) =>
+          runs.some((run) =>
+            run.outputs.some(
+              (output: Record<string, any>) =>
+                output.id === "quick-first-output" && output.is_selected
+            )
+          )
+        );
+        const endSelected = Array.from(keyframeRuns.values()).some((runs) =>
+          runs.some((run) =>
+            run.outputs.some(
+              (output: Record<string, any>) =>
+                output.id === "quick-end-output" && output.is_selected
+            )
+          )
+        );
+        if (!firstSelected) missingInputs.push("adopted_first_frame");
+        if (!endSelected) missingInputs.push("adopted_end_frame");
+      }
+      const workflowId =
+        payload.mode === "video" ? "video_wan22_14b_flf2v_v1" : "keyframe_basic_v1";
+      return jsonResponse({
+        mode: payload.mode,
+        route: {
+          selected_workflow_id: workflowId,
+          executable: missingInputs.length === 0,
+          reason_zh: missingInputs.length === 0 ? "已选择可执行工作流。" : "缺少必要输入，暂不能开始生成。",
+          required_inputs:
+            payload.mode === "video"
+              ? ["prompt", "adopted_first_frame", "adopted_end_frame"]
+              : ["prompt"],
+          missing_inputs: missingInputs,
+          missing_models: [],
+          missing_nodes: [],
+          warnings: [],
+          fallback: null
+        },
+        capabilities: []
+      });
+    }
+    const quickExecuteMatch = url.match(
+      /^\/api\/projects\/[^/]+\/shots\/shot-1\/quick-generate$/
+    );
+    if (quickExecuteMatch && method === "POST") {
+      const payload = JSON.parse(String(init?.body)) as { mode: string; request_id: string };
+      if (payload.mode === "video") {
+        const task = videoTasks[0] ?? makeVideoTask("quick-video-task", {});
+        videoTasks = [task];
+        const run = makeVideoRun(task.id);
+        videoRuns.set(task.id, [run, ...(videoRuns.get(task.id) ?? [])]);
+        return jsonResponse(
+          quickExecuteResponse(payload.mode, payload.request_id, "video", task.id, run.id),
+          202
+        );
+      }
+      const purpose = payload.mode;
+      const task = makeKeyframeTask(
+        purpose === "end_frame" ? "quick-end-task" : "quick-first-task",
+        purpose
+      );
+      keyframeTasks = [...keyframeTasks.filter((item) => item.id !== task.id), task];
+      const outputId = purpose === "end_frame" ? "quick-end-output" : "quick-first-output";
+      const run = makeKeyframeRun(task.id, outputId);
+      keyframeRuns.set(task.id, [run, ...(keyframeRuns.get(task.id) ?? [])]);
+      return jsonResponse(
+        quickExecuteResponse(payload.mode, payload.request_id, "keyframe", task.id, run.id),
+        202
+      );
+    }
     if (url === `/api/projects/${projectId}/shots/shot-1/keyframe-tasks` && method === "GET") {
       return jsonResponse({ items: keyframeTasks, total: keyframeTasks.length });
     }
@@ -825,6 +997,45 @@ function makeKeyframeTask(id: string, purpose: string) {
   };
 }
 
+function quickExecuteResponse(
+  mode: string,
+  requestId: string,
+  runType: string,
+  taskId: string,
+  runId: string
+) {
+  const workflowId = runType === "video" ? "video_wan22_14b_flf2v_v1" : "keyframe_basic_v1";
+  return {
+    mode,
+    run_type: runType,
+    request_id: requestId,
+    idempotent_replay: false,
+    reused_active_run: false,
+    task_id: taskId,
+    run_id: runId,
+    status: "queued",
+    workflow_id: workflowId,
+    route: {
+      selected_workflow_id: workflowId,
+      executable: true,
+      reason_zh: "已选择可执行工作流。",
+      required_inputs: mode === "video" ? ["prompt", "adopted_first_frame", "adopted_end_frame"] : ["prompt"],
+      missing_inputs: [],
+      missing_models: [],
+      missing_nodes: [],
+      warnings: [],
+      fallback: null
+    },
+    canvas_sync: {
+      attempted: false,
+      synced: false,
+      node_id: null,
+      edge_id: null,
+      error_message: null
+    }
+  };
+}
+
 function makeKeyframeOutput(id: string, selected = false) {
   return {
     id,
@@ -855,9 +1066,17 @@ function makeKeyframeOutput(id: string, selected = false) {
   };
 }
 
-function makeKeyframeRun(taskId: string, outputId: string) {
+function makeKeyframeRun(
+  taskId: string,
+  outputId: string,
+  options: { runId?: string; createdAt?: string; prompt?: string } = {}
+) {
+  const runId =
+    options.runId ?? (outputId === "quick-end-output" ? "quick-end-run" : "quick-first-run");
+  const createdAt = options.createdAt ?? "2026-07-15T00:00:00+00:00";
+  const prompt = options.prompt ?? "dramatic office scene";
   return {
-    id: outputId === "quick-end-output" ? "quick-end-run" : "quick-first-run",
+    id: runId,
     project_id: projectId,
     keyframe_task_id: taskId,
     run_number: 1,
@@ -873,9 +1092,9 @@ function makeKeyframeRun(taskId: string, outputId: string) {
       workflow_id: "keyframe_basic_v1",
       workflow_version: "1.0.0",
       prompt_zh: null,
-      prompt_en: "dramatic office scene",
+      prompt_en: prompt,
       effective_prompt_language: "en",
-      effective_positive_prompt: "dramatic office scene",
+      effective_positive_prompt: prompt,
       negative_prompt: null,
       width: 768,
       height: 1360,
@@ -893,10 +1112,10 @@ function makeKeyframeRun(taskId: string, outputId: string) {
     error_message_safe: null,
     queued_at: null,
     started_at: null,
-    completed_at: "2026-07-15T00:00:00+00:00",
-    created_at: "2026-07-15T00:00:00+00:00",
-    updated_at: "2026-07-15T00:00:00+00:00",
-    outputs: [makeKeyframeOutput(outputId)]
+    completed_at: createdAt,
+    created_at: createdAt,
+    updated_at: createdAt,
+    outputs: [{ ...makeKeyframeOutput(outputId), run_id: runId, created_at: createdAt }]
   };
 }
 
@@ -1083,18 +1302,22 @@ test("本地文件拖入不会伪装成通用上传", async () => {
   expect(await screen.findByText("本地文件上传即将支持，请先从资产库添加已有素材。")).toBeInTheDocument();
 });
 
-test("关系矩阵禁止 Scene 节点直接连接 Character 节点", async () => {
-  const requests = mockCanvasApi();
+test("manual connection is downgraded to an Inspector action hint", async () => {
+  const requests = mockCanvasApi({
+    initialCanvas: {
+      ...emptyCanvas,
+      nodes: [characterNode, shotNode]
+    }
+  });
   const user = userEvent.setup();
 
   renderCanvas();
 
-  await user.click(await screen.findByRole("button", { name: /会议室/ }));
-  await user.click(await screen.findByRole("button", { name: /林知夏/ }));
-  await user.click(screen.getByRole("button", { name: "模拟创建连线" }));
+  await screen.findByTestId("mock-connect");
+  await user.click(screen.getByTestId("mock-connect"));
 
-  expect(await screen.findByText("这两类节点目前不能直接连接。")).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "确认画布关系" })).not.toBeInTheDocument();
+  expect(await screen.findByText("\u8bf7\u5728\u53f3\u4fa7 Inspector \u4f7f\u7528\u660e\u786e\u6309\u94ae\u5b8c\u6210\u7ed1\u5b9a\u3002\u5173\u7cfb\u7ebf\u5f53\u524d\u4ec5\u4f5c\u4e3a\u8f85\u52a9\u5c55\u793a\u3002")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "\u786e\u8ba4\u753b\u5e03\u5173\u7cfb" })).not.toBeInTheDocument();
   expect(
     requests.some(
       (request) =>
@@ -1103,148 +1326,122 @@ test("关系矩阵禁止 Scene 节点直接连接 Character 节点", async () =>
   ).toBe(false);
 });
 
-test("generated_from 只能由系统建立，Shot 到 Video 不能手动连线", async () => {
-  const requests = mockCanvasApi();
+test("image Inspector button binds a shot reference", async () => {
+  const unboundImageNode = { ...imageNode, id: "unbound-image-node", entity_id: "unbound-media-1", title: "unbound.png" };
+  const requests = mockCanvasApi({
+    initialCanvas: {
+      ...emptyCanvas,
+      nodes: [unboundImageNode, shotNode]
+    }
+  });
   const user = userEvent.setup();
 
   renderCanvas();
 
-  fireEvent.contextMenu(await screen.findByTestId("react-flow"), { clientX: 240, clientY: 180 });
-  await user.click(within(await screen.findByRole("menu")).getByRole("button", { name: "镜头" }));
-  fireEvent.contextMenu(screen.getByTestId("react-flow"), { clientX: 420, clientY: 180 });
-  await user.click(within(await screen.findByRole("menu")).getByRole("button", { name: "视频" }));
-  await user.click(screen.getByRole("button", { name: "模拟创建连线" }));
+  await user.click(await screen.findByRole("button", { name: /unbound.png/ }));
+  expect(await screen.findByText("\u955c\u5934\u53c2\u8003\u56fe")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "\u8bbe\u4e3a\u955c\u5934\u53c2\u8003\u56fe" }));
 
-  expect(await screen.findByText("这两类节点目前不能直接连接。")).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "确认画布关系" })).not.toBeInTheDocument();
-  expect(
-    requests.some(
-      (request) =>
-        request.method === "POST" && request.url.endsWith("/canvas/bindings/apply")
-    )
-  ).toBe(false);
-});
-
-test("Image 到 Shot 只展示允许的中文语义用途", async () => {
-  mockCanvasApi();
-  const user = userEvent.setup();
-
-  renderCanvas();
-
-  await user.click(await screen.findByRole("button", { name: /identity.png/ }));
-  await user.click((await screen.findAllByRole("button", { name: /开场镜头/ }))[0]);
-  await user.click(screen.getByRole("button", { name: "模拟创建连线" }));
-
-  const dialog = await screen.findByRole("heading", { name: "确认画布关系" });
-  expect(dialog).toBeInTheDocument();
-  const select = screen.getByLabelText("语义用途");
-  expect(within(select).getByRole("option", { name: "身份参考" })).toBeInTheDocument();
-  expect(within(select).getByRole("option", { name: "造型参考" })).toBeInTheDocument();
-  expect(within(select).getByRole("option", { name: "姿态参考" })).toBeInTheDocument();
-  expect(within(select).getByRole("option", { name: "场景参考" })).toBeInTheDocument();
-  expect(within(select).getByRole("option", { name: "首帧" })).toBeInTheDocument();
-  expect(within(select).getByRole("option", { name: "尾帧" })).toBeInTheDocument();
-  expect(within(select).queryByRole("option", { name: "生成自" })).not.toBeInTheDocument();
-});
-
-test("连线后可以仅保留 draft edge，也可以确认真实绑定为 applied", async () => {
-  const requests = mockCanvasApi();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  const user = userEvent.setup();
-
-  renderCanvas();
-
-  await screen.findByText("从这里开始创作");
-  await user.click(screen.getByRole("button", { name: /导入现有内容 \(3\)/ }));
-  expect(await screen.findByText("现有角色、场景和镜头已导入画布。")).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: "模拟创建连线" }));
-  expect(await screen.findByRole("heading", { name: "确认画布关系" })).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "仅保留画布关系" }));
-
-  expect(await screen.findByText("画布关系已处理。")).toBeInTheDocument();
-  expect(await screen.findByRole("button", { name: /使用角色 · 草稿/ })).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: /使用角色 · 草稿/ }));
-  await user.click(screen.getByRole("button", { name: "应用 / 编辑绑定" }));
-  await user.click(screen.getByRole("button", { name: "确认真实绑定" }));
-
-  expect(await screen.findByRole("button", { name: /使用角色 · 已绑定/ })).toBeInTheDocument();
-  const applyRequests = requests.filter(
+  expect(await screen.findByText("\u753b\u5e03\u5173\u7cfb\u5df2\u5904\u7406\u3002")).toBeInTheDocument();
+  expect(await screen.findByTestId("mock-edge-edge-1")).toBeInTheDocument();
+  const applyRequest = requests.find(
     (request) => request.method === "POST" && request.url.endsWith("/canvas/bindings/apply")
   );
-  expect(applyRequests[0]?.body).toContain('"apply_business":false');
-  expect(applyRequests[1]?.body).toContain('"apply_business":true');
+  expect(applyRequest?.body).toContain('"semantic_type":"shot_reference"');
+  expect(applyRequest?.body).toContain('"apply_business":true');
+  expect(applyRequest?.body).toContain('"media_asset_id":"unbound-media-1"');
 });
 
-test("失败连线在 Inspector 显示错误并可重试", async () => {
-  mockCanvasApi();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+test("bound image Inspector button removes the shot reference", async () => {
+  const requests = mockCanvasApi({
+    initialCanvas: {
+      ...emptyCanvas,
+      nodes: [imageNode, shotNode],
+      edges: [
+        {
+          id: "shot-reference-edge",
+          source_node_id: imageNode.id,
+          target_node_id: shotNode.id,
+          source_handle: null,
+          target_handle: null,
+          semantic_type: "shot_reference",
+          data: {
+            status: "applied",
+            business_entity_type: "shot_reference",
+            business_entity_id: "shot-reference-1"
+          },
+          created_at: "2026-07-15T00:00:00+00:00",
+          updated_at: "2026-07-15T00:00:00+00:00"
+        }
+      ]
+    }
+  });
   const user = userEvent.setup();
 
   renderCanvas();
 
-  await screen.findByText("从这里开始创作");
-  await user.click(await screen.findByRole("button", { name: /identity.png/ }));
-  await user.click((await screen.findAllByRole("button", { name: /开场镜头/ }))[0]);
-  await user.click(screen.getByRole("button", { name: "模拟创建连线" }));
-  await user.selectOptions(screen.getByLabelText("语义用途"), "pose_reference");
-  await user.click(screen.getByRole("button", { name: "确认真实绑定" }));
+  const identityButtons = await screen.findAllByRole("button", { name: /identity.png/ });
+  await user.click(identityButtons.at(-1)!);
+  expect(await screen.findByText(/\u5df2\u662f\u955c\u5934\u53c2\u8003\u56fe/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "\u4ece\u955c\u5934\u53c2\u8003\u56fe\u79fb\u9664" }));
 
-  expect(await screen.findByText("真实绑定失败，已保留为失败连线，可在 Inspector 重试。")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: /姿态参考 · 失败/ }));
-  expect(screen.getByText("普通媒体不能绑定为姿态参考。")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "重试应用" })).toBeInTheDocument();
-});
-
-test("删除 applied edge 可选择仅隐藏或同时解除业务绑定", async () => {
-  const requests = mockCanvasApi();
-  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-  const user = userEvent.setup();
-
-  renderCanvas();
-
-  await screen.findByText("从这里开始创作");
-  await user.click(screen.getByRole("button", { name: /导入现有内容 \(3\)/ }));
-  await user.click(await screen.findByRole("button", { name: "模拟创建连线" }));
-  await user.click(screen.getByRole("button", { name: "确认真实绑定" }));
-  await screen.findByRole("button", { name: /使用角色 · 已绑定/ });
-
-  confirmSpy.mockReturnValueOnce(false);
-  await user.click(screen.getByRole("button", { name: /使用角色 · 已绑定/ }));
-  await user.click(screen.getByRole("button", { name: "删除所选" }));
   await waitFor(() => {
     const deleteRequest = requests.find(
       (request) => request.method === "DELETE" && request.url.includes("/canvas/bindings/")
     );
-    expect(deleteRequest?.body).toContain('"mode":"hide_only"');
-  });
-
-  await user.click(screen.getByRole("button", { name: /同步绑定/ }));
-  await screen.findByRole("button", { name: /使用角色 · 已绑定/ });
-  confirmSpy.mockReturnValueOnce(true);
-  await user.click(screen.getByRole("button", { name: /使用角色 · 已绑定/ }));
-  await user.click(screen.getByRole("button", { name: "删除所选" }));
-  await waitFor(() => {
-    const deleteRequests = requests.filter(
-      (request) => request.method === "DELETE" && request.url.includes("/canvas/bindings/")
-    );
-    expect(deleteRequests.at(-1)?.body).toContain('"mode":"unbind_business"');
+    expect(deleteRequest?.body).toContain('"mode":"unbind_business"');
   });
 });
 
-test("同步现有业务关系先预览再确认导入", async () => {
+test("relation edges are hidden by default and visible for the selected node", async () => {
+  mockCanvasApi({
+    initialCanvas: {
+      ...emptyCanvas,
+      nodes: [characterNode, shotNode],
+      edges: [
+        {
+          id: "imported-edge",
+          source_node_id: characterNode.id,
+          target_node_id: shotNode.id,
+          source_handle: null,
+          target_handle: null,
+          semantic_type: "uses_character",
+          data: {
+            status: "applied",
+            business_entity_type: "shot_character",
+            business_entity_id: "shot-character-1"
+          },
+          created_at: "2026-07-15T00:00:00+00:00",
+          updated_at: "2026-07-15T00:00:00+00:00"
+        }
+      ]
+    }
+  });
+  const user = userEvent.setup();
+
+  renderCanvas();
+
+  const characterButtons = await screen.findAllByRole("button", { name: /\u6797\u77e5\u590f/ });
+  expect(screen.queryByTestId("mock-edge-imported-edge")).not.toBeInTheDocument();
+
+  await user.click(characterButtons.at(-1)!);
+  expect(await screen.findByTestId("mock-edge-imported-edge")).toBeInTheDocument();
+});
+
+test("show relations toggle reveals imported business edges", async () => {
   const requests = mockCanvasApi();
   vi.spyOn(window, "confirm").mockReturnValue(true);
   const user = userEvent.setup();
 
   renderCanvas();
 
-  await screen.findByText("从这里开始创作");
-  await user.click(screen.getByRole("button", { name: /同步绑定 \(1\)/ }));
+  await screen.findByText("\u4ece\u8fd9\u91cc\u5f00\u59cb\u521b\u4f5c");
+  await user.click(screen.getByRole("button", { name: /\u540c\u6b65\u7ed1\u5b9a \(1\)/ }));
 
-  expect(await screen.findByText("现有镜头绑定关系已同步到画布。")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /使用角色 · 已绑定/ })).toBeInTheDocument();
+  expect(await screen.findByText("\u73b0\u6709\u955c\u5934\u7ed1\u5b9a\u5173\u7cfb\u5df2\u540c\u6b65\u5230\u753b\u5e03\u3002")).toBeInTheDocument();
+  expect(screen.queryByTestId("mock-edge-imported-edge")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "\u663e\u793a\u5173\u7cfb" }));
+  expect(await screen.findByTestId("mock-edge-imported-edge")).toBeInTheDocument();
   expect(
     requests.some(
       (request) =>
@@ -1252,7 +1449,6 @@ test("同步现有业务关系先预览再确认导入", async () => {
     )
   ).toBe(true);
 });
-
 test("revision 冲突时显示中文提示且页面不黑屏", async () => {
   mockCanvasApi({ conflictOnNodeCreate: true });
   const user = userEvent.setup();
@@ -1290,12 +1486,13 @@ test("镜头节点可以在画布 Inspector 内生成并采用首帧、尾帧和
 
   expect(await screen.findByText("画布快速生成")).toBeInTheDocument();
   await user.click(await screen.findByRole("button", { name: "生成首帧" }));
-  expect(await screen.findByText("首帧生成已提交，请在候选区等待结果。")).toBeInTheDocument();
+  expect(await screen.findByText("首帧生成已提交，请在当前候选区等待结果。")).toBeInTheDocument();
   await user.click((await screen.findAllByRole("button", { name: "采用" }))[0]);
   expect(await screen.findByText("候选图已采用。")).toBeInTheDocument();
 
+  await user.click(screen.getByRole("button", { name: "尾帧" }));
   await user.click(screen.getByRole("button", { name: "生成尾帧" }));
-  expect(await screen.findByText("尾帧生成已提交，请在候选区等待结果。")).toBeInTheDocument();
+  expect(await screen.findByText("尾帧生成已提交，请在当前候选区等待结果。")).toBeInTheDocument();
   await user.click(
     (await screen.findAllByRole("button", { name: "采用" })).find(
       (button) => !button.hasAttribute("disabled")
@@ -1303,10 +1500,11 @@ test("镜头节点可以在画布 Inspector 内生成并采用首帧、尾帧和
   );
   expect(await screen.findByText("候选图已采用。")).toBeInTheDocument();
 
+  await user.click(screen.getByRole("button", { name: "视频" }));
   const generateVideoButton = screen.getByRole("button", { name: "生成视频" });
   await waitFor(() => expect(generateVideoButton).not.toBeDisabled());
   await user.click(generateVideoButton);
-  expect(await screen.findByText("视频生成已提交，请在候选区等待结果。")).toBeInTheDocument();
+  expect(await screen.findByText("视频生成已提交，请在当前候选区等待结果。")).toBeInTheDocument();
   await user.click(
     (await screen.findAllByRole("button", { name: "采用" })).find(
       (button) => !button.hasAttribute("disabled")
@@ -1318,39 +1516,32 @@ test("镜头节点可以在画布 Inspector 内生成并采用首帧、尾帧和
     requests.some(
       (request) =>
         request.method === "POST" &&
-        request.url.endsWith("/shots/shot-1/keyframe-tasks") &&
-        request.body?.includes('"purpose":"first_frame"')
+        request.url.endsWith("/shots/shot-1/quick-generate") &&
+        request.body?.includes('"mode":"first_frame"')
     )
   ).toBe(true);
   expect(
     requests.some(
       (request) =>
         request.method === "POST" &&
-        request.url.endsWith("/shots/shot-1/keyframe-tasks") &&
-        request.body?.includes('"purpose":"end_frame"')
+        request.url.endsWith("/shots/shot-1/quick-generate") &&
+        request.body?.includes('"mode":"end_frame"')
     )
   ).toBe(true);
   expect(
     requests.some(
       (request) =>
         request.method === "POST" &&
-        request.url.endsWith("/keyframe-tasks/quick-first-task/runs") &&
-        request.body?.includes("keyframe_basic_v1")
+        request.url.endsWith("/shots/shot-1/quick-generate/preview") &&
+        request.body?.includes('"mode":"video"')
     )
   ).toBe(true);
   expect(
     requests.some(
       (request) =>
-        request.method === "PATCH" &&
-        request.url.endsWith("/video-tasks/quick-video-task") &&
-        request.body?.includes('"role":"start_frame"') &&
-        request.body?.includes('"role":"end_frame"') &&
-        request.body?.includes("video_wan22_14b_flf2v_v1")
-    )
-  ).toBe(true);
-  expect(
-    requests.some(
-      (request) => request.method === "POST" && request.url.endsWith("/video-tasks/quick-video-task/runs")
+        request.method === "POST" &&
+        request.url.endsWith("/shots/shot-1/quick-generate") &&
+        request.body?.includes('"mode":"video"')
     )
   ).toBe(true);
   expect(
@@ -1359,4 +1550,26 @@ test("镜头节点可以在画布 Inspector 内生成并采用首帧、尾帧和
         request.method === "POST" && request.url.endsWith("/video-outputs/quick-video-output/select")
     )
   ).toBe(true);
+});
+
+test("快速生成面板将最新 Run 作为当前候选并折叠历史生成", async () => {
+  mockCanvasApi({ withKeyframeHistory: true });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const user = userEvent.setup();
+
+  renderCanvas();
+
+  await screen.findByText("从这里开始创作");
+  await user.click(screen.getByRole("button", { name: /导入现有内容 \(3\)/ }));
+  const shotButtons = await screen.findAllByRole("button", { name: /开场镜头/ });
+  await user.click(shotButtons.at(-1)!);
+
+  expect(await screen.findByText("当前候选")).toBeInTheDocument();
+  expect(screen.getByText("历史生成（1 次 Run）")).toBeInTheDocument();
+  expect(screen.getByText(/old first frame prompt/)).not.toBeVisible();
+
+  await user.click(screen.getAllByRole("button", { name: "原图" })[0]);
+  expect(await screen.findByRole("button", { name: "关闭" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "关闭" }));
+  expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
 });

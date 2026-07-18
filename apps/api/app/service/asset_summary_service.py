@@ -165,6 +165,9 @@ class AssetSummaryService:
                 if reference.scene_reference_id
             ]
         )
+        media_asset_records = self.repository.get_media_assets_by_ids(
+            [reference.media_asset_id for reference in data.references if reference.media_asset_id]
+        )
 
         reference_counts_by_shot_character: dict[str, int] = {}
         scene_reference_count = 0
@@ -222,6 +225,7 @@ class AssetSummaryService:
                     shot_reference,
                     character_reference_records.get(shot_reference.character_reference_id or ""),
                     scene_reference_records.get(shot_reference.scene_reference_id or ""),
+                    media_asset_records.get(shot_reference.media_asset_id or ""),
                 )
             )
 
@@ -306,6 +310,7 @@ def shot_reference_summary(
     shot_reference: ShotReferenceRecord,
     character_reference: CharacterReferenceRecord | None,
     scene_reference: SceneReferenceRecord | None,
+    media_asset: MediaAssetRecord | None = None,
 ) -> SummaryReference:
     if shot_reference.reference_type == "character":
         reference = character_reference
@@ -319,6 +324,15 @@ def shot_reference_summary(
             is_primary=reference.is_primary if reference else False,
             is_identity_anchor=reference.is_identity_anchor if reference else False,
             media_asset=media_asset_summary(reference.media_asset if reference else None),
+            created_at=ensure_utc(shot_reference.created_at),
+        )
+    if shot_reference.reference_type == "media":
+        return SummaryReference(
+            id=shot_reference.id,
+            reference_type="media",
+            label=media_asset.original_filename if media_asset else "源参考图已删除",
+            purpose=shot_reference.purpose,
+            media_asset=media_asset_summary(media_asset),
             created_at=ensure_utc(shot_reference.created_at),
         )
     reference = scene_reference

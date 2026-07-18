@@ -19,7 +19,7 @@ from app.api.schemas.project_canvas import CanvasEdgeData, ProjectCanvasResponse
 from app.core.errors import AppError
 from app.domain.media_asset import MediaType
 from app.domain.project_canvas import CanvasEdgeType, ProjectCanvasErrorCode, utc_now
-from app.domain.shot import CharacterReferencePurpose, SceneReferencePurpose
+from app.domain.shot import CharacterReferencePurpose, MediaReferencePurpose, SceneReferencePurpose
 from app.domain.video_generation import VIDEO_INPUT_ROLE_ORDER, VideoInputRole
 from app.infrastructure.models.character import (
     CharacterLookRecord,
@@ -43,6 +43,7 @@ from app.service.project_canvas_service import ProjectCanvasService
 SUPPORTED_MANUAL_CONNECTIONS: dict[CanvasEdgeType, set[tuple[str, str]]] = {
     CanvasEdgeType.USES_CHARACTER: {("character", "shot")},
     CanvasEdgeType.USES_SCENE: {("scene", "shot")},
+    CanvasEdgeType.SHOT_REFERENCE: {("image", "shot")},
     CanvasEdgeType.IDENTITY_REFERENCE: {("image", "shot")},
     CanvasEdgeType.LOOK_REFERENCE: {("image", "shot")},
     CanvasEdgeType.SCENE_REFERENCE: {("image", "shot")},
@@ -78,6 +79,8 @@ class CanvasBindingService:
             summary = "确认后会把角色加入镜头，或更新已有镜头角色。"
         elif payload.semantic_type == CanvasEdgeType.USES_SCENE:
             summary = "确认后会更新镜头场景；如替换已有场景，需要显式确认。"
+        elif payload.semantic_type == CanvasEdgeType.SHOT_REFERENCE:
+            summary = "确认后会把该图片设为镜头参考图。"
         elif payload.semantic_type in {
             CanvasEdgeType.IDENTITY_REFERENCE,
             CanvasEdgeType.LOOK_REFERENCE,
@@ -163,6 +166,15 @@ class CanvasBindingService:
         self._ensure_revision(canvas, payload.expected_revision)
         edge = self._get_edge(canvas.id, str(edge_id))
         data = self._edge_data(edge)
+        if (
+            edge.semantic_type == CanvasEdgeType.GENERATED_FROM.value
+            and payload.mode == CanvasBindingDeleteMode.UNBIND_BUSINESS
+        ):
+            self._raise(
+                "CANVAS_GENERATED_FROM_READ_ONLY",
+                "生成来源关系只能隐藏显示，不能解除真实业务来源。",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
         if payload.mode == CanvasBindingDeleteMode.UNBIND_BUSINESS:
             self._unbind_business(data)
         self.session.delete(edge)
@@ -237,7 +249,11 @@ class CanvasBindingService:
             .join(ShotRecord)
             .where(ShotRecord.project_id == project_id_str)
         ):
-            reference_id = reference.character_reference_id or reference.scene_reference_id
+            reference_id = (
+                reference.character_reference_id
+                or reference.scene_reference_id
+                or reference.media_asset_id
+            )
             source = self._node_for_reference_media(node_by_entity, reference)
             target = node_by_entity.get(("shot", reference.shot_id))
             semantic = self._semantic_from_reference(reference)
@@ -302,6 +318,7 @@ class CanvasBindingService:
         if semantic_type == CanvasEdgeType.USES_SCENE:
             return "shot_scene_binding", self._bind_scene(project_id, source, target, payload)
         if semantic_type in {
+            CanvasEdgeType.SHOT_REFERENCE,
             CanvasEdgeType.IDENTITY_REFERENCE,
             CanvasEdgeType.LOOK_REFERENCE,
             CanvasEdgeType.POSE_REFERENCE,
@@ -455,6 +472,17 @@ class CanvasBindingService:
         media = self._get_project_media(project_id, source.entity_id)
         if media.media_type != MediaType.IMAGE.value:
             self._raise("CANVAS_MEDIA_TYPE_INVALID", "参考图必须是图片素材。", 422)
+        if semantic_type == CanvasEdgeType.SHOT_REFERENCE:
+            return self._create_or_get_shot_reference(
+                shot.id,
+                "media",
+                None,
+                None,
+                media.id,
+                None,
+                MediaReferencePurpose.GENERAL.value,
+                payload.notes,
+            )
         if semantic_type == CanvasEdgeType.SCENE_REFERENCE:
             reference = self._scene_reference_from_payload(project_id, media.id, payload)
             if shot.scene_state_id is None or reference.state_id != shot.scene_state_id:
@@ -463,7 +491,7 @@ class CanvasBindingService:
                 )
             purpose = self._scene_reference_purpose(payload.purpose)
             return self._create_or_get_shot_reference(
-                shot.id, "scene", None, reference.id, None, purpose, payload.notes
+                shot.id, "scene", None, reference.id, None, None, purpose, payload.notes
             )
         reference = self._character_reference_from_payload(project_id, media.id, payload)
         shot_character_id = payload.shot_character_id or self._matching_shot_character_id(
@@ -473,7 +501,14 @@ class CanvasBindingService:
             self._raise("CANVAS_SHOT_CHARACTER_REQUIRED", "请先选择该参考图对应的镜头角色。", 422)
         purpose = self._character_reference_purpose(semantic_type, payload.purpose)
         return self._create_or_get_shot_reference(
-            shot.id, "character", reference.id, None, shot_character_id, purpose, payload.notes
+            shot.id,
+            "character",
+            reference.id,
+            None,
+            None,
+            shot_character_id,
+            purpose,
+            payload.notes,
         )
 
     def _bind_video_input(
@@ -549,6 +584,7 @@ class CanvasBindingService:
         reference_type: str,
         character_reference_id: str | None,
         scene_reference_id: str | None,
+        media_asset_id: str | None,
         shot_character_id: str | None,
         purpose: str,
         notes: str | None,
@@ -559,6 +595,7 @@ class CanvasBindingService:
                 ShotReferenceRecord.reference_type == reference_type,
                 ShotReferenceRecord.character_reference_id == character_reference_id,
                 ShotReferenceRecord.scene_reference_id == scene_reference_id,
+                ShotReferenceRecord.media_asset_id == media_asset_id,
                 ShotReferenceRecord.purpose == purpose,
                 ShotReferenceRecord.shot_character_id == shot_character_id,
             )
@@ -583,6 +620,7 @@ class CanvasBindingService:
             reference_type=reference_type,
             character_reference_id=character_reference_id,
             scene_reference_id=scene_reference_id,
+            media_asset_id=media_asset_id,
             shot_character_id=shot_character_id,
             purpose=purpose,
             order_index=order_index,
@@ -628,6 +666,16 @@ class CanvasBindingService:
             edge.target_node_id = payload.target_node_id
             edge.semantic_type = payload.semantic_type.value
             return edge
+        existing = self.session.scalars(
+            select(ProjectCanvasEdgeRecord).where(
+                ProjectCanvasEdgeRecord.canvas_id == canvas.id,
+                ProjectCanvasEdgeRecord.source_node_id == payload.source_node_id,
+                ProjectCanvasEdgeRecord.target_node_id == payload.target_node_id,
+                ProjectCanvasEdgeRecord.semantic_type == payload.semantic_type.value,
+            )
+        ).first()
+        if existing is not None:
+            return existing
         edge = ProjectCanvasEdgeRecord(
             id=str(uuid4()),
             canvas_id=canvas.id,
@@ -949,9 +997,13 @@ class CanvasBindingService:
         if reference.scene_reference_id:
             scene_ref = self.session.get(SceneReferenceRecord, reference.scene_reference_id)
             media_id = scene_ref.media_asset_id if scene_ref else None
+        if reference.media_asset_id:
+            media_id = reference.media_asset_id
         return node_by_entity.get(("image", media_id))
 
     def _semantic_from_reference(self, reference: ShotReferenceRecord) -> CanvasEdgeType:
+        if reference.reference_type == "media":
+            return CanvasEdgeType.SHOT_REFERENCE
         if reference.reference_type == "scene":
             return CanvasEdgeType.SCENE_REFERENCE
         if reference.purpose == CharacterReferencePurpose.IDENTITY.value:
@@ -972,6 +1024,7 @@ class CanvasBindingService:
         return {
             CanvasEdgeType.USES_CHARACTER: "绑定角色到镜头",
             CanvasEdgeType.USES_SCENE: "绑定场景到镜头",
+            CanvasEdgeType.SHOT_REFERENCE: "设为镜头参考图",
             CanvasEdgeType.IDENTITY_REFERENCE: "绑定身份参考图",
             CanvasEdgeType.LOOK_REFERENCE: "绑定造型参考图",
             CanvasEdgeType.SCENE_REFERENCE: "绑定场景参考图",

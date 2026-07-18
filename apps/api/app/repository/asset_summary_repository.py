@@ -7,6 +7,7 @@ from app.infrastructure.models.character import (
     CharacterLookRecord,
     CharacterRecord,
     CharacterReferenceRecord,
+    MediaAssetRecord,
 )
 from app.infrastructure.models.keyframe_generation import (
     KeyframeGenerationOutputRecord,
@@ -311,6 +312,16 @@ class AssetSummaryRepository:
                     joinedload(SceneReferenceRecord.media_asset),
                     joinedload(SceneReferenceRecord.state),
                 )
+            ).all()
+        }
+
+    def get_media_assets_by_ids(self, ids: list[str]) -> dict[str, MediaAssetRecord]:
+        if not ids:
+            return {}
+        return {
+            record.id: record
+            for record in self.session.scalars(
+                select(MediaAssetRecord).where(MediaAssetRecord.id.in_(ids))
             ).all()
         }
 

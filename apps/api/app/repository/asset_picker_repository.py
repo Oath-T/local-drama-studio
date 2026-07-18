@@ -653,14 +653,24 @@ class AssetPickerRepository:
                 for reference in [character_reference or scene_reference]
                 if reference is not None
             }
+            | {
+                shot_reference.media_asset_id
+                for shot_reference, _, _ in rows
+                if shot_reference.media_asset_id
+            }
         )
         media_by_id = self._media_assets_by_id(project_id, media_ids)
         items: list[ReferenceImagePickerData] = []
         for shot_reference, character_reference, scene_reference in rows:
             source_reference = character_reference or scene_reference
-            if source_reference is None:
+            media_id = (
+                source_reference.media_asset_id
+                if source_reference is not None
+                else shot_reference.media_asset_id
+            )
+            if media_id is None:
                 continue
-            media = media_by_id.get(source_reference.media_asset_id)
+            media = media_by_id.get(media_id)
             if media is None:
                 continue
             is_character = shot_reference.reference_type == "character"
@@ -668,7 +678,7 @@ class AssetPickerRepository:
                 ReferenceImagePickerData(
                     id=shot_reference.id,
                     name=media.original_filename,
-                    description=source_reference.description,
+                    description=source_reference.description if source_reference else None,
                     source_kind="shot_reference",
                     source_label="镜头参考图",
                     media_asset=media,
@@ -694,7 +704,7 @@ class AssetPickerRepository:
                         "source_reference_id": (
                             shot_reference.character_reference_id
                             if is_character
-                            else shot_reference.scene_reference_id
+                            else shot_reference.scene_reference_id or shot_reference.media_asset_id
                         ),
                     },
                 )

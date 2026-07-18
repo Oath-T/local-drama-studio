@@ -40,6 +40,7 @@ from app.domain.character import (
 from app.domain.character import (
     SuggestionReviewStatus as CharacterSuggestionReviewStatus,
 )
+from app.domain.media_asset import MediaType
 from app.domain.scene import (
     AnalysisStatus as SceneAnalysisStatus,
 )
@@ -59,6 +60,7 @@ from app.domain.shot import (
     CameraHeight,
     CameraMovement,
     CharacterReferencePurpose,
+    MediaReferencePurpose,
     MissingItem,
     ReadinessStatus,
     SceneReferencePurpose,
@@ -351,6 +353,7 @@ class ShotService:
                 reference_type=reference.reference_type,
                 character_reference_id=reference.character_reference_id,
                 scene_reference_id=reference.scene_reference_id,
+                media_asset_id=reference.media_asset_id,
                 shot_character_id=(
                     character_id_map.get(reference.shot_character_id)
                     if reference.shot_character_id
@@ -474,6 +477,7 @@ class ShotService:
         purpose = self._validate_purpose(reference_type, payload.purpose)
         character_reference_id: str | None = None
         scene_reference_id: str | None = None
+        media_asset_id: str | None = None
         shot_character_id: str | None = None
         if reference_type == ShotReferenceType.CHARACTER:
             character_reference_id, shot_character_id = self._validate_character_reference(
@@ -481,6 +485,8 @@ class ShotService:
             )
         elif reference_type == ShotReferenceType.SCENE:
             scene_reference_id = self._validate_scene_reference(shot, payload.scene_reference_id)
+        elif reference_type == ShotReferenceType.MEDIA:
+            media_asset_id = self._validate_media_reference(shot.project_id, payload.media_asset_id)
         else:
             raise_shot_error(ShotErrorCode.INVALID_REFERENCE_TYPE, HTTP_422)
 
@@ -489,6 +495,7 @@ class ShotService:
             reference_type.value,
             character_reference_id,
             scene_reference_id,
+            media_asset_id,
             purpose,
             shot_character_id,
         )
@@ -502,6 +509,7 @@ class ShotService:
             reference_type=reference_type.value,
             character_reference_id=character_reference_id,
             scene_reference_id=scene_reference_id,
+            media_asset_id=media_asset_id,
             shot_character_id=shot_character_id,
             purpose=purpose,
             order_index=total + 1,
@@ -539,6 +547,7 @@ class ShotService:
             record.reference_type,
             record.character_reference_id,
             record.scene_reference_id,
+            record.media_asset_id,
             next_purpose,
             record.shot_character_id,
         )
@@ -647,10 +656,20 @@ class ShotService:
             raise_shot_error(ShotErrorCode.REFERENCE_SCENE_STATE_MISMATCH, HTTP_422)
         return reference.id
 
+    def _validate_media_reference(self, project_id: str, media_asset_id: str | None) -> str:
+        if media_asset_id is None:
+            raise_shot_error(ShotErrorCode.MEDIA_ASSET_NOT_FOUND, status.HTTP_404_NOT_FOUND)
+        media_asset = self.repository.get_media_asset(media_asset_id)
+        if media_asset is None or media_asset.project_id != project_id:
+            raise_shot_error(ShotErrorCode.MEDIA_ASSET_NOT_FOUND, status.HTTP_404_NOT_FOUND)
+        if media_asset.media_type != MediaType.IMAGE.value:
+            raise_shot_error(ShotErrorCode.INVALID_REFERENCE_TYPE, HTTP_422)
+        return media_asset.id
+
     @staticmethod
     def _validate_purpose(
         reference_type: ShotReferenceType,
-        purpose: CharacterReferencePurpose | SceneReferencePurpose,
+        purpose: CharacterReferencePurpose | SceneReferencePurpose | MediaReferencePurpose,
     ) -> str:
         if reference_type == ShotReferenceType.CHARACTER:
             try:
@@ -660,6 +679,11 @@ class ShotService:
         if reference_type == ShotReferenceType.SCENE:
             try:
                 return SceneReferencePurpose(str(purpose)).value
+            except ValueError:
+                raise_shot_error(ShotErrorCode.INVALID_REFERENCE_PURPOSE, HTTP_422)
+        if reference_type == ShotReferenceType.MEDIA:
+            try:
+                return MediaReferencePurpose(str(purpose)).value
             except ValueError:
                 raise_shot_error(ShotErrorCode.INVALID_REFERENCE_PURPOSE, HTTP_422)
         raise_shot_error(ShotErrorCode.INVALID_REFERENCE_TYPE, HTTP_422)
@@ -843,12 +867,17 @@ class ShotService:
             if source_scene is not None:
                 scene_reference = self._scene_reference_response(source_scene)
                 media_asset = scene_reference.media_asset
+        if record.reference_type == ShotReferenceType.MEDIA.value and record.media_asset_id:
+            media_asset_record = self.repository.get_media_asset(record.media_asset_id)
+            if media_asset_record is not None:
+                media_asset = self._media_asset_response(media_asset_record)
         return ShotReferenceResponse(
             id=record.id,
             shot_id=record.shot_id,
             reference_type=ShotReferenceType(record.reference_type),
             character_reference_id=record.character_reference_id,
             scene_reference_id=record.scene_reference_id,
+            media_asset_id=record.media_asset_id,
             shot_character_id=record.shot_character_id,
             purpose=record.purpose,
             order_index=record.order_index,
@@ -1007,4 +1036,5 @@ def ensure_utc(value: datetime) -> datetime:
 
 
 def raise_shot_error(code: ShotErrorCode, http_status: int) -> None:
-    raise AppError(code=code.value, message=ERROR_MESSAGES[code], status_code=http_status)
+    message = ERROR_MESSAGES.get(code, "媒体素材不存在或不属于当前项目。")
+    raise AppError(code=code.value, message=message, status_code=http_status)

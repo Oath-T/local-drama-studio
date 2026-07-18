@@ -145,6 +145,7 @@ const nodeTypeLabel: Record<CanvasNodeType, string> = {
 const edgeTypeLabel: Record<CanvasEdgeType, string> = {
   uses_character: "使用角色",
   uses_scene: "使用场景",
+  shot_reference: "镜头参考",
   identity_reference: "身份参考",
   look_reference: "造型参考",
   scene_reference: "场景参考",
@@ -186,6 +187,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [drawerCollapsed, setDrawerCollapsed] = useState(false);
+  const [showAllRelations, setShowAllRelations] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error" | "neutral"; text: string } | null>(
     null
   );
@@ -193,6 +195,8 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   const [redoStack, setRedoStack] = useState<ProjectCanvas[]>([]);
   const nodeSaveTimer = useRef<number | null>(null);
   const viewportSaveTimer = useRef<number | null>(null);
+  const canvasRef = useRef<ProjectCanvas | null>(null);
+  const viewModeRef = useRef<CanvasViewMode>("workflow");
 
   const projectQuery = useQuery({
     queryKey: projectKeys.detail(projectId),
@@ -248,14 +252,25 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
 
   const acceptServerCanvas = useCallback(
     (nextCanvas: ProjectCanvas, options?: { preserveViewMode?: boolean }) => {
+      canvasRef.current = nextCanvas;
+      const nextViewMode = options?.preserveViewMode ? viewModeRef.current : nextCanvas.view_mode;
       setCanvas(nextCanvas);
-      setViewMode(options?.preserveViewMode ? viewMode : nextCanvas.view_mode);
+      setViewMode(nextViewMode);
+      viewModeRef.current = nextViewMode;
       setNodes(toFlowNodes(nextCanvas));
       setEdges(toFlowEdges(nextCanvas));
       queryClient.setQueryData(projectCanvasKeys.detail(projectId), nextCanvas);
     },
-    [projectId, queryClient, viewMode]
+    [projectId, queryClient]
   );
+
+  useEffect(() => {
+    canvasRef.current = canvas;
+  }, [canvas]);
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   useEffect(() => {
     if (canvasQuery.data) {
@@ -275,7 +290,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     mutationFn: (input: ProjectCanvas) =>
       saveProjectCanvas(projectId, {
         expected_revision: input.revision,
-        view_mode: viewMode,
+        view_mode: viewModeRef.current,
         viewport: viewportFromReactFlow(reactFlow),
         nodes: input.nodes.map(toNodeInput),
         edges: input.edges.map(toEdgeInput)
@@ -289,13 +304,13 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
 
   const saveViewportMutation = useMutation({
     mutationFn: () => {
-      requireCanvas(canvas);
+      const currentCanvas = getRequiredCanvas(canvasRef);
       return saveProjectCanvas(projectId, {
-        expected_revision: canvas.revision,
-        view_mode: viewMode,
+        expected_revision: currentCanvas.revision,
+        view_mode: viewModeRef.current,
         viewport: viewportFromReactFlow(reactFlow),
-        nodes: canvas.nodes.map(toNodeInput),
-        edges: canvas.edges.map(toEdgeInput)
+        nodes: currentCanvas.nodes.map(toNodeInput),
+        edges: currentCanvas.edges.map(toEdgeInput)
       });
     },
     onSuccess: (nextCanvas) => acceptServerCanvas(nextCanvas, { preserveViewMode: true }),
@@ -341,10 +356,10 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
       title?: string;
       data?: ProjectCanvasNode["data"];
     }) => {
-      requireCanvas(canvas);
-      remember(canvas, setUndoStack, setRedoStack);
+      const currentCanvas = getRequiredCanvas(canvasRef);
+      remember(currentCanvas, setUndoStack, setRedoStack);
       return patchCanvasNode(projectId, input.nodeId, {
-        expected_revision: canvas.revision,
+        expected_revision: currentCanvas.revision,
         ...(input.position
           ? {
               position_x: input.position.x,
@@ -382,10 +397,10 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
       applyBusiness: boolean;
       payload: CanvasBindingPayload;
     }) => {
-      requireCanvas(canvas);
-      remember(canvas, setUndoStack, setRedoStack);
+      const currentCanvas = getRequiredCanvas(canvasRef);
+      remember(currentCanvas, setUndoStack, setRedoStack);
       return applyCanvasBinding(projectId, {
-        expected_revision: canvas.revision,
+        expected_revision: currentCanvas.revision,
         edge_id: input.edgeId ?? null,
         source_node_id: input.sourceNodeId,
         target_node_id: input.targetNodeId,
@@ -420,10 +435,10 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
 
   const deleteBindingMutation = useMutation({
     mutationFn: (input: { edgeId: string; mode: "hide_only" | "unbind_business" }) => {
-      requireCanvas(canvas);
-      remember(canvas, setUndoStack, setRedoStack);
+      const currentCanvas = getRequiredCanvas(canvasRef);
+      remember(currentCanvas, setUndoStack, setRedoStack);
       return deleteCanvasBinding(projectId, input.edgeId, {
-        expected_revision: canvas.revision,
+        expected_revision: currentCanvas.revision,
         mode: input.mode
       });
     },
@@ -521,34 +536,37 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   );
 
   const onConnect: OnConnect = useCallback(
-    (connection: Connection) => {
-      if (!connection.source || !connection.target) return;
-      const semanticType = suggestedEdgeType(connection.source, connection.target, canvas?.nodes ?? []);
-      if (!semanticType) {
-        setMessage({ tone: "neutral", text: invalidConnectionMessage });
-        return;
-      }
-      setBindingDialog({
-        sourceNodeId: connection.source,
-        targetNodeId: connection.target,
-        semanticType
+    (_connection: Connection) => {
+      setMessage({
+        tone: "neutral",
+        text: "请在右侧 Inspector 使用明确按钮完成绑定。关系线当前仅作为辅助展示。"
       });
     },
-    [canvas?.nodes]
+    []
   );
 
   const selectedCanvasNode = canvas?.nodes.find((node) => node.id === selectedNodeIds[0]) ?? null;
   const selectedCanvasEdge = canvas?.edges.find((edge) => edge.id === selectedEdgeIds[0]) ?? null;
+  const visibleEdges = useMemo(
+    () =>
+      filterVisibleEdges(edges, {
+        showAllRelations,
+        selectedNodeId: selectedCanvasNode?.id ?? null,
+        selectedEdgeId: selectedCanvasEdge?.id ?? null
+      }),
+    [edges, selectedCanvasEdge?.id, selectedCanvasNode?.id, showAllRelations]
+  );
 
   function changeViewMode(nextMode: CanvasViewMode) {
-    if (!canvas || nextMode === viewMode) return;
-    remember(canvas, setUndoStack, setRedoStack);
+    const currentCanvas = canvasRef.current;
+    if (!currentCanvas || nextMode === viewModeRef.current) return;
+    remember(currentCanvas, setUndoStack, setRedoStack);
     saveProjectCanvas(projectId, {
-      expected_revision: canvas.revision,
+      expected_revision: currentCanvas.revision,
       view_mode: nextMode,
       viewport: viewportFromReactFlow(reactFlow),
-      nodes: canvas.nodes.map(toNodeInput),
-      edges: canvas.edges.map(toEdgeInput)
+      nodes: currentCanvas.nodes.map(toNodeInput),
+      edges: currentCanvas.edges.map(toEdgeInput)
     })
       .then((nextCanvas) => acceptServerCanvas(nextCanvas))
       .catch((error: unknown) => setMessage({ tone: "error", text: canvasErrorText(error) }));
@@ -607,16 +625,9 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
   }
 
   function connectSelected() {
-    if (selectedNodeIds.length < 2) return;
-    const semanticType = suggestedEdgeType(selectedNodeIds[0], selectedNodeIds[1], canvas?.nodes ?? []);
-    if (!semanticType) {
-      setMessage({ tone: "neutral", text: invalidConnectionMessage });
-      return;
-    }
-    setBindingDialog({
-      sourceNodeId: selectedNodeIds[0],
-      targetNodeId: selectedNodeIds[1],
-      semanticType
+    setMessage({
+      tone: "neutral",
+      text: "手工连线入口已降级。请选择节点，在右侧 Inspector 使用绑定按钮。"
     });
   }
 
@@ -693,6 +704,16 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
     (productionQuery.data?.items ?? []).map((item) => [item.shot_id, item])
   );
 
+  useEffect(() => {
+    if (!canvas) return;
+    setNodes(
+      toFlowNodes(canvas, {
+        shots: shotsQuery.data?.items ?? [],
+        productionByShotId
+      })
+    );
+  }, [canvas, productionQuery.data?.items, shotsQuery.data?.items]);
+
   if (projectQuery.isLoading || canvasQuery.isLoading) {
     return <Skeleton className="h-[calc(100vh-112px)]" />;
   }
@@ -763,7 +784,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
             <CanvasErrorBoundary title="工作流画布加载失败">
               <ReactFlow
                 nodes={nodes}
-                edges={edges}
+                edges={visibleEdges}
                 nodeTypes={projectCanvasNodeTypes}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
@@ -797,9 +818,14 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                   setSelectedEdgeIds([edge.id]);
                   setMessage({ tone: "neutral", text: "已选中连线，可在右侧 Inspector 处理。" });
                 }}
+                onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
+                  setSelectedNodeIds(selectedNodes.map((node) => node.id));
+                  setSelectedEdgeIds(selectedEdges.map((edge) => edge.id));
+                }}
                 fitView
                 minZoom={0.2}
                 maxZoom={1.8}
+                nodesConnectable={false}
                 deleteKeyCode={null}
                 onPaneContextMenu={(event) => {
                   event.preventDefault();
@@ -824,7 +850,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 onMoveEnd={() => {
                   if (viewportSaveTimer.current) window.clearTimeout(viewportSaveTimer.current);
                   viewportSaveTimer.current = window.setTimeout(() => {
-                    if (canvas) saveViewportMutation.mutate();
+                    if (canvasRef.current) saveViewportMutation.mutate();
                   }, 650);
                 }}
                 onNodeContextMenu={(event, node) => {
@@ -933,6 +959,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                     : "同步绑定"
                 }
                 relationsDisabled={importRelationsMutation.isPending}
+                showAllRelations={showAllRelations}
                 onAdd={() => addNodeAt("text")}
                 onUndo={undo}
                 onRedo={redo}
@@ -940,6 +967,7 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 onDelete={deleteSelected}
                 onBatch={importExistingEntities}
                 onImportRelations={importBusinessRelations}
+                onToggleRelations={() => setShowAllRelations((value) => !value)}
                 onAutoLayout={() => autoLayoutMutation.mutate()}
                 onFitView={() => reactFlow.fitView({ padding: 0.16 })}
               />
@@ -978,6 +1006,16 @@ function ProjectCanvasWorkspaceInner({ projectId }: ProjectCanvasWorkspaceProps)
                 targetNodeId: edge.target_node_id,
                 semanticType: edge.semantic_type,
                 edgeId: edge.id
+              })
+            }
+            onApplyDirectBinding={(sourceNode, targetNode, semanticType, payload) =>
+              applyBindingMutation.mutate({
+                sourceNodeId: sourceNode.id,
+                targetNodeId: targetNode.id,
+                semanticType,
+                edgeId: null,
+                applyBusiness: true,
+                payload: payload ?? {}
               })
             }
             onDeleteEdge={(edge, mode) => deleteBindingMutation.mutate({ edgeId: edge.id, mode })}
@@ -1236,6 +1274,7 @@ function CanvasToolbar({
   batchDisabled,
   relationsLabel,
   relationsDisabled,
+  showAllRelations,
   onAdd,
   onUndo,
   onRedo,
@@ -1243,6 +1282,7 @@ function CanvasToolbar({
   onDelete,
   onBatch,
   onImportRelations,
+  onToggleRelations,
   onAutoLayout,
   onFitView
 }: {
@@ -1254,6 +1294,7 @@ function CanvasToolbar({
   batchDisabled: boolean;
   relationsLabel: string;
   relationsDisabled: boolean;
+  showAllRelations: boolean;
   onAdd: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -1261,6 +1302,7 @@ function CanvasToolbar({
   onDelete: () => void;
   onBatch: () => void;
   onImportRelations: () => void;
+  onToggleRelations: () => void;
   onAutoLayout: () => void;
   onFitView: () => void;
 }) {
@@ -1280,7 +1322,11 @@ function CanvasToolbar({
       </Button>
       <Button type="button" size="sm" variant="secondary" onClick={onConnect} disabled={connectDisabled}>
         <GitBranch className="h-4 w-4" aria-hidden="true" />
-        连接所选
+        绑定提示
+      </Button>
+      <Button type="button" size="sm" variant={showAllRelations ? "default" : "secondary"} onClick={onToggleRelations}>
+        <GitBranch className="h-4 w-4" aria-hidden="true" />
+        {showAllRelations ? "隐藏关系" : "显示关系"}
       </Button>
       <Button type="button" size="sm" variant="secondary" onClick={onAutoLayout}>
         <Move className="h-4 w-4" aria-hidden="true" />
@@ -1608,6 +1654,7 @@ function NodeInspector({
   onOpenShot,
   onToggleCollapse,
   onApplyEdge,
+  onApplyDirectBinding,
   onDeleteEdge
 }: {
   projectId: string;
@@ -1619,6 +1666,12 @@ function NodeInspector({
   onOpenShot: (shotId: string) => void;
   onToggleCollapse: (node: ProjectCanvasNode) => void;
   onApplyEdge: (edge: ProjectCanvasEdge) => void;
+  onApplyDirectBinding: (
+    sourceNode: ProjectCanvasNode,
+    targetNode: ProjectCanvasNode,
+    semanticType: CanvasEdgeType,
+    payload?: CanvasBindingPayload
+  ) => void;
   onDeleteEdge: (edge: ProjectCanvasEdge, mode: "hide_only" | "unbind_business") => void;
 }) {
   const linkedAsset = node?.entity_id
@@ -1697,6 +1750,31 @@ function NodeInspector({
                 {linkedAsset && <InfoRow label="来源" value={linkedAsset.subtitle} />}
               </div>
             </InspectorPanel>
+            {node.node_type === "image" && node.entity_id && (
+              <ImageReferenceActions
+                node={node}
+                canvas={canvas}
+                shots={shots}
+                onApplyDirectBinding={onApplyDirectBinding}
+                onDeleteEdge={onDeleteEdge}
+              />
+            )}
+            {node.node_type === "character" && node.entity_id && (
+              <CharacterShotActions
+                node={node}
+                canvas={canvas}
+                shots={shots}
+                onApplyDirectBinding={onApplyDirectBinding}
+              />
+            )}
+            {node.node_type === "scene" && node.entity_id && (
+              <SceneShotActions
+                node={node}
+                canvas={canvas}
+                shots={shots}
+                onApplyDirectBinding={onApplyDirectBinding}
+              />
+            )}
             {shot && (
               <InspectorPanel title="本镜头资产">
                 <div className="grid gap-2 text-sm">
@@ -1768,6 +1846,196 @@ function NodeInspector({
   );
 }
 
+function ImageReferenceActions({
+  node,
+  canvas,
+  shots,
+  onApplyDirectBinding,
+  onDeleteEdge
+}: {
+  node: ProjectCanvasNode;
+  canvas: ProjectCanvas;
+  shots: Shot[];
+  onApplyDirectBinding: (
+    sourceNode: ProjectCanvasNode,
+    targetNode: ProjectCanvasNode,
+    semanticType: CanvasEdgeType,
+    payload?: CanvasBindingPayload
+  ) => void;
+  onDeleteEdge: (edge: ProjectCanvasEdge, mode: "hide_only" | "unbind_business") => void;
+}) {
+  const shotNodesByShotId = new Map(
+    canvas.nodes
+      .filter((item) => item.node_type === "shot" && item.entity_id)
+      .map((item) => [item.entity_id as string, item])
+  );
+
+  return (
+    <InspectorPanel title="镜头参考图">
+      <div className="grid gap-2">
+        {shots.map((shot) => {
+          const shotNode = shotNodesByShotId.get(shot.id) ?? null;
+          const edge = findEdge(canvas, node.id, shotNode?.id ?? "", "shot_reference");
+          const reference = shot.references.find((item) => shotReferenceMediaId(item) === node.entity_id);
+          const isBound = Boolean(edge?.data.status === "applied" || reference);
+          return (
+            <div key={shot.id} className="rounded border border-border bg-background p-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground">{shot.name}</div>
+                  <div className="mt-1 text-xs text-muted">
+                    {isBound ? `已是镜头参考图${reference?.purpose ? ` · ${reference.purpose}` : ""}` : "尚未绑定"}
+                  </div>
+                </div>
+                {isBound ? (
+                  edge ? (
+                    <Button type="button" size="sm" variant="danger" onClick={() => onDeleteEdge(edge, "unbind_business")}>
+                      从镜头参考图移除
+                    </Button>
+                  ) : (
+                    <Button type="button" size="sm" variant="secondary" disabled>
+                      已是镜头参考图
+                    </Button>
+                  )
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!shotNode}
+                    onClick={() =>
+                      shotNode &&
+                      onApplyDirectBinding(node, shotNode, "shot_reference", {
+                        media_asset_id: node.entity_id,
+                        purpose: "general"
+                      })
+                    }
+                  >
+                    设为镜头参考图
+                  </Button>
+                )}
+              </div>
+              {!shotNode && <div className="mt-2 text-xs text-muted">请先把该镜头添加到画布。</div>}
+            </div>
+          );
+        })}
+      </div>
+    </InspectorPanel>
+  );
+}
+
+function CharacterShotActions({
+  node,
+  canvas,
+  shots,
+  onApplyDirectBinding
+}: {
+  node: ProjectCanvasNode;
+  canvas: ProjectCanvas;
+  shots: Shot[];
+  onApplyDirectBinding: (
+    sourceNode: ProjectCanvasNode,
+    targetNode: ProjectCanvasNode,
+    semanticType: CanvasEdgeType,
+    payload?: CanvasBindingPayload
+  ) => void;
+}) {
+  const shotNodesByShotId = new Map(
+    canvas.nodes
+      .filter((item) => item.node_type === "shot" && item.entity_id)
+      .map((item) => [item.entity_id as string, item])
+  );
+
+  return (
+    <InspectorPanel title="镜头人物">
+      <div className="grid gap-2">
+        {shots.map((shot) => {
+          const shotNode = shotNodesByShotId.get(shot.id) ?? null;
+          const edge = findEdge(canvas, node.id, shotNode?.id ?? "", "uses_character");
+          const isBound = edge?.data.status === "applied";
+          return (
+            <div key={shot.id} className="flex items-center justify-between gap-2 rounded border border-border bg-background p-2">
+              <span className="min-w-0 truncate text-sm text-foreground">{shot.name}</span>
+              {isBound ? (
+                <Button type="button" size="sm" variant="secondary" disabled>
+                  已添加到镜头人物
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!shotNode}
+                  onClick={() => shotNode && onApplyDirectBinding(node, shotNode, "uses_character")}
+                >
+                  添加到镜头人物
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </InspectorPanel>
+  );
+}
+
+function SceneShotActions({
+  node,
+  canvas,
+  shots,
+  onApplyDirectBinding
+}: {
+  node: ProjectCanvasNode;
+  canvas: ProjectCanvas;
+  shots: Shot[];
+  onApplyDirectBinding: (
+    sourceNode: ProjectCanvasNode,
+    targetNode: ProjectCanvasNode,
+    semanticType: CanvasEdgeType,
+    payload?: CanvasBindingPayload
+  ) => void;
+}) {
+  const shotNodesByShotId = new Map(
+    canvas.nodes
+      .filter((item) => item.node_type === "shot" && item.entity_id)
+      .map((item) => [item.entity_id as string, item])
+  );
+
+  return (
+    <InspectorPanel title="镜头场景">
+      <div className="grid gap-2">
+        {shots.map((shot) => {
+          const shotNode = shotNodesByShotId.get(shot.id) ?? null;
+          const edge = findEdge(canvas, node.id, shotNode?.id ?? "", "uses_scene");
+          const isBound = edge?.data.status === "applied" || shot.scene?.id === node.entity_id;
+          return (
+            <div key={shot.id} className="flex items-center justify-between gap-2 rounded border border-border bg-background p-2">
+              <span className="min-w-0 truncate text-sm text-foreground">{shot.name}</span>
+              {isBound ? (
+                <Button type="button" size="sm" variant="secondary" disabled>
+                  已是镜头场景
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!shotNode}
+                  onClick={() =>
+                    shotNode &&
+                    onApplyDirectBinding(node, shotNode, "uses_scene", {
+                      replace_existing_scene: true
+                    })
+                  }
+                >
+                  设为镜头场景
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </InspectorPanel>
+  );
+}
+
 function InspectorPanel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-border bg-background p-3">
@@ -1786,7 +2054,13 @@ function InfoRow({ label, value }: { label: string; value: string | number | nul
   );
 }
 
-function toFlowNodes(canvas: ProjectCanvas): CanvasFlowNode[] {
+function toFlowNodes(
+  canvas: ProjectCanvas,
+  context?: {
+    shots?: Shot[];
+    productionByShotId?: Map<string, ShotProductionStatus>;
+  }
+): CanvasFlowNode[] {
   return canvas.nodes.map((node) => ({
     id: node.id,
     type: node.node_type,
@@ -1795,7 +2069,8 @@ function toFlowNodes(canvas: ProjectCanvas): CanvasFlowNode[] {
     height: node.height,
     zIndex: node.z_index,
     data: {
-      canvasNode: node
+      canvasNode: node,
+      subtitle: canvasNodeSubtitle(node, canvas, context)
     }
   }));
 }
@@ -1807,7 +2082,7 @@ function toFlowEdges(canvas: ProjectCanvas): CanvasFlowEdge[] {
       id: edge.id,
       source: edge.source_node_id,
       target: edge.target_node_id,
-      label: `${edgeTypeLabel[edge.semantic_type]} · ${edgeStatusLabel[status]}`,
+      label: `${edgeDisplayLabel(edge.semantic_type)} · ${edgeStatusLabel[status]}`,
       animated: edge.semantic_type === "generated_from" || edge.semantic_type === "continuity_from",
       data: edge.data as Record<string, unknown>,
       style: {
@@ -1819,6 +2094,96 @@ function toFlowEdges(canvas: ProjectCanvas): CanvasFlowEdge[] {
       labelStyle: { fill: status === "failed" ? "#fca5a5" : "#d7dee8", fontSize: 11 }
     };
   });
+}
+
+function filterVisibleEdges(
+  edges: CanvasFlowEdge[],
+  options: { showAllRelations: boolean; selectedNodeId: string | null; selectedEdgeId: string | null }
+): CanvasFlowEdge[] {
+  if (options.showAllRelations) return edges;
+  return edges.filter((edge) => {
+    if (options.selectedEdgeId && edge.id === options.selectedEdgeId) return true;
+    if (!options.selectedNodeId) return false;
+    return edge.source === options.selectedNodeId || edge.target === options.selectedNodeId;
+  });
+}
+
+function findEdge(
+  canvas: ProjectCanvas,
+  sourceNodeId: string,
+  targetNodeId: string,
+  semanticType: CanvasEdgeType
+): ProjectCanvasEdge | null {
+  if (!targetNodeId) return null;
+  return (
+    canvas.edges.find(
+      (edge) =>
+        edge.source_node_id === sourceNodeId &&
+        edge.target_node_id === targetNodeId &&
+        edge.semantic_type === semanticType
+    ) ?? null
+  );
+}
+
+function shotReferenceMediaId(reference: Shot["references"][number]): string | null {
+  return reference.media_asset_id ?? reference.media_asset?.id ?? null;
+}
+
+function edgeDisplayLabel(edgeType: CanvasEdgeType): string {
+  if (edgeType === "generated_from") return "生成结果";
+  if (edgeType === "shot_reference") return "镜头参考";
+  return edgeTypeLabel[edgeType];
+}
+
+function canvasNodeSubtitle(
+  node: ProjectCanvasNode,
+  canvas: ProjectCanvas,
+  context?: {
+    shots?: Shot[];
+    productionByShotId?: Map<string, ShotProductionStatus>;
+  }
+): string | undefined {
+  if (node.node_type === "shot" && node.entity_id) {
+    const shot = context?.shots?.find((item) => item.id === node.entity_id);
+    const production = context?.productionByShotId?.get(node.entity_id);
+    if (!shot) return undefined;
+    return [
+      `${shot.character_count} 人物`,
+      shot.scene?.name ? `场景：${shot.scene.name}` : "未选场景",
+      `${shot.reference_count} 参考图`,
+      `首帧：${production?.steps.first_frame?.status ?? "未完成"}`,
+      `尾帧：${production?.steps.end_frame?.status ?? "未完成"}`
+    ].join(" / ");
+  }
+
+  if (node.node_type === "image") {
+    const boundShotNames = canvas.edges
+      .filter(
+        (edge) =>
+          edge.source_node_id === node.id &&
+          edge.semantic_type === "shot_reference" &&
+          edge.data.status === "applied"
+      )
+      .map((edge) => canvas.nodes.find((item) => item.id === edge.target_node_id))
+      .filter((item): item is ProjectCanvasNode => Boolean(item))
+      .map((item) => item.title);
+    const generatedEdge = canvas.edges.find(
+      (edge) => edge.target_node_id === node.id && edge.semantic_type === "generated_from"
+    );
+    const candidateType =
+      node.title.includes("首帧") || node.data.temporary_label?.includes("首帧")
+        ? "首帧候选"
+        : node.title.includes("尾帧") || node.data.temporary_label?.includes("尾帧")
+          ? "尾帧候选"
+          : "普通素材";
+    return [
+      candidateType,
+      boundShotNames.length ? `已绑定：${boundShotNames.join("、")}` : "未设为镜头参考",
+      generatedEdge ? "生成结果" : "素材"
+    ].join(" / ");
+  }
+
+  return undefined;
 }
 
 function toNodeInput(node: ProjectCanvasNode): CanvasNodeInput {
@@ -1860,6 +2225,13 @@ function requireCanvas(canvas: ProjectCanvas | null): asserts canvas is ProjectC
   if (!canvas) {
     throw new Error("Canvas is not loaded.");
   }
+}
+
+function getRequiredCanvas(ref: React.RefObject<ProjectCanvas | null>): ProjectCanvas {
+  if (!ref.current) {
+    throw new Error("Canvas is not loaded.");
+  }
+  return ref.current;
 }
 
 function remember(
@@ -1908,14 +2280,7 @@ function allowedSemanticTypes(
   if (source.node_type === "character" && target.node_type === "shot") return ["uses_character"];
   if (source.node_type === "scene" && target.node_type === "shot") return ["uses_scene"];
   if (source.node_type === "image" && target.node_type === "shot") {
-    return [
-      "identity_reference",
-      "look_reference",
-      "pose_reference",
-      "scene_reference",
-      "start_frame",
-      "end_frame"
-    ];
+    return ["shot_reference"];
   }
   if (source.node_type === "shot" && target.node_type === "shot") return ["continuity_from"];
   if (source.node_type === "video" && target.node_type === "export") return ["included_in_export"];

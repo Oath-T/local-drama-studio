@@ -89,14 +89,19 @@ class KeyframeGenerationService:
         return KeyframeWorkflowListResponse(items=items, total=len(items))
 
     async def create_run(
-        self, project_id: UUID, task_id: UUID, workflow_id: str
+        self,
+        project_id: UUID,
+        task_id: UUID,
+        workflow_id: str,
+        *,
+        skip_task_readiness: bool = False,
     ) -> KeyframeRunCreateResponse:
         task = self._get_task(project_id, task_id)
         try:
             workflow = self.workflow_registry.get_workflow(workflow_id)
         except GenerationProviderRuntimeError as exc:
             _raise_provider_error(exc, status.HTTP_400_BAD_REQUEST)
-        self._ensure_task_can_run(task)
+        self._ensure_task_can_run(task, skip_readiness=skip_task_readiness)
         if task.output_count != 1:
             raise_generation_error(
                 KeyframeGenerationErrorCode.WORKFLOW_OUTPUT_COUNT_UNSUPPORTED,
@@ -229,12 +234,19 @@ class KeyframeGenerationService:
             ),
         )
 
-    def _ensure_task_can_run(self, task: KeyframeGenerationTaskRecord) -> None:
+    def _ensure_task_can_run(
+        self,
+        task: KeyframeGenerationTaskRecord,
+        *,
+        skip_readiness: bool = False,
+    ) -> None:
         if task.status != KeyframeTaskStatus.READY.value:
             raise_generation_error(
                 KeyframeGenerationErrorCode.TASK_NOT_READY,
                 status.HTTP_400_BAD_REQUEST,
             )
+        if skip_readiness:
+            return
         references = self.repository.list_task_references(task.id)
         media_assets = self.repository.get_media_assets_by_ids(
             sorted({reference.media_asset_id for reference in references})

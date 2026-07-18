@@ -53,6 +53,7 @@ export function CanvasNodeCard({ data, selected }: NodeProps) {
 
   const Icon = iconByType[node.node_type];
   const collapsed = Boolean(node.data.collapsed);
+  const thumbnailUrl = node.node_type === "image" ? node.data.thumbnail_override : null;
 
   return (
     <article
@@ -62,7 +63,6 @@ export function CanvasNodeCard({ data, selected }: NodeProps) {
         selected && "ring-2 ring-primary"
       )}
     >
-      <Handle type="target" position={Position.Left} className="!border-border !bg-primary" />
       <div className="flex items-start gap-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/80 text-foreground">
           <Icon className="h-4 w-4" aria-hidden="true" />
@@ -76,13 +76,32 @@ export function CanvasNodeCard({ data, selected }: NodeProps) {
         </div>
       </div>
       {!collapsed && (
-        <div className="mt-3 text-xs leading-5 text-muted">
-          {(data.subtitle as string | undefined) ??
-            node.data.note ??
-            (node.entity_type ? "来自项目业务数据，只在画布中展示关系。" : "画布草稿节点。")}
-        </div>
+        <>
+          {thumbnailUrl && (
+            <div className="mt-3 overflow-hidden rounded border border-border bg-background">
+              <img src={thumbnailUrl} alt="" className="max-h-28 w-full object-contain" />
+            </div>
+          )}
+          <div className="mt-3 text-xs leading-5 text-muted">
+            {(data.subtitle as string | undefined) ??
+              node.data.temporary_label ??
+              node.data.note ??
+              (node.entity_type ? "来自项目业务数据，只在画布中展示关系。" : "画布草稿节点。")}
+          </div>
+        </>
       )}
-      <Handle type="source" position={Position.Right} className="!border-border !bg-primary" />
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="pointer-events-none opacity-0"
+        isConnectable={false}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="pointer-events-none opacity-0"
+        isConnectable={false}
+      />
     </article>
   );
 }

@@ -71,7 +71,7 @@ export type MissingItem =
   | "primary_subject"
   | "character_references"
   | "scene_references";
-export type ShotReferenceType = "character" | "scene";
+export type ShotReferenceType = "character" | "scene" | "media";
 export type CharacterReferencePurpose =
   | "identity"
   | "appearance"
@@ -115,6 +115,7 @@ export interface ShotReference {
   reference_type: ShotReferenceType;
   character_reference_id: string | null;
   scene_reference_id: string | null;
+  media_asset_id?: string | null;
   shot_character_id: string | null;
   purpose: string;
   order_index: number;

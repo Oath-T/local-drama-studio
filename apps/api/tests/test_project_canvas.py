@@ -27,6 +27,14 @@ def create_character(
     return response.json()
 
 
+def create_shot(
+    client: TestClient, project_id: str, name: str = "Canvas Shot"
+) -> dict[str, object]:
+    response = client.post(f"/api/projects/{project_id}/shots", json={"name": name})
+    assert response.status_code == 201
+    return response.json()
+
+
 def test_canvas_first_read_creates_empty_canvas(migrated_client: TestClient) -> None:
     project = create_project(migrated_client)
 
@@ -95,14 +103,28 @@ def test_canvas_revision_conflict_is_rejected(migrated_client: TestClient) -> No
 
 def test_node_crud_and_delete_cascades_edges(migrated_client: TestClient) -> None:
     project = create_project(migrated_client)
+    first_shot = create_shot(migrated_client, str(project["id"]), "A")
+    second_shot = create_shot(migrated_client, str(project["id"]), "B")
     canvas = migrated_client.get(f"/api/projects/{project['id']}/canvas").json()
     first = migrated_client.post(
         f"/api/projects/{project['id']}/canvas/nodes",
-        json={"expected_revision": canvas["revision"], "node_type": "text", "title": "A"},
+        json={
+            "expected_revision": canvas["revision"],
+            "node_type": "shot",
+            "entity_type": "shot",
+            "entity_id": first_shot["id"],
+            "title": "A",
+        },
     ).json()
     second = migrated_client.post(
         f"/api/projects/{project['id']}/canvas/nodes",
-        json={"expected_revision": first["revision"], "node_type": "text", "title": "B"},
+        json={
+            "expected_revision": first["revision"],
+            "node_type": "shot",
+            "entity_type": "shot",
+            "entity_id": second_shot["id"],
+            "title": "B",
+        },
     ).json()
     first_node_id = second["nodes"][0]["id"]
     second_node_id = second["nodes"][1]["id"]
@@ -133,9 +155,23 @@ def test_node_crud_and_delete_cascades_edges(migrated_client: TestClient) -> Non
     assert edge_response.status_code == 201
     assert len(edge_response.json()["edges"]) == 1
 
+    saved_without_edges = migrated_client.put(
+        f"/api/projects/{project['id']}/canvas",
+        json={
+            "expected_revision": edge_response.json()["revision"],
+            "view_mode": "workflow",
+            "viewport": {"x": 12, "y": 20, "zoom": 1},
+            "nodes": edge_response.json()["nodes"],
+            "edges": [],
+        },
+    )
+    assert saved_without_edges.status_code == 200
+    assert len(saved_without_edges.json()["edges"]) == 1
+    assert saved_without_edges.json()["edges"][0]["id"] == edge_response.json()["edges"][0]["id"]
+
     deleted = migrated_client.delete(
         f"/api/projects/{project['id']}/canvas/nodes/{first_node_id}"
-        f"?expected_revision={edge_response.json()['revision']}"
+        f"?expected_revision={saved_without_edges.json()['revision']}"
     )
     assert deleted.status_code == 200
     assert len(deleted.json()["nodes"]) == 1

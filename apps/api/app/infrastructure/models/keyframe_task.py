@@ -91,7 +91,7 @@ class KeyframeGenerationTaskReferenceRecord(Base):
     __tablename__ = "keyframe_generation_task_references"
     __table_args__ = (
         CheckConstraint(
-            "reference_type IN ('character', 'scene')",
+            "reference_type IN ('character', 'scene', 'media')",
             name="ck_keyframe_generation_task_references_type",
         ),
         CheckConstraint(
@@ -106,6 +106,15 @@ class KeyframeGenerationTaskReferenceRecord(Base):
             "AND source_shot_character_id IS NULL "
             "AND source_character_id IS NULL "
             "AND source_look_id IS NULL"
+            ") OR ("
+            "reference_type = 'media' "
+            "AND character_reference_id IS NULL "
+            "AND scene_reference_id IS NULL "
+            "AND source_shot_character_id IS NULL "
+            "AND source_character_id IS NULL "
+            "AND source_look_id IS NULL "
+            "AND source_scene_id IS NULL "
+            "AND source_scene_state_id IS NULL"
             ")",
             name="ck_keyframe_generation_task_references_type_target",
         ),

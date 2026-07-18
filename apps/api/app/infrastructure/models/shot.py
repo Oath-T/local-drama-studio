@@ -112,6 +112,12 @@ class ShotReferenceRecord(Base):
         index=True,
         nullable=True,
     )
+    media_asset_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("media_assets.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
     shot_character_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("shot_characters.id", ondelete="CASCADE"),

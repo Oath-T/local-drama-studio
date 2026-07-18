@@ -21,6 +21,7 @@ class KeyframeTaskReadinessStatus(StrEnum):
 class KeyframeTaskReferenceType(StrEnum):
     CHARACTER = "character"
     SCENE = "scene"
+    MEDIA = "media"
 
 
 class KeyframeTaskAspectRatio(StrEnum):

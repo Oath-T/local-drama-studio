@@ -19,6 +19,7 @@ from app.infrastructure.models.project_canvas import (
     ProjectCanvasRecord,
 )
 from app.infrastructure.models.project_export import ProjectExportRecord
+from app.infrastructure.models.quick_generate import QuickGenerateRequestRecord
 from app.infrastructure.models.scene import (
     SceneRecord,
     SceneReferenceRecord,
@@ -50,6 +51,7 @@ __all__ = [
     "ProjectCanvasEdgeRecord",
     "ProjectCanvasNodeRecord",
     "ProjectCanvasRecord",
+    "QuickGenerateRequestRecord",
     "ProjectExportRecord",
     "SceneRecord",
     "SceneReferenceRecord",
