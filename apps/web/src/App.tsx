@@ -13,6 +13,7 @@ import { ProjectsPage } from "./pages/projects-page";
 import { SceneDetailPage } from "./pages/scene-detail-page";
 import { SceneLibraryPage } from "./pages/scene-library-page";
 import { ShotWorkbenchPage } from "./pages/shot-workbench-page";
+import { StudioUiFoundationPage } from "./pages/studio-ui-foundation-page";
 import { TimelineExportPage } from "./pages/timeline-export-page";
 import { WorkbenchPage } from "./pages/workbench-page";
 
@@ -44,6 +45,7 @@ export default function App() {
       <Route path="/tasks" element={<WorkbenchPage section="tasks" />} />
       <Route path="/media" element={<WorkbenchPage section="media" />} />
       <Route path="/settings" element={<WorkbenchPage section="settings" />} />
+      <Route path="/dev/studio-ui" element={<StudioUiFoundationPage />} />
       <Route path="*" element={<Navigate to="/projects" replace />} />
     </Routes>
   );
