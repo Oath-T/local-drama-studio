@@ -23,6 +23,10 @@ export function ProjectsPage() {
     queryKey: projectKeys.lists(),
     queryFn: fetchProjects
   });
+  const visibleProjects =
+    projectsQuery.data?.items.filter(
+      (project) => !project.name.startsWith("E2E_") && !project.name.startsWith("__E2E_")
+    ) ?? [];
 
   const createButton = (
     <Button type="button">
@@ -72,7 +76,7 @@ export function ProjectsPage() {
           </section>
         )}
 
-        {projectsQuery.isSuccess && projectsQuery.data.items.length === 0 && (
+        {projectsQuery.isSuccess && visibleProjects.length === 0 && (
           <EmptyState
             title={copy.projects.emptyTitle}
             description={copy.projects.emptyDescription}
@@ -87,9 +91,9 @@ export function ProjectsPage() {
           />
         )}
 
-        {projectsQuery.isSuccess && projectsQuery.data.items.length > 0 && (
+        {projectsQuery.isSuccess && visibleProjects.length > 0 && (
           <ProjectList
-            projects={projectsQuery.data.items}
+            projects={visibleProjects}
             onDelete={setProjectToDelete}
             onSuccess={(message) => setFeedback({ tone: "success", message })}
             onError={(message) => setFeedback({ tone: "error", message })}

@@ -1,21 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { StudioWorkspacePage } from "@/features/studio-workspace/components/studio-workspace-page";
 import { createDefaultStudioSession, getStudioSessionStorageKey } from "@/features/studio-workspace/session";
-import type { Character } from "@/features/characters/types";
 import type { Project } from "@/features/projects/types";
-import type { Scene } from "@/features/scenes/types";
 import type { Shot } from "@/features/shots/types";
 
 const projectId = "8c6200f3-23b0-4af5-a4db-6a2bd9cd6702";
 
 const project: Project = {
   id: projectId,
-  name: "复仇赘婿",
+  name: "复仇归来",
   description: "本地短剧项目",
   aspect_ratio: "9:16",
   default_style: "写实电影感",
@@ -26,50 +24,13 @@ const project: Project = {
   updated_at: "2026-07-18T00:00:00+00:00"
 };
 
-const character: Character = {
-  id: "character-1",
-  project_id: projectId,
-  name: "男主",
-  aliases: null,
-  role_type: "protagonist",
-  description: null,
-  appearance_description: null,
-  personality_description: null,
-  prompt_identity: null,
-  notes: null,
-  default_look: null,
-  look_count: 1,
-  reference_count: 2,
-  created_at: "2026-07-18T00:00:00+00:00",
-  updated_at: "2026-07-18T01:00:00+00:00"
-};
-
-const scene: Scene = {
-  id: "scene-1",
-  project_id: projectId,
-  name: "会议室",
-  scene_type: "interior",
-  description: null,
-  fixed_environment_description: null,
-  spatial_layout_description: null,
-  visual_style_description: null,
-  prompt_environment: null,
-  notes: null,
-  default_state: null,
-  state_count: 1,
-  reference_count: 3,
-  cover_reference: null,
-  created_at: "2026-07-18T00:00:00+00:00",
-  updated_at: "2026-07-18T01:10:00+00:00"
-};
-
 const shot: Shot = {
   id: "shot-1",
   project_id: projectId,
-  name: "镜头1",
+  name: "镜头 1",
   order_index: 1,
   story_description: "男主推门进入会议室",
-  visual_description: "会议室内所有人震惊回头",
+  visual_description: "所有人震惊回头",
   dialogue: null,
   action_summary: null,
   duration_seconds: 2,
@@ -84,9 +45,9 @@ const shot: Shot = {
   custom_camera_movement: null,
   focal_subject: null,
   mood_description: null,
-  scene_id: scene.id,
+  scene_id: null,
   scene_state_id: null,
-  scene: { id: scene.id, name: scene.name },
+  scene: null,
   scene_state: null,
   notes: null,
   readiness_status: "asset_ready",
@@ -113,23 +74,28 @@ function jsonResponse(body: unknown, status = 200) {
   );
 }
 
-function mockStudioApi(options: { empty?: boolean; healthDown?: boolean; partialFailure?: boolean } = {}) {
+function mockStudioApi(
+  options: {
+    empty?: boolean;
+    healthDown?: boolean;
+    productionFails?: boolean;
+    videoStatus?: "not_created" | "missing_inputs" | "draft" | "ready" | "running" | "completed" | "adopted";
+    videoAvailable?: boolean;
+  } = {}
+) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
     if (url === "/api/health") {
-      if (options.healthDown) {
-        return Promise.reject(new Error("offline"));
-      }
+      if (options.healthDown) return Promise.reject(new Error("offline"));
       return jsonResponse({ status: "ok", service: "local-drama-studio-api" });
     }
     if (url === `/api/projects/${projectId}`) return jsonResponse(project);
-    if (url === `/api/projects/${projectId}/characters`) {
-      if (options.partialFailure) return jsonResponse({ error: { code: "FAILED" } }, 500);
-      return jsonResponse({ items: options.empty ? [] : [character], total: options.empty ? 0 : 1 });
+    if (url === `/api/projects/${projectId}/shots`) {
+      return jsonResponse({ items: options.empty ? [] : [shot], total: options.empty ? 0 : 1 });
     }
-    if (url === `/api/projects/${projectId}/scenes`) return jsonResponse({ items: options.empty ? [] : [scene], total: options.empty ? 0 : 1 });
-    if (url === `/api/projects/${projectId}/shots`) return jsonResponse({ items: options.empty ? [] : [shot], total: options.empty ? 0 : 1 });
     if (url === `/api/projects/${projectId}/production-status`) {
+      if (options.productionFails) return jsonResponse({ error: { code: "FAILED" } }, 500);
       return jsonResponse({
         project_id: projectId,
         summary: { total_shots: options.empty ? 0 : 1, blocked: 0, in_progress: 1, ready_for_video: 0, completed: 0 },
@@ -149,17 +115,17 @@ function mockStudioApi(options: { empty?: boolean; healthDown?: boolean; partial
                     task_id: "first-task",
                     adopted_output_id: "first-output",
                     adopted_media_asset_id: "media-1",
-                    content_url: "/media/first"
+                    content_url: "/api/media/first"
                   },
                   end_frame: {
-                    status: "not_created",
-                    task_id: null,
+                    status: "completed",
+                    task_id: "end-task",
                     adopted_output_id: null,
                     adopted_media_asset_id: null,
-                    content_url: null
+                    content_url: "/api/media/end"
                   },
                   video: {
-                    status: "not_created",
+                    status: options.videoStatus ?? "not_created",
                     task_id: null,
                     adopted_output_id: null,
                     adopted_media_asset_id: null,
@@ -168,7 +134,7 @@ function mockStudioApi(options: { empty?: boolean; healthDown?: boolean; partial
                     has_end_frame: false
                   }
                 },
-                blockers: [],
+                blockers: options.videoStatus === "running" ? [] : [],
                 next_actions: [],
                 continuity_candidate: null,
                 updated_at: "2026-07-18T01:20:00+00:00"
@@ -177,29 +143,18 @@ function mockStudioApi(options: { empty?: boolean; healthDown?: boolean; partial
         total: options.empty ? 0 : 1
       });
     }
-    if (url === `/api/projects/${projectId}/generation-tasks`) return jsonResponse({ items: [], total: 0 });
-    if (url === `/api/projects/${projectId}/timeline`) {
-      return jsonResponse({
-        project_id: projectId,
-        exportable: false,
-        total_shots: options.empty ? 0 : 1,
-        ready_clip_count: 0,
-        missing_clip_count: options.empty ? 0 : 1,
-        estimated_duration_seconds: 0,
-        project_spec: { aspect_ratio: "9:16", default_fps: 24 },
-        ffmpeg: { available: true, ffprobe_available: true, message: null },
-        clips: [],
-        blockers: []
-      });
-    }
     if (url === "/api/system/capabilities") {
       return jsonResponse({
         vision_analysis: { available: false, provider: "none" },
         keyframe_generation: { available: true, provider: "comfyui", status: "online" },
-        video_generation: { available: false, provider: "comfyui", status: "unconfigured" }
+        video_generation: {
+          available: options.videoAvailable ?? false,
+          provider: "comfyui",
+          status: options.videoAvailable ? "online" : "unconfigured"
+        }
       });
     }
-    if (url === `/api/projects/${projectId}/video-workflows`) return jsonResponse({ items: [], total: 0 });
+
     return jsonResponse({ error: { code: "NOT_FOUND" } }, 404);
   });
 }
@@ -220,94 +175,95 @@ function renderStudio(path = `/projects/${projectId}/studio`) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  vi.useRealTimers();
   window.localStorage.clear();
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
-  window.dispatchEvent(new Event("resize"));
 });
 
 describe("StudioWorkspacePage", () => {
-  it("renders the formal Studio route and default start page", async () => {
-    mockStudioApi();
-    renderStudio();
-
-    expect(await screen.findByRole("heading", { name: "复仇赘婿" })).toBeInTheDocument();
-    expect(screen.getAllByText("生成尾帧").length).toBeGreaterThan(0);
-    expect(screen.getByText("角色与造型")).toBeInTheDocument();
-    expect(screen.getByText("打开现有工作流画布")).toHaveAttribute("href", `/projects/${projectId}/canvas?view=workflow`);
-  });
-
-  it("restores the last view from a valid project session", async () => {
-    window.localStorage.setItem(
-      getStudioSessionStorageKey(projectId),
-      JSON.stringify({ ...createDefaultStudioSession(projectId), currentMode: "storyboard", currentView: "storyboard" })
-    );
+  it("renders a real storyboard without Demo shell copy", async () => {
     mockStudioApi();
     renderStudio();
 
     expect(await screen.findByRole("heading", { name: "故事板" })).toBeInTheDocument();
+    expect((await screen.findAllByText("镜头 1")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("首帧已采用")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("尾帧待采用")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("视频能力不可用")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("故事板演示区域")).not.toBeInTheDocument();
+    expect(screen.queryByText("开场 establishing shot")).not.toBeInTheDocument();
   });
 
-  it("falls back from a corrupted session and keeps project sessions isolated", async () => {
-    window.localStorage.setItem(getStudioSessionStorageKey(projectId), "{bad json");
+  it("opens the existing shot generation workbench with Studio return context", async () => {
+    const user = userEvent.setup();
+    mockStudioApi({ videoAvailable: true });
+    renderStudio();
+
+    const card = await screen.findByTestId("studio-storyboard-card");
+    await user.click(within(card).getByRole("button", { name: "打开生成" }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `/projects/${projectId}/shots/${shot.id}?intent=generate&returnTo=studio`
+    );
+  });
+
+  it("restores the selected shot from simplified session and cleans missing ids", async () => {
     window.localStorage.setItem(
-      getStudioSessionStorageKey("other-project"),
-      JSON.stringify({ ...createDefaultStudioSession("other-project"), currentView: "storyboard" })
+      getStudioSessionStorageKey(projectId),
+      JSON.stringify({ ...createDefaultStudioSession(projectId), selectedShotId: "missing-shot" })
     );
     mockStudioApi();
     renderStudio();
 
-    expect(await screen.findByText("续作起点")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "故事板" })).not.toBeInTheDocument();
+    expect((await screen.findAllByText("镜头 1")).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(window.localStorage.getItem(getStudioSessionStorageKey(projectId))).toContain('"selectedShotId":null');
+    });
   });
 
-  it("uses shotId URL context and ignores invalid params safely", async () => {
-    mockStudioApi();
-    const firstRender = renderStudio(`/projects/${projectId}/studio?shotId=${shot.id}&intent=inspect`);
+  it("keeps the page useful when production status or health is unavailable", async () => {
+    mockStudioApi({ healthDown: true, productionFails: true });
+    renderStudio();
 
-    expect(await screen.findByText("镜头摘要")).toBeInTheDocument();
-    expect(screen.getAllByText("镜头1").length).toBeGreaterThan(0);
-
-    firstRender.unmount();
-    window.localStorage.clear();
-    vi.restoreAllMocks();
-    mockStudioApi();
-    renderStudio(`/projects/${projectId}/studio?entityType=prop&entityId=bad`);
-    expect(await screen.findByText("已忽略无效的 Studio 上下文参数。")).toBeInTheDocument();
+    expect((await screen.findAllByText("镜头 1")).length).toBeGreaterThan(0);
+    expect(screen.getByText("后端不可用")).toBeInTheDocument();
+    expect(screen.getByText("部分状态加载失败，已显示可用的真实镜头数据。")).toBeInTheDocument();
   });
 
-  it("navigates from the primary recommendation and quick entries", async () => {
-    const user = userEvent.setup();
+  it("does not load timeline, full generation task, character, scene, or media records on first screen", async () => {
+    const fetchSpy = mockStudioApi();
+    renderStudio();
+
+    await screen.findAllByText("镜头 1");
+    const urls = fetchSpy.mock.calls.map(([input]) =>
+      typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    );
+
+    expect(urls).toContain(`/api/projects/${projectId}`);
+    expect(urls).toContain(`/api/projects/${projectId}/shots`);
+    expect(urls).toContain(`/api/projects/${projectId}/production-status`);
+    expect(urls).toContain("/api/system/capabilities");
+    expect(urls).toContain("/api/health");
+    expect(urls.some((url) => url.includes("/timeline"))).toBe(false);
+    expect(urls.some((url) => url.includes("/generation-tasks"))).toBe(false);
+    expect(urls.some((url) => url.includes("/characters"))).toBe(false);
+    expect(urls.some((url) => url.includes("/scenes"))).toBe(false);
+    expect(urls.some((url) => url.includes("/media"))).toBe(false);
+  });
+
+  it("shows an empty state for projects without shots", async () => {
     mockStudioApi({ empty: true });
     renderStudio();
 
-    await user.click(await screen.findByRole("button", { name: "创建第一个角色" }));
-    expect(screen.getByTestId("location")).toHaveTextContent(`/projects/${projectId}/characters`);
+    expect(await screen.findByText("暂无镜头")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "打开镜头工作台" })).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/shots`
+    );
   });
 
-  it("keeps the page usable during partial API failure and backend disconnection", async () => {
-    mockStudioApi({ partialFailure: true, healthDown: true });
+  it("keeps real active and failed video states distinct", async () => {
+    mockStudioApi({ videoStatus: "running", videoAvailable: false });
     renderStudio();
 
-    expect((await screen.findAllByText("后端不可用")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("复仇赘婿")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("部分数据加载失败，已加载区域仍可继续使用。")).toBeInTheDocument();
-    expect(screen.getByText("上下文面板")).toBeInTheDocument();
-  });
-
-  it("supports layout persistence, drawer closing and clearing workspace session", async () => {
-    const user = userEvent.setup();
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
-    window.dispatchEvent(new Event("resize"));
-    mockStudioApi();
-    renderStudio();
-
-    await user.click(await screen.findByRole("button", { name: "上下文" }));
-    expect(screen.getByTestId("studio-formal-compact-drawer")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "关闭抽屉" }));
-    expect(screen.queryByTestId("studio-formal-compact-drawer")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "清除工作现场" }));
-    expect(screen.getByText("工作现场已清除。")).toBeInTheDocument();
+    expect((await screen.findAllByText("视频生成中")).length).toBeGreaterThan(0);
   });
 });

@@ -1,18 +1,11 @@
 import {
-  Boxes,
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
-  Clapperboard,
-  Film,
   Images,
   LayoutList,
-  ListChecks,
-  Route,
   Settings,
-  StretchHorizontal,
-  UserRound,
-  Workflow
+  UserRound
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type React from "react";
@@ -34,80 +27,28 @@ const navItems: Array<{
   path: string;
   icon: LucideIcon;
   projectPath?: (projectId: string) => string;
-  indent?: boolean;
 }> = [
   { id: "projects", label: copy.nav.projects, path: "/projects", icon: BriefcaseBusiness },
   {
     id: "overview",
-    label: "项目总览",
+    label: "Studio",
     path: "/projects",
     icon: LayoutList,
-    projectPath: (projectId) => `/projects/${projectId}`
-  },
-  {
-    id: "canvas",
-    label: "创作画布",
-    path: "/projects",
-    icon: Workflow,
-    projectPath: (projectId) => `/projects/${projectId}/canvas`
-  },
-  {
-    id: "assets",
-    label: "资产库",
-    path: "/projects",
-    icon: Boxes,
-    projectPath: (projectId) => `/projects/${projectId}/assets`
+    projectPath: (projectId) => `/projects/${projectId}/studio`
   },
   {
     id: "characters",
     label: "角色库",
     path: "/characters",
     icon: UserRound,
-    projectPath: (projectId) => `/projects/${projectId}/characters`,
-    indent: true
+    projectPath: (projectId) => `/projects/${projectId}/characters`
   },
   {
     id: "scenes",
     label: "场景库",
     path: "/scenes",
     icon: Images,
-    projectPath: (projectId) => `/projects/${projectId}/scenes`,
-    indent: true
-  },
-  {
-    id: "shots",
-    label: "镜头工作台",
-    path: "/shots",
-    icon: Clapperboard,
-    projectPath: (projectId) => `/projects/${projectId}/shots`
-  },
-  {
-    id: "production",
-    label: "生产看板",
-    path: "/tasks",
-    icon: Route,
-    projectPath: (projectId) => `/projects/${projectId}/production`
-  },
-  {
-    id: "timeline",
-    label: "时间线与导出",
-    path: "/tasks",
-    icon: StretchHorizontal,
-    projectPath: (projectId) => `/projects/${projectId}/timeline`
-  },
-  {
-    id: "tasks",
-    label: "生成中心",
-    path: "/tasks",
-    icon: ListChecks,
-    projectPath: (projectId) => `/projects/${projectId}/generation`
-  },
-  {
-    id: "media",
-    label: "媒体库",
-    path: "/media",
-    icon: Film,
-    projectPath: (projectId) => `/projects/${projectId}/media`
+    projectPath: (projectId) => `/projects/${projectId}/scenes`
   },
   {
     id: "settings",
@@ -118,6 +59,14 @@ const navItems: Array<{
   }
 ];
 
+function getActiveSection(pathname: string, currentProjectId: string | undefined): WorkbenchSection | undefined {
+  if (pathname.includes("/characters")) return "characters";
+  if (pathname.includes("/scenes")) return "scenes";
+  if (pathname.includes("/settings") || pathname.startsWith("/settings")) return "settings";
+  if (currentProjectId) return "overview";
+  return navItems.find((item) => pathname.startsWith(item.path))?.id;
+}
+
 export function AppShell({ children }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -125,29 +74,7 @@ export function AppShell({ children }: AppShellProps) {
   const toggleSidebar = useWorkbenchStore((state) => state.toggleSidebar);
   const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
   const currentProjectId = projectMatch?.[1];
-  const activeSection = location.pathname.includes("/characters")
-    ? "characters"
-    : location.pathname.includes("/scenes")
-      ? "scenes"
-      : location.pathname.includes("/shots")
-        ? "shots"
-        : location.pathname.includes("/production")
-          ? "production"
-          : location.pathname.includes("/timeline")
-          ? "timeline"
-          : location.pathname.includes("/canvas")
-          ? "canvas"
-          : location.pathname.includes("/generation") || location.pathname.startsWith("/tasks")
-          ? "tasks"
-          : location.pathname.includes("/media") || location.pathname.startsWith("/media")
-            ? "media"
-            : location.pathname.includes("/settings") || location.pathname.startsWith("/settings")
-              ? "settings"
-              : location.pathname.includes("/assets")
-                ? "assets"
-                : currentProjectId
-                  ? "overview"
-                  : navItems.find((item) => location.pathname.startsWith(item.path))?.id;
+  const activeSection = getActiveSection(location.pathname, currentProjectId);
 
   return (
     <div className="flex h-screen min-h-[768px] overflow-hidden bg-background text-foreground">
@@ -182,6 +109,8 @@ export function AppShell({ children }: AppShellProps) {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
+            const path =
+              item.projectPath && currentProjectId ? item.projectPath(currentProjectId) : item.path;
 
             return (
               <button
@@ -189,19 +118,12 @@ export function AppShell({ children }: AppShellProps) {
                 type="button"
                 title={sidebarCollapsed ? item.label : undefined}
                 aria-current={isActive ? "page" : undefined}
-                onClick={() => {
-                  const path =
-                    item.projectPath && currentProjectId
-                      ? item.projectPath(currentProjectId)
-                      : item.path;
-                  navigate(path);
-                }}
+                onClick={() => navigate(path)}
                 className={cn(
                   "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm transition-colors",
                   isActive
                     ? "bg-primarySoft text-foreground"
                     : "text-muted hover:bg-panelRaised hover:text-foreground",
-                  item.indent && !sidebarCollapsed && "pl-8",
                   sidebarCollapsed && "justify-center px-0"
                 )}
               >
@@ -219,13 +141,13 @@ export function AppShell({ children }: AppShellProps) {
             <LayoutList className="h-4 w-4 text-primary" aria-hidden="true" />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">{copy.app.unnamedProject}</div>
-              <div className="text-xs text-muted">{copy.app.workbenchFoundation}</div>
+              <div className="text-xs text-muted">核心创作入口</div>
             </div>
           </div>
           <HealthStatus />
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-background px-6 py-5">
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background px-6 py-5">
           {children}
         </main>
 

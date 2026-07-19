@@ -14,6 +14,8 @@ Sprint 26 adds Canvas Quick Generate v1. Selecting a shot node on the project ca
 
 Sprint 27B adds the formal project Studio workspace at `/projects/:projectId/studio`. It introduces a creator-facing start page, project session restore, real project summaries, deterministic next-step guidance, and stable links back to the existing canvas, shot workbench, generation center, timeline, and asset pages. It does not add backend APIs, database migrations, ComfyUI changes, or a new generation execution path.
 
+Sprint R1 narrows the Studio entry back to the core creation path: projects open into a real project storyboard, each shot card shows first-frame, end-frame, and video status, and the single primary action opens the existing shot generation workspace. Complex demo shells, density controls, multi-select, drag sorting, focus mode, and placeholder consoles are not part of the formal user entry. See `docs/sprint-r1.md`.
+
 This sprint does not implement AI Agents, cloud services, multi-machine workers, batch automatic generation, arbitrary workflow upload or editing, Custom Node installation, model downloads, automatic analysis, model training, model fine-tuning, login, cloud asset storage, infinite canvas, drag-and-drop sorting, a timeline editor, subtitles, dubbing, music, or a 3D director stage.
 
 ## Structure
@@ -233,7 +235,7 @@ Routes:
 
 - `/projects`: project list.
 - `/projects/:projectId`: project overview.
-- `/projects/:projectId/studio`: formal Studio workspace and smart continuation entry.
+- `/projects/:projectId/studio`: formal Studio storyboard entry for opening real shot generation.
 - `/projects/:projectId/canvas`: project creative canvas and storyboard.
 - `/projects/:projectId/assets`: project asset library hub.
 - `/projects/:projectId/characters`: project character library.

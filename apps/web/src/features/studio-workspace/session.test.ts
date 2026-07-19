@@ -12,76 +12,91 @@ import {
 } from "./session";
 
 describe("studio session persistence", () => {
-  it("restores a valid project session and isolates other projects", () => {
+  it("persists only the simplified Studio state", () => {
     const storage = window.localStorage;
     storage.clear();
 
-    const session = {
-      ...createDefaultStudioSession("project-a"),
-      currentMode: "storyboard" as const,
-      currentView: "storyboard" as const,
-      selectedShotId: "shot-1"
-    };
-    saveStudioSession(session, storage);
+    saveStudioSession(
+      {
+        ...createDefaultStudioSession("project-a"),
+        selectedShotId: "shot-1",
+        scrollPosition: 240
+      },
+      storage
+    );
 
     expect(loadStudioSession("project-a", storage)).toMatchObject({
-      currentMode: "storyboard",
-      currentView: "storyboard",
-      selectedShotId: "shot-1"
+      projectId: "project-a",
+      selectedShotId: "shot-1",
+      scrollPosition: 240
     });
-    expect(loadStudioSession("project-b", storage).currentView).toBe("start");
+    expect(loadStudioSession("project-b", storage).selectedShotId).toBeNull();
+  });
+
+  it("ignores old complex session fields while migrating selected shot", () => {
+    expect(
+      normalizeStudioSession("project-a", {
+        schemaVersion: 2,
+        projectId: "project-a",
+        currentView: "storyboard",
+        storyboardDensity: "large",
+        selectedShotIds: ["shot-1", "shot-2"],
+        selectedShotId: "shot-1"
+      })
+    ).toEqual(
+      expect.objectContaining({
+        schemaVersion: 3,
+        projectId: "project-a",
+        selectedShotId: "shot-1",
+        scrollPosition: 0
+      })
+    );
   });
 
   it("falls back from corrupted or mismatched session data", () => {
     const storage = window.localStorage;
     storage.clear();
     storage.setItem(getStudioSessionStorageKey("project-a"), "{bad json");
-    expect(loadStudioSession("project-a", storage).currentView).toBe("start");
 
+    expect(loadStudioSession("project-a", storage).selectedShotId).toBeNull();
     expect(
       normalizeStudioSession("project-a", {
-        schemaVersion: 1,
+        schemaVersion: 3,
         projectId: "other",
-        currentView: "workflow"
-      }).currentView
-    ).toBe("start");
+        selectedShotId: "shot-1"
+      }).selectedShotId
+    ).toBeNull();
   });
 
-  it("parses URL context and ignores invalid entity params safely", () => {
+  it("parses shot URL context and flags removed entity params", () => {
     expect(parseStudioUrlContext("?shotId=shot-1&intent=generate")).toMatchObject({
       selectedShotId: "shot-1",
       intent: "generate",
       ignored: false
     });
-    expect(parseStudioUrlContext("?entityType=prop&entityId=x").ignored).toBe(true);
-    expect(parseStudioUrlContext("?entityType=scene").ignored).toBe(true);
+    expect(parseStudioUrlContext("?entityType=scene&entityId=scene-1")).toMatchObject({
+      selectedShotId: null,
+      ignored: true
+    });
   });
 
-  it("clears invalid selected ids after real data loads", () => {
-    const session = {
-      ...createDefaultStudioSession("project-a"),
-      selectedShotId: "missing",
-      selectedEntityType: "character" as const,
-      selectedEntityId: "old-character"
-    };
-
+  it("clears missing shot selections after real data loads", () => {
     expect(
-      sanitizeStudioSessionSelection(session, {
-        shotIds: new Set(["shot-1"]),
-        characterIds: new Set(["character-1"]),
-        sceneIds: new Set(["scene-1"])
-      })
-    ).toMatchObject({
-      selectedShotId: null,
-      selectedEntityType: null,
-      selectedEntityId: null
-    });
+      sanitizeStudioSessionSelection(
+        {
+          ...createDefaultStudioSession("project-a"),
+          selectedShotId: "missing"
+        },
+        new Set(["shot-1"])
+      ).selectedShotId
+    ).toBeNull();
   });
 
   it("can clear the current project studio session", () => {
     const storage = window.localStorage;
     storage.clear();
     saveStudioSession(createDefaultStudioSession("project-a"), storage);
+
     expect(storage.getItem(getStudioSessionStorageKey("project-a"))).not.toBeNull();
     clearStudioSession("project-a", storage);
     expect(storage.getItem(getStudioSessionStorageKey("project-a"))).toBeNull();

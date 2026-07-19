@@ -402,6 +402,35 @@ describe("App", () => {
     expect(screen.getByText("都市逆袭题材短剧")).toBeInTheDocument();
   });
 
+  it("hides E2E projects from the normal project list and opens the Studio route", async () => {
+    const user = userEvent.setup();
+    const e2eProject = {
+      ...baseProject,
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "E2E_SPRINT_27C"
+    };
+    mockProjectApi([baseProject, e2eProject]);
+    renderApp();
+
+    expect(await screen.findByText("逆袭归来")).toBeInTheDocument();
+    expect(screen.queryByText("E2E_SPRINT_27C")).not.toBeInTheDocument();
+
+    const openLink = within(screen.getByText("逆袭归来").closest("article") as HTMLElement).getByRole(
+      "link"
+    );
+    expect(openLink).toHaveAttribute("href", `/projects/${baseProject.id}/studio`);
+    await user.click(openLink);
+    expect(await screen.findByRole("heading", { name: "故事板" })).toBeInTheDocument();
+  });
+
+  it("removes the development Studio UI route from the formal app", async () => {
+    mockProjectApi([baseProject]);
+    renderApp("/dev/studio-ui");
+
+    expect(await screen.findByText("逆袭归来")).toBeInTheDocument();
+    expect(screen.queryByText("故事板演示区域")).not.toBeInTheDocument();
+  });
+
   it("shows Chinese fields in the create project form", async () => {
     const user = userEvent.setup();
     mockProjectApi([]);

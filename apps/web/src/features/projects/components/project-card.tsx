@@ -67,7 +67,7 @@ export function ProjectCard({ project, onDelete, onSuccess, onError }: ProjectCa
 
           <div className="mt-auto flex items-center justify-between gap-2">
             <Button asChild variant="secondary">
-              <Link to={`/projects/${project.id}`}>{copy.projects.openProject}</Link>
+              <Link to={`/projects/${project.id}/studio`}>{copy.projects.openProject}</Link>
             </Button>
 
             <DropdownMenu>

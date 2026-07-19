@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Component, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -188,6 +188,7 @@ const scenePurposes: SceneReferencePurpose[] = [
 export function ShotWorkbenchPage() {
   const { projectId = "", shotId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [creativeMode, setCreativeMode] = useState<CreativeMode>("first_frame");
@@ -204,6 +205,7 @@ export function ShotWorkbenchPage() {
     enabled: projectId.length > 0
   });
   const activeShotId = shotId || shotsQuery.data?.items[0]?.id || "";
+  const returnToStudio = new URLSearchParams(location.search).get("returnTo") === "studio";
   const shotQuery = useQuery({
     queryKey: shotKeys.detail(projectId, activeShotId),
     queryFn: () => fetchShot(projectId, activeShotId),
@@ -326,9 +328,9 @@ export function ShotWorkbenchPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div>
             <Button asChild variant="ghost" className="mb-3 w-fit">
-              <Link to={projectId ? `/projects/${projectId}` : "/projects"}>
+              <Link to={projectId ? (returnToStudio ? `/projects/${projectId}/studio?shotId=${activeShotId}` : `/projects/${projectId}`) : "/projects"}>
                 <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                {shotCopy.backToProject}
+                {returnToStudio ? "返回故事板" : shotCopy.backToProject}
               </Link>
             </Button>
             <h1 className="text-2xl font-semibold text-foreground">{shotCopy.title}</h1>
