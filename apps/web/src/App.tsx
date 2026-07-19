@@ -14,6 +14,7 @@ import { SceneDetailPage } from "./pages/scene-detail-page";
 import { SceneLibraryPage } from "./pages/scene-library-page";
 import { ShotWorkbenchPage } from "./pages/shot-workbench-page";
 import { StudioUiFoundationPage } from "./pages/studio-ui-foundation-page";
+import { StudioWorkspacePage } from "./pages/studio-workspace-page";
 import { TimelineExportPage } from "./pages/timeline-export-page";
 import { WorkbenchPage } from "./pages/workbench-page";
 
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+      <Route path="/projects/:projectId/studio" element={<StudioWorkspacePage />} />
       <Route path="/projects/:projectId/canvas" element={<ProjectCanvasPage />} />
       <Route path="/projects/:projectId/assets" element={<AssetLibraryPage />} />
       <Route path="/projects/:projectId/characters" element={<CharacterLibraryPage />} />
