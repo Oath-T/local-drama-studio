@@ -31,15 +31,63 @@ export interface WorkflowRoute {
   fallback: string | null;
 }
 
+export interface QuickGenerateResolvedInputs {
+  start_frame_media_asset_id: string | null;
+  end_frame_media_asset_id: string | null;
+  start_frame_available: boolean;
+  end_frame_available: boolean;
+}
+
+export interface QuickGenerateResolvedParameters {
+  width: number | null;
+  height: number | null;
+  frame_count: number | null;
+  fps: number | null;
+  seed: number | null;
+  expected_duration: number | null;
+}
+
+export interface QuickGenerateEstimatedOutput {
+  media_type: string | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  duration_seconds: number | null;
+  frame_count: number | null;
+}
+
+export interface QuickGenerateActiveRun {
+  run_type: QuickGenerateRunType;
+  task_id: string;
+  run_id: string;
+  status: string;
+  workflow_id: string;
+}
+
 export interface QuickGeneratePreviewInput {
   mode: QuickGenerateMode;
   prompt?: string | null;
   negative_prompt?: string | null;
   workflow_id?: string | null;
+  duration_preset?: "short_test" | "standard_short" | null;
+  fps?: number | null;
+  seed?: number | null;
 }
 
 export interface QuickGeneratePreviewResponse {
   mode: QuickGenerateMode;
+  submitted_prompt: string | null;
+  submitted_negative_prompt: string | null;
+  ready: boolean;
+  can_execute: boolean;
+  blockers: string[];
+  warnings: string[];
+  capability: WorkflowCapability | null;
+  workflow_id: string | null;
+  resolved_inputs: QuickGenerateResolvedInputs;
+  resolved_parameters: QuickGenerateResolvedParameters;
+  estimated_output: QuickGenerateEstimatedOutput;
+  active_run: QuickGenerateActiveRun | null;
   route: WorkflowRoute;
   capabilities: WorkflowCapability[];
 }

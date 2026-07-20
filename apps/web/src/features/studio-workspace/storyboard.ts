@@ -64,11 +64,12 @@ function framePreview(step: ProductionFrameStep | undefined, label: "首帧" | "
 }
 
 function videoLabel(status: VideoStepStatus | undefined, videoAvailable: boolean, failed: boolean) {
-  if (failed) return "视频生成失败";
-  if (status === "adopted") return "视频已采用";
   if (isRunningStatus(status)) return "视频生成中";
+  if (status === "adopted") return "视频已采用";
   if (status === "completed") return "视频待采用";
+  if (failed) return "视频生成失败";
   if (!videoAvailable) return "视频能力不可用";
+  if (status === "missing_inputs" || status === "draft" || status === "ready") return "视频未就绪";
   return "视频未生成";
 }
 

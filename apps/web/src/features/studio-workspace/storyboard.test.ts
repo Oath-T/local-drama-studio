@@ -164,4 +164,64 @@ describe("storyboard mapping", () => {
     expect(item.videoPreview.label).toBe("视频生成失败");
     expect(item.videoPreview.status).toBe("failed");
   });
+
+  it("does not let failed history override an adopted video", () => {
+    const [item] = buildStoryboardShotItems({
+      shots: [baseShot],
+      productionStatus: {
+        summary: { total_shots: 1, blocked: 0, in_progress: 0, ready_for_video: 0, completed: 1 },
+        items: [
+          production({
+            blockers: ["视频生成失败，请重试。"],
+            steps: {
+              ...production().steps,
+              video: {
+                status: "adopted",
+                task_id: "video-task",
+                adopted_output_id: "video-output",
+                adopted_media_asset_id: "video-media",
+                content_url: "/api/media/video/content",
+                has_start_frame: true,
+                has_end_frame: true
+              }
+            }
+          })
+        ]
+      },
+      videoAvailable: true
+    });
+
+    expect(item.videoPreview.label).toBe("视频已采用");
+    expect(item.videoPreview.status).toBe("adopted");
+    expect(item.videoPreview.contentUrl).toBe("/api/media/video/content");
+  });
+
+  it("shows missing adopted frames as not ready instead of generating", () => {
+    const [item] = buildStoryboardShotItems({
+      shots: [baseShot],
+      productionStatus: {
+        summary: { total_shots: 1, blocked: 1, in_progress: 0, ready_for_video: 0, completed: 0 },
+        items: [
+          production({
+            steps: {
+              ...production().steps,
+              video: {
+                status: "missing_inputs",
+                task_id: "video-task",
+                adopted_output_id: null,
+                adopted_media_asset_id: null,
+                content_url: null,
+                has_start_frame: true,
+                has_end_frame: false
+              }
+            }
+          })
+        ]
+      },
+      videoAvailable: true
+    });
+
+    expect(item.videoPreview.label).toBe("视频未就绪");
+    expect(item.videoPreview.status).toBe("not_created");
+  });
 });

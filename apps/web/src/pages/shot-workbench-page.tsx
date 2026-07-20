@@ -44,6 +44,7 @@ import { KeyframeTaskPanel } from "@/features/keyframe-tasks/components/keyframe
 import { PromptDraftCard } from "@/features/prompt-builder/components/prompt-draft-card";
 import { promptBuilderCopy } from "@/features/prompt-builder/copy";
 import type { PromptDraftResponse } from "@/features/prompt-builder/types";
+import { CanvasQuickGeneratePanel } from "@/features/project-canvas/components/canvas-quick-generate-panel";
 import {
   fetchShotProductionStatus,
   productionStatusKeys
@@ -379,10 +380,11 @@ export function ShotWorkbenchPage() {
               onModeChange={setCreativeMode}
               onWorkspaceModeChange={setWorkspaceMode}
               onPrimaryAction={() => {
-                setWorkspaceMode("advanced");
+                setWorkspaceMode("quick");
+                setCreativeMode(creativeMode);
                 setMessage({
                   tone: "success",
-                  text: "快速生成编排将在 Sprint 25 接入。当前已打开专业任务详情，可继续使用现有任务链生成。"
+                  text: "请在右侧快速生成面板检查素材与 Prompt，然后提交生成。"
                 });
               }}
             />
@@ -417,19 +419,31 @@ export function ShotWorkbenchPage() {
               </PanelErrorBoundary>
               <PanelErrorBoundary title="Prompt 与生成控制加载失败">
                 <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-panel p-4">
-                  <CreativePromptControl
-                    shot={shotQuery.data}
-                    mode={creativeMode}
-                    workspaceMode={workspaceMode}
-                    onWorkspaceModeChange={setWorkspaceMode}
-                    onPrimaryAction={() => {
-                      setWorkspaceMode("advanced");
-                      setMessage({
-                        tone: "success",
-                        text: "一键生成尚未接入，已展开专业任务详情。"
-                      });
-                    }}
-                  />
+                  <div className="mb-4">
+                    <h2 className="text-base font-semibold text-foreground">Prompt 与生成控制</h2>
+                    <p className="mt-1 text-xs text-muted">填写镜头 Prompt，预检首尾帧和视频生成条件，再提交候选。</p>
+                  </div>
+                  {shotQuery.data ? (
+                    <CanvasQuickGeneratePanel projectId={projectId} shot={shotQuery.data} />
+                  ) : (
+                    <CreativePromptControl
+                      shot={shotQuery.data}
+                      mode={creativeMode}
+                      workspaceMode={workspaceMode}
+                      onWorkspaceModeChange={setWorkspaceMode}
+                      onPrimaryAction={() => setWorkspaceMode("advanced")}
+                    />
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={workspaceMode === "quick" ? "secondary" : "default"}
+                      onClick={() => setWorkspaceMode(workspaceMode === "quick" ? "advanced" : "quick")}
+                    >
+                      <Settings className="h-4 w-4" aria-hidden="true" />
+                      {workspaceMode === "quick" ? "查看高级设置" : "收起高级设置"}
+                    </Button>
+                  </div>
                   <div className={cn("mt-4 grid gap-4", workspaceMode === "quick" && "sr-only")}>
                     <ShotEditorPanel
                       projectId={projectId}

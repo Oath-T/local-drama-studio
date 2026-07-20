@@ -22,6 +22,7 @@ import {
 } from "@/features/project-canvas/quick-generate-api";
 import type {
   QuickGenerateMode,
+  QuickGeneratePreviewResponse,
   QuickGenerateRunType,
   WorkflowRoute
 } from "@/features/project-canvas/quick-generate-api";
@@ -58,6 +59,9 @@ export function CanvasQuickGeneratePanel({ projectId, shot }: { projectId: strin
   const [endPrompt, setEndPrompt] = useState(shot.visual_description ?? "");
   const [videoPrompt, setVideoPrompt] = useState(shot.action_summary ?? shot.visual_description ?? "");
   const [negativePrompt, setNegativePrompt] = useState("");
+  const [durationPreset, setDurationPreset] = useState<"short_test" | "standard_short">("short_test");
+  const [videoFps, setVideoFps] = useState(8);
+  const [videoSeed, setVideoSeed] = useState("");
   const [message, setMessage] = useState<{ tone: MessageTone; text: string } | null>(null);
   const [lightbox, setLightbox] = useState<{
     output: CandidateOutput;
@@ -75,7 +79,11 @@ export function CanvasQuickGeneratePanel({ projectId, shot }: { projectId: strin
 
   const firstPreviewQuery = useQuickPreview(projectId, shot.id, "first_frame", firstPrompt, negativePrompt);
   const endPreviewQuery = useQuickPreview(projectId, shot.id, "end_frame", endPrompt, negativePrompt);
-  const videoPreviewQuery = useQuickPreview(projectId, shot.id, "video", videoPrompt, negativePrompt);
+  const videoPreviewQuery = useQuickPreview(projectId, shot.id, "video", videoPrompt, negativePrompt, {
+    duration_preset: durationPreset,
+    fps: videoFps,
+    seed: parseOptionalSeed(videoSeed)
+  });
 
   const keyframeTasks = keyframeTasksQuery.data?.items ?? [];
   const videoTasks = videoTasksQuery.data?.items ?? [];
@@ -141,11 +149,26 @@ export function CanvasQuickGeneratePanel({ projectId, shot }: { projectId: strin
   });
 
   const executeMutation = useMutation({
-    mutationFn: ({ mode, prompt }: { mode: QuickGenerateMode; prompt: string }) =>
+    mutationFn: ({
+      mode,
+      prompt,
+      duration_preset,
+      fps,
+      seed
+    }: {
+      mode: QuickGenerateMode;
+      prompt: string;
+      duration_preset?: "short_test" | "standard_short";
+      fps?: number | null;
+      seed?: number | null;
+    }) =>
       executeQuickGenerate(projectId, shot.id, {
         mode,
         prompt: prompt.trim(),
         negative_prompt: negativePrompt.trim() || null,
+        duration_preset: duration_preset ?? null,
+        fps: fps ?? null,
+        seed: seed ?? null,
         request_id: crypto.randomUUID()
       }),
     onSuccess: async (response) => {
@@ -338,6 +361,7 @@ export function CanvasQuickGeneratePanel({ projectId, shot }: { projectId: strin
           negativePrompt={negativePrompt}
           onNegativePromptChange={setNegativePrompt}
           route={videoPreviewQuery.data?.route}
+          preview={videoPreviewQuery.data}
           routeError={videoPreviewQuery.error}
           active={videoActive}
           runGroups={videoRunGroups}
@@ -345,7 +369,21 @@ export function CanvasQuickGeneratePanel({ projectId, shot }: { projectId: strin
           selectedFirstOutput={selectedFirstOutput}
           selectedEndOutput={selectedEndOutput}
           busy={busy}
-          onGenerate={() => executeMutation.mutate({ mode: "video", prompt: videoPrompt })}
+          durationPreset={durationPreset}
+          onDurationPresetChange={setDurationPreset}
+          fps={videoFps}
+          onFpsChange={setVideoFps}
+          seed={videoSeed}
+          onSeedChange={setVideoSeed}
+          onGenerate={() =>
+            executeMutation.mutate({
+              mode: "video",
+              prompt: videoPrompt,
+              duration_preset: durationPreset,
+              fps: videoFps,
+              seed: parseOptionalSeed(videoSeed)
+            })
+          }
           onSelect={(outputId) => selectVideoMutation.mutate(outputId)}
           onSync={(runId) => syncOutputMutation.mutate({ runType: "video", runId })}
           onPreview={(output) => setLightbox({ output, mediaType: "video" })}
@@ -372,15 +410,20 @@ function useQuickPreview(
   shotId: string,
   mode: QuickGenerateMode,
   prompt: string,
-  negativePrompt: string
+  negativePrompt: string,
+  options?: { duration_preset?: "short_test" | "standard_short"; fps?: number | null; seed?: number | null }
 ) {
+  const optionKey = `${options?.duration_preset ?? ""}:${options?.fps ?? ""}:${options?.seed ?? ""}`;
   return useQuery({
-    queryKey: quickGenerateKeys.preview(projectId, shotId, mode, `${prompt}\n${negativePrompt}`),
+    queryKey: quickGenerateKeys.preview(projectId, shotId, mode, `${prompt}\n${negativePrompt}\n${optionKey}`),
     queryFn: () =>
       previewQuickGenerate(projectId, shotId, {
         mode,
         prompt,
-        negative_prompt: negativePrompt.trim() || null
+        negative_prompt: negativePrompt.trim() || null,
+        duration_preset: options?.duration_preset ?? null,
+        fps: options?.fps ?? null,
+        seed: options?.seed ?? null
       }),
     staleTime: 1000
   });
@@ -392,6 +435,7 @@ function FrameQuickSection({
   prompt,
   onPromptChange,
   route,
+  preview,
   routeError,
   active,
   runGroups,
@@ -407,6 +451,7 @@ function FrameQuickSection({
   prompt: string;
   onPromptChange: (value: string) => void;
   route?: WorkflowRoute;
+  preview?: QuickGeneratePreviewResponse;
   routeError: unknown;
   active: boolean;
   runGroups: RunCandidateGroup[];
@@ -445,12 +490,19 @@ function VideoQuickSection({
   negativePrompt,
   onNegativePromptChange,
   route,
+  preview,
   routeError,
   active,
   runGroups,
   selectedOutput,
   selectedFirstOutput,
   selectedEndOutput,
+  durationPreset,
+  onDurationPresetChange,
+  fps,
+  onFpsChange,
+  seed,
+  onSeedChange,
   busy,
   onGenerate,
   onSelect,
@@ -462,12 +514,19 @@ function VideoQuickSection({
   negativePrompt: string;
   onNegativePromptChange: (value: string) => void;
   route?: WorkflowRoute;
+  preview?: QuickGeneratePreviewResponse;
   routeError: unknown;
   active: boolean;
   runGroups: RunCandidateGroup[];
   selectedOutput: VideoOutput | null;
   selectedFirstOutput: KeyframeOutput | null;
   selectedEndOutput: KeyframeOutput | null;
+  durationPreset: "short_test" | "standard_short";
+  onDurationPresetChange: (value: "short_test" | "standard_short") => void;
+  fps: number;
+  onFpsChange: (value: number) => void;
+  seed: string;
+  onSeedChange: (value: string) => void;
   busy: boolean;
   onGenerate: () => void;
   onSelect: (outputId: string) => void;
@@ -484,6 +543,43 @@ function VideoQuickSection({
         onChange={(event) => onNegativePromptChange(event.target.value)}
         rows={3}
       />
+      <div className="grid gap-2 rounded-md border border-border bg-panel p-3">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <label className="grid gap-1 text-xs text-muted">
+            <span>时长预设</span>
+            <select
+              className="rounded border border-border bg-background px-2 py-2 text-sm text-foreground"
+              value={durationPreset}
+              onChange={(event) => onDurationPresetChange(event.target.value as "short_test" | "standard_short")}
+            >
+              <option value="short_test">约 2 秒</option>
+              <option value="standard_short">约 4 秒</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-muted">
+            <span>FPS</span>
+            <input
+              className="rounded border border-border bg-background px-2 py-2 text-sm text-foreground"
+              inputMode="numeric"
+              min={1}
+              max={60}
+              value={fps}
+              onChange={(event) => onFpsChange(clampFps(event.currentTarget.value))}
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-muted">
+            <span>Seed</span>
+            <input
+              className="rounded border border-border bg-background px-2 py-2 text-sm text-foreground"
+              inputMode="numeric"
+              placeholder="随机"
+              value={seed}
+              onChange={(event) => onSeedChange(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+        <ResolvedPreview route={route} preview={preview} />
+      </div>
       <div className="grid gap-1 text-xs text-muted">
         <p>首帧：{selectedFirstOutput ? "已采用" : "未采用"}</p>
         <p>尾帧：{selectedEndOutput ? "已采用" : "未采用"}</p>
@@ -530,14 +626,14 @@ function RouteSummary({ route, error }: { route?: WorkflowRoute; error: unknown 
   if (error) return <p className="text-xs text-danger">{getErrorText(error, "工作流预检失败。")}</p>;
   if (!route) return <p className="text-xs text-muted">正在检查工作流...</p>;
   const details = [
-    route.missing_inputs.length > 0 ? `缺少输入：${route.missing_inputs.join("、")}` : null,
+    route.missing_inputs.length > 0 ? `缺少输入：${route.missing_inputs.map(quickRequirementLabel).join("、")}` : null,
     route.missing_models.length > 0 ? `缺少模型：${route.missing_models.join("、")}` : null,
-    route.missing_nodes.length > 0 ? `缺少节点：${route.missing_nodes.join("、")}` : null
+    route.missing_nodes.length > 0 ? `缺少节点：${route.missing_nodes.map(quickRequirementLabel).join("、")}` : null
   ].filter(Boolean);
   return (
     <div className="grid gap-1">
       <p className="text-xs text-muted">
-        {route.selected_workflow_id ? `工作流：${route.selected_workflow_id}` : "暂无可用工作流"}
+        {route.selected_workflow_id ? "工作流：已自动选择" : "暂无可用工作流"}
       </p>
       <p className={route.executable ? "text-xs text-success" : "text-xs text-warning"}>{route.reason_zh}</p>
       {details.map((detail) => (
@@ -545,6 +641,22 @@ function RouteSummary({ route, error }: { route?: WorkflowRoute; error: unknown 
           {detail}
         </p>
       ))}
+    </div>
+  );
+}
+
+function ResolvedPreview({ route, preview }: { route?: WorkflowRoute; preview?: QuickGeneratePreviewResponse }) {
+  if (!route) return <p className="text-xs text-muted">正在预检视频参数...</p>;
+  if (!route.executable) return <p className="text-xs text-warning">预检通过前不会提交视频任务。</p>;
+  const output = preview?.estimated_output;
+  const details =
+    output?.width && output.height && output.frame_count && output.fps
+      ? `${output.width}×${output.height} / ${output.frame_count} 帧 / ${output.fps} FPS / 约 ${output.duration_seconds}s`
+      : "参数已通过预检";
+  return (
+    <div className="grid gap-1 text-xs">
+      <p className="text-success">预检通过后将使用已采用首尾帧生成视频候选，不会自动采用结果。</p>
+      <p className="text-muted">{details}</p>
     </div>
   );
 }
@@ -890,6 +1002,36 @@ function runStatusLabel(status: string) {
     interrupted: "已中断"
   };
   return labels[status] ?? status;
+}
+
+function quickRequirementLabel(value: string) {
+  const labels: Record<string, string> = {
+    prompt: "视频提示词",
+    adopted_first_frame: "已采用首帧",
+    adopted_end_frame: "已采用尾帧",
+    adopted_first_frame_media_missing: "首帧媒体记录",
+    adopted_end_frame_media_missing: "尾帧媒体记录",
+    adopted_first_frame_file_missing: "首帧文件",
+    adopted_end_frame_file_missing: "尾帧文件",
+    adopted_first_frame_not_image: "首帧图片",
+    adopted_end_frame_not_image: "尾帧图片",
+    multiple_adopted_first_frame: "唯一首帧采用结果",
+    multiple_adopted_end_frame: "唯一尾帧采用结果"
+  };
+  return labels[value] ?? value;
+}
+
+function parseOptionalSeed(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function clampFps(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.min(60, Math.max(1, Math.round(parsed)));
 }
 
 function getErrorText(error: unknown, fallback: string) {

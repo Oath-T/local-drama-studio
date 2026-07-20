@@ -893,6 +893,89 @@ function mockShotApi(
       const workflows = options.videoWorkflows ?? [videoWorkflow];
       return jsonResponse({ items: workflows, total: workflows.length });
     }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/quick-generate/preview` && method === "POST") {
+      const payload = body ? JSON.parse(body) : { mode: "first_frame" };
+      const workflowId = payload.mode === "video" ? "video_wan22_14b_flf2v_v1" : "keyframe_basic_v1";
+      const missingInputs: string[] = [];
+      const currentProduction = options.productionStatus ?? shotProductionStatus();
+      if (payload.mode === "video") {
+        if (currentProduction.steps.first_frame.status !== "adopted") missingInputs.push("adopted_first_frame");
+        if (currentProduction.steps.end_frame.status !== "adopted") missingInputs.push("adopted_end_frame");
+      }
+      const executable = missingInputs.length === 0;
+      return jsonResponse({
+        mode: payload.mode,
+        ready: executable,
+        can_execute: executable,
+        blockers: executable ? [] : missingInputs,
+        warnings: [],
+        capability: null,
+        workflow_id: workflowId,
+        resolved_inputs: {
+          start_frame_media_asset_id: currentProduction.steps.first_frame.adopted_media_asset_id,
+          end_frame_media_asset_id: currentProduction.steps.end_frame.adopted_media_asset_id,
+          start_frame_available: currentProduction.steps.first_frame.status === "adopted",
+          end_frame_available: currentProduction.steps.end_frame.status === "adopted"
+        },
+        resolved_parameters: {
+          width: payload.mode === "video" ? 320 : null,
+          height: payload.mode === "video" ? 576 : null,
+          frame_count: payload.mode === "video" ? 17 : null,
+          fps: payload.mode === "video" ? (payload.fps ?? 8) : null,
+          seed: payload.seed ?? null,
+          expected_duration: payload.mode === "video" ? 2.125 : null
+        },
+        estimated_output: {
+          media_type: payload.mode === "video" ? "video" : "image",
+          width: payload.mode === "video" ? 320 : null,
+          height: payload.mode === "video" ? 576 : null,
+          fps: payload.mode === "video" ? (payload.fps ?? 8) : null,
+          duration_seconds: payload.mode === "video" ? 2.125 : null,
+          frame_count: payload.mode === "video" ? 17 : null
+        },
+        active_run: null,
+        route: {
+          selected_workflow_id: workflowId,
+          executable,
+          reason_zh: executable ? "已选择可执行工作流。" : "缺少必要输入，暂不能开始生成。",
+          required_inputs: payload.mode === "video" ? ["prompt", "adopted_first_frame", "adopted_end_frame"] : ["prompt"],
+          missing_inputs: missingInputs,
+          missing_models: [],
+          missing_nodes: [],
+          warnings: [],
+          fallback: null
+        },
+        capabilities: []
+      });
+    }
+    if (url === `/api/projects/${projectId}/shots/${shotId}/quick-generate` && method === "POST") {
+      const payload = body ? JSON.parse(body) : { mode: "first_frame", request_id: "test-request" };
+      const runType = payload.mode === "video" ? "video" : "keyframe";
+      const workflowId = runType === "video" ? "video_wan22_14b_flf2v_v1" : "keyframe_basic_v1";
+      return jsonResponse({
+        mode: payload.mode,
+        run_type: runType,
+        request_id: payload.request_id,
+        idempotent_replay: false,
+        reused_active_run: false,
+        task_id: runType === "video" ? videoTaskId : keyframeTaskId,
+        run_id: runType === "video" ? videoRunId : keyframeRunId,
+        status: "queued",
+        workflow_id: workflowId,
+        route: {
+          selected_workflow_id: workflowId,
+          executable: true,
+          reason_zh: "已选择可执行工作流。",
+          required_inputs: payload.mode === "video" ? ["prompt", "adopted_first_frame", "adopted_end_frame"] : ["prompt"],
+          missing_inputs: [],
+          missing_models: [],
+          missing_nodes: [],
+          warnings: [],
+          fallback: null
+        },
+        canvas_sync: { attempted: false, synced: false, node_id: null, edge_id: null, error_message: null }
+      }, 202);
+    }
     if (url === `/api/projects/${projectId}/shots/${shotId}/video-tasks` && method === "GET") {
       if (options.failVideoTasks) {
         return jsonResponse({ error: { code: "TEST_ERROR", message: "failed" } }, 500);
@@ -1422,7 +1505,7 @@ describe("shot workbench routes", () => {
     expect(screen.getAllByRole("button", { name: "首帧模式" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "生成首帧" }).length).toBeGreaterThan(0);
     expect(screen.getByText("候选结果")).toBeInTheDocument();
-    expect(screen.getByText(/Sprint 23 只重构创作入口/)).toBeInTheDocument();
+    expect(screen.getByText(/后端统一预检和编排/)).toBeInTheDocument();
     expect(screen.getAllByText("镜头一").length).toBeGreaterThan(0);
   });
 
