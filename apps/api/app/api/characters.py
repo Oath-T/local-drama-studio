@@ -1,3 +1,4 @@
+import mimetypes
 from typing import Annotated
 from uuid import UUID
 
@@ -26,6 +27,12 @@ from app.service.media_storage_service import MediaStorageService
 
 router = APIRouter(prefix="/projects/{project_id}/characters", tags=["characters"])
 media_router = APIRouter(prefix="/media", tags=["media"])
+THUMBNAIL_MIME_TYPES = {
+    ".webp": "image/webp",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+}
 
 
 def get_character_service(
@@ -262,7 +269,12 @@ def get_thumbnail(
     if relative_path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     path = MediaStorageService().resolve_relative_path(relative_path)
-    return FileResponse(path, media_type="image/webp", filename=f"{media_asset.id}_thumb.webp")
+    media_type = (
+        THUMBNAIL_MIME_TYPES.get(path.suffix.lower())
+        or mimetypes.guess_type(path.name)[0]
+        or "application/octet-stream"
+    )
+    return FileResponse(path, media_type=media_type, filename=path.name)
 
 
 @media_router.get("/{media_asset_id}/content")

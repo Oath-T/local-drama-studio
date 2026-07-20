@@ -1,4 +1,3 @@
-from shutil import which
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -10,10 +9,10 @@ from app.api.schemas.project_timeline import (
     TimelineFfmpegStatus,
     TimelineProjectSpec,
 )
-from app.core.config import get_settings
 from app.core.errors import AppError
 from app.domain.project_export import ProjectExportErrorCode
 from app.repository.project_timeline_repository import ProjectTimelineRepository
+from app.service.export.ffmpeg_service import FfmpegService, VideoProbe
 from app.service.media_storage_service import MediaStorageService
 
 ERROR_MESSAGES = {
@@ -26,10 +25,11 @@ class ProjectTimelineService:
         self,
         session: Session,
         storage_service: MediaStorageService | None = None,
+        ffmpeg_service: FfmpegService | None = None,
     ) -> None:
         self.repository = ProjectTimelineRepository(session)
         self.storage_service = storage_service or MediaStorageService()
-        self.settings = get_settings()
+        self.ffmpeg_service = ffmpeg_service or FfmpegService()
 
     def get_timeline(self, project_id: UUID) -> ProjectTimelineResponse:
         data = self.repository.load_project_timeline(str(project_id))
@@ -77,6 +77,7 @@ class ProjectTimelineService:
             media_asset = selected.media_asset
             warnings: list[str] = []
             status = "ready"
+            actual_probe: VideoProbe | None = None
             if media_asset.media_type != "video":
                 status = "blocked"
                 warnings.append("采用的媒体不是视频。")
@@ -89,7 +90,9 @@ class ProjectTimelineService:
                 )
             else:
                 try:
-                    self.storage_service.resolve_relative_path(media_asset.relative_path)
+                    source_path = self.storage_service.resolve_relative_path(
+                        media_asset.relative_path
+                    )
                 except AppError:
                     status = "blocked"
                     warnings.append("视频文件不存在或无法读取。")
@@ -100,8 +103,29 @@ class ProjectTimelineService:
                             message=f"镜头 {shot.order_index:02d} 的采用视频文件不存在。",
                         )
                     )
+                else:
+                    if self.ffmpeg_service.ffprobe_available():
+                        try:
+                            actual_probe = self.ffmpeg_service.probe(source_path)
+                            self._validate_probe(actual_probe)
+                        except Exception:
+                            status = "blocked"
+                            warnings.append("视频文件无法通过 FFprobe 读取。")
+                            blockers.append(
+                                TimelineBlocker(
+                                    code="ADOPTED_VIDEO_PROBE_FAILED",
+                                    shot_id=shot.id,
+                                    message=(
+                                        f"镜头 {shot.order_index:02d} 的采用视频无法读取实际时长。"
+                                    ),
+                                )
+                            )
 
-            duration = output.duration_seconds
+            duration = (
+                actual_probe.duration_seconds
+                if actual_probe is not None
+                else output.duration_seconds
+            )
             if duration is not None:
                 estimated_duration += float(duration)
             if status == "ready":
@@ -117,9 +141,17 @@ class ProjectTimelineService:
                     media_asset_id=media_asset.id,
                     content_url=f"/api/media/{media_asset.id}/content",
                     duration_seconds=duration,
-                    width=output.width or media_asset.width,
-                    height=output.height or media_asset.height,
-                    fps=output.fps,
+                    width=(
+                        actual_probe.width
+                        if actual_probe is not None
+                        else output.width or media_asset.width
+                    ),
+                    height=(
+                        actual_probe.height
+                        if actual_probe is not None
+                        else output.height or media_asset.height
+                    ),
+                    fps=actual_probe.fps if actual_probe is not None else output.fps,
                     warnings=warnings,
                 )
             )
@@ -161,8 +193,8 @@ class ProjectTimelineService:
         )
 
     def ffmpeg_status(self) -> TimelineFfmpegStatus:
-        ffmpeg_available = which(self.settings.ffmpeg_bin) is not None
-        ffprobe_available = which(self.settings.ffprobe_bin) is not None
+        ffmpeg_available = self.ffmpeg_service.ffmpeg_available()
+        ffprobe_available = self.ffmpeg_service.ffprobe_available()
         message = None
         if not ffmpeg_available or not ffprobe_available:
             message = "未检测到 FFmpeg / FFprobe，时间线可查看，但无法开始最终导出。"
@@ -171,3 +203,11 @@ class ProjectTimelineService:
             ffprobe_available=ffprobe_available,
             message=message,
         )
+
+    def _validate_probe(self, probe: VideoProbe) -> None:
+        if probe.width <= 0 or probe.height <= 0:
+            raise ValueError("invalid dimensions")
+        if probe.fps <= 0:
+            raise ValueError("invalid fps")
+        if probe.duration_seconds <= 0:
+            raise ValueError("invalid duration")

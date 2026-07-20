@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from app.api.schemas.keyframe_generation import KeyframeWorkflowResponse
@@ -25,14 +26,16 @@ class WorkflowCapabilityRegistry:
     async def list_capabilities(self, project_id: UUID) -> list[WorkflowCapabilityResponse]:
         keyframe_workflows = await self.keyframe_service.list_workflows(project_id)
         video_workflows = await self.video_service.list_workflows(project_id)
+        checked_at = datetime.now(UTC)
         capabilities = [
-            self._keyframe_capability(workflow) for workflow in keyframe_workflows.items
-        ] + [self._video_capability(workflow) for workflow in video_workflows.items]
+            self._keyframe_capability(workflow, checked_at) for workflow in keyframe_workflows.items
+        ] + [self._video_capability(workflow, checked_at) for workflow in video_workflows.items]
         return sorted(capabilities, key=lambda item: (item.task_type.value, item.workflow_id))
 
     def _keyframe_capability(
         self,
         workflow: KeyframeWorkflowResponse,
+        checked_at: datetime,
     ) -> WorkflowCapabilityResponse:
         missing_models, missing_nodes = _split_missing_requirements(workflow.missing_requirements)
         return WorkflowCapabilityResponse(
@@ -49,9 +52,16 @@ class WorkflowCapabilityRegistry:
             quality_tier=WorkflowQualityTier.BASIC,
             speed_tier=WorkflowSpeedTier.NORMAL,
             visual_only=False,
+            available=workflow.available,
+            blockers=workflow.missing_requirements,
+            checked_at=checked_at,
         )
 
-    def _video_capability(self, workflow: VideoWorkflowResponse) -> WorkflowCapabilityResponse:
+    def _video_capability(
+        self,
+        workflow: VideoWorkflowResponse,
+        checked_at: datetime,
+    ) -> WorkflowCapabilityResponse:
         missing_models, missing_nodes = _split_missing_requirements(workflow.missing_requirements)
         return WorkflowCapabilityResponse(
             workflow_id=workflow.workflow_id,
@@ -67,6 +77,9 @@ class WorkflowCapabilityRegistry:
             quality_tier=WorkflowQualityTier.PRODUCTION,
             speed_tier=WorkflowSpeedTier.SLOW,
             visual_only=False,
+            available=workflow.available,
+            blockers=workflow.missing_requirements,
+            checked_at=checked_at,
         )
 
 

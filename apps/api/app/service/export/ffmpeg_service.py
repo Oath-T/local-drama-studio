@@ -15,6 +15,12 @@ class VideoProbe:
     duration_seconds: float
     codec: str | None
     pixel_format: str | None
+    format_name: str | None = None
+    size_bytes: int = 0
+    codec_type: str | None = None
+    average_frame_rate: str | None = None
+    frame_count: int = 0
+    audio_stream_count: int = 0
 
 
 class FfmpegService:
@@ -33,10 +39,11 @@ class FfmpegService:
                 self.settings.ffprobe_bin,
                 "-v",
                 "error",
-                "-select_streams",
-                "v:0",
                 "-show_entries",
-                "stream=width,height,codec_name,pix_fmt,r_frame_rate:format=duration",
+                (
+                    "stream=codec_type,width,height,codec_name,pix_fmt,"
+                    "r_frame_rate,avg_frame_rate,nb_frames:format=format_name,duration,size"
+                ),
                 "-of",
                 "json",
                 str(source_path),
@@ -51,10 +58,16 @@ class FfmpegService:
             raise RuntimeError("FFprobe 无法读取视频文件。")
         payload = json.loads(result.stdout or "{}")
         streams = payload.get("streams") or []
-        if not streams:
+        video_streams = [
+            stream
+            for stream in streams
+            if isinstance(stream, dict) and stream.get("codec_type") == "video"
+        ]
+        if not video_streams:
             raise RuntimeError("FFprobe 未发现视频流。")
-        stream = streams[0]
-        duration = float((payload.get("format") or {}).get("duration") or 0)
+        stream = video_streams[0]
+        format_info = payload.get("format") or {}
+        duration = float(format_info.get("duration") or 0)
         return VideoProbe(
             width=int(stream.get("width") or 0),
             height=int(stream.get("height") or 0),
@@ -62,6 +75,16 @@ class FfmpegService:
             duration_seconds=duration,
             codec=stream.get("codec_name"),
             pixel_format=stream.get("pix_fmt"),
+            format_name=format_info.get("format_name"),
+            size_bytes=int(format_info.get("size") or 0),
+            codec_type=stream.get("codec_type"),
+            average_frame_rate=stream.get("avg_frame_rate"),
+            frame_count=int(stream.get("nb_frames") or 0),
+            audio_stream_count=sum(
+                1
+                for item in streams
+                if isinstance(item, dict) and item.get("codec_type") == "audio"
+            ),
         )
 
     def normalize_clip(
@@ -104,6 +127,33 @@ class FfmpegService:
         )
         if result.returncode != 0:
             raise RuntimeError("FFmpeg 标准化镜头片段失败。")
+
+    def extract_poster(self, source_path: Path, output_path: Path) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            [
+                self.settings.ffmpeg_bin,
+                "-y",
+                "-ss",
+                "0.2",
+                "-i",
+                str(source_path),
+                "-frames:v",
+                "1",
+                "-f",
+                "image2",
+                "-vcodec",
+                "png",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=min(self.settings.export_timeout_seconds, 120),
+            shell=False,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("FFmpeg 提取视频封面失败。")
 
     def concat(self, segment_paths: list[Path], concat_file: Path, output_path: Path) -> None:
         concat_file.parent.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -8,11 +9,15 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.api.schemas.keyframe_task import KeyframeTaskCreateRequest, KeyframeTaskUpdateRequest
 from app.api.schemas.quick_generate import (
     CanvasSyncResponse,
+    QuickGenerateActiveRun,
+    QuickGenerateEstimatedOutput,
     QuickGenerateExecuteRequest,
     QuickGenerateExecuteResponse,
     QuickGenerateMode,
     QuickGeneratePreviewRequest,
     QuickGeneratePreviewResponse,
+    QuickGenerateResolvedInputs,
+    QuickGenerateResolvedParameters,
     QuickGenerateRunType,
     QuickGenerateSyncOutputRequest,
     WorkflowCapabilityResponse,
@@ -24,8 +29,15 @@ from app.api.schemas.video_generation import (
     VideoTaskUpdateRequest,
 )
 from app.core.errors import AppError
-from app.domain.keyframe_task import KeyframeTaskErrorCode, KeyframeTaskPurpose, KeyframeTaskStatus
+from app.domain.keyframe_task import (
+    KeyframeTaskErrorCode,
+    KeyframeTaskPurpose,
+    KeyframeTaskStatus,
+)
+from app.domain.media_asset import MediaType
 from app.domain.video_generation import VideoInputRole
+from app.infrastructure.models.character import MediaAssetRecord
+from app.infrastructure.models.keyframe_generation import KeyframeGenerationOutputRecord
 from app.infrastructure.models.quick_generate import QuickGenerateRequestRecord
 from app.repository.keyframe_generation_repository import KeyframeGenerationRepository
 from app.repository.keyframe_task_repository import KeyframeTaskRepository
@@ -42,6 +54,41 @@ QUICK_GENERATE_IN_PROGRESS = "quick_generate_request_in_progress"
 QUICK_GENERATE_CONFLICT = "quick_generate_conflict"
 QUICK_GENERATE_SYNC_UNAVAILABLE = "quick_generate_sync_unavailable"
 _QUICK_GENERATE_LOCKS: dict[tuple[str, str, str], asyncio.Lock] = {}
+_VIDEO_DURATION_PRESETS = {
+    "short_test": {"duration_seconds": 2.0, "width": 320, "height": 576, "fps": 8},
+    "standard_short": {"duration_seconds": 4.0, "width": 320, "height": 576, "fps": 8},
+}
+_VIDEO_INPUT_ISSUE_BY_PURPOSE = {
+    KeyframeTaskPurpose.FIRST_FRAME.value: {
+        "missing": "adopted_first_frame",
+        "multiple": "multiple_adopted_first_frame",
+        "media_missing": "adopted_first_frame_media_missing",
+        "not_image": "adopted_first_frame_not_image",
+        "file_missing": "adopted_first_frame_file_missing",
+    },
+    KeyframeTaskPurpose.END_FRAME.value: {
+        "missing": "adopted_end_frame",
+        "multiple": "multiple_adopted_end_frame",
+        "media_missing": "adopted_end_frame_media_missing",
+        "not_image": "adopted_end_frame_not_image",
+        "file_missing": "adopted_end_frame_file_missing",
+    },
+}
+
+
+@dataclass(frozen=True)
+class AdoptedVideoFrameInput:
+    role: VideoInputRole
+    output: KeyframeGenerationOutputRecord
+    media_asset: MediaAssetRecord
+
+
+@dataclass(frozen=True)
+class AdoptedVideoInputs:
+    start_frame: AdoptedVideoFrameInput | None
+    end_frame: AdoptedVideoFrameInput | None
+    missing_inputs: list[str]
+    warnings: list[str]
 
 
 class QuickGenerateService:
@@ -75,8 +122,18 @@ class QuickGenerateService:
             payload=payload,
             capabilities=capabilities,
         )
+        preview_details = self._preview_details(
+            project_id=str(project_id),
+            shot_id=shot.id,
+            payload=payload,
+            capabilities=capabilities,
+            route=route,
+        )
         return QuickGeneratePreviewResponse(
             mode=payload.mode,
+            submitted_prompt=payload.prompt,
+            submitted_negative_prompt=payload.negative_prompt,
+            **preview_details,
             route=route,
             capabilities=capabilities,
         )
@@ -109,6 +166,9 @@ class QuickGenerateService:
                 prompt=payload.prompt,
                 negative_prompt=payload.negative_prompt,
                 workflow_id=payload.workflow_id,
+                duration_preset=payload.duration_preset,
+                fps=payload.fps,
+                seed=payload.seed,
             ),
         )
         active = self._active_run_for_mode(str(project_id), shot.id, payload.mode)
@@ -273,29 +333,32 @@ class QuickGenerateService:
         payload: QuickGenerateExecuteRequest,
         route: WorkflowRouteResponse,
     ) -> QuickGenerateExecuteResponse:
-        start_output = self.repository.get_selected_keyframe_output(
-            str(project_id), str(shot_id), KeyframeTaskPurpose.FIRST_FRAME.value
-        )
-        end_output = self.repository.get_selected_keyframe_output(
-            str(project_id), str(shot_id), KeyframeTaskPurpose.END_FRAME.value
-        )
-        if start_output is None or end_output is None:
+        adopted_inputs = self._resolve_adopted_video_inputs(str(project_id), str(shot_id))
+        if adopted_inputs.missing_inputs or (
+            adopted_inputs.start_frame is None or adopted_inputs.end_frame is None
+        ):
             raise AppError(
                 code=QUICK_GENERATE_NOT_EXECUTABLE,
                 message="生成视频前需要先采用首帧和尾帧。",
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                details=route.model_dump(mode="json"),
+                details={
+                    **route.model_dump(mode="json"),
+                    "missing_inputs": adopted_inputs.missing_inputs,
+                    "warnings": adopted_inputs.warnings,
+                },
             )
         inputs = [
             VideoTaskInputRequest(
                 role=VideoInputRole.START_FRAME,
-                source_keyframe_output_id=start_output.id,
+                source_keyframe_output_id=adopted_inputs.start_frame.output.id,
             ),
             VideoTaskInputRequest(
                 role=VideoInputRole.END_FRAME,
-                source_keyframe_output_id=end_output.id,
+                source_keyframe_output_id=adopted_inputs.end_frame.output.id,
             ),
         ]
+        preset = _video_duration_preset(payload.duration_preset)
+        fps = payload.fps if payload.fps is not None else int(preset["fps"])
         existing = self.repository.get_video_task(str(project_id), str(shot_id))
         if existing is None:
             task = self.video_generation_service.create_task(
@@ -314,11 +377,11 @@ class QuickGenerateService:
                 inputs=inputs,
                 prompt=_required_prompt(payload.prompt),
                 negative_prompt=payload.negative_prompt,
-                duration_seconds=2,
-                fps=16,
-                width=640,
-                height=640,
-                seed=None,
+                duration_seconds=float(preset["duration_seconds"]),
+                fps=fps,
+                width=int(preset["width"]),
+                height=int(preset["height"]),
+                seed=payload.seed,
                 motion_strength=0.45,
                 camera_motion=None,
                 workflow_id=route.selected_workflow_id,
@@ -329,6 +392,7 @@ class QuickGenerateService:
             project_id,
             UUID(ready.id),
             route.selected_workflow_id or "",
+            request_id=payload.request_id,
         )
         return QuickGenerateExecuteResponse(
             mode=payload.mode,
@@ -366,28 +430,14 @@ class QuickGenerateService:
         selected = candidates[0] if candidates else None
         required_inputs = ["prompt"]
         missing_inputs: list[str] = []
+        warnings: list[str] = []
         if not _normalize_text(payload.prompt):
             missing_inputs.append("prompt")
         if payload.mode == QuickGenerateMode.VIDEO:
             required_inputs.extend(["adopted_first_frame", "adopted_end_frame"])
-            if (
-                self.repository.get_selected_keyframe_output(
-                    project_id,
-                    shot_id,
-                    KeyframeTaskPurpose.FIRST_FRAME.value,
-                )
-                is None
-            ):
-                missing_inputs.append("adopted_first_frame")
-            if (
-                self.repository.get_selected_keyframe_output(
-                    project_id,
-                    shot_id,
-                    KeyframeTaskPurpose.END_FRAME.value,
-                )
-                is None
-            ):
-                missing_inputs.append("adopted_end_frame")
+            adopted_inputs = self._resolve_adopted_video_inputs(project_id, shot_id)
+            missing_inputs.extend(adopted_inputs.missing_inputs)
+            warnings.extend(adopted_inputs.warnings)
         if selected is None:
             return WorkflowRouteResponse(
                 selected_workflow_id=None,
@@ -411,9 +461,170 @@ class QuickGenerateService:
             missing_inputs=missing_inputs,
             missing_models=selected.missing_models,
             missing_nodes=selected.missing_nodes,
-            warnings=[] if selected.executable else selected.missing_requirements,
+            warnings=(
+                warnings
+                if selected.executable
+                else sorted(warnings + selected.missing_requirements)
+            ),
             fallback=None,
         )
+
+    def _resolve_adopted_video_inputs(
+        self,
+        project_id: str,
+        shot_id: str,
+    ) -> AdoptedVideoInputs:
+        start_frame, start_missing, start_warnings = self._resolve_adopted_video_frame(
+            project_id,
+            shot_id,
+            KeyframeTaskPurpose.FIRST_FRAME.value,
+            VideoInputRole.START_FRAME,
+        )
+        end_frame, end_missing, end_warnings = self._resolve_adopted_video_frame(
+            project_id,
+            shot_id,
+            KeyframeTaskPurpose.END_FRAME.value,
+            VideoInputRole.END_FRAME,
+        )
+        warnings = sorted(set(start_warnings + end_warnings))
+        if (
+            start_frame is not None
+            and end_frame is not None
+            and start_frame.media_asset.id == end_frame.media_asset.id
+        ):
+            warnings.append("same_start_and_end_frame")
+        return AdoptedVideoInputs(
+            start_frame=start_frame,
+            end_frame=end_frame,
+            missing_inputs=start_missing + end_missing,
+            warnings=warnings,
+        )
+
+    def _resolve_adopted_video_frame(
+        self,
+        project_id: str,
+        shot_id: str,
+        purpose: str,
+        role: VideoInputRole,
+    ) -> tuple[AdoptedVideoFrameInput | None, list[str], list[str]]:
+        issue_codes = _VIDEO_INPUT_ISSUE_BY_PURPOSE[purpose]
+        selected = self.repository.list_selected_keyframe_outputs(project_id, shot_id, purpose)
+        if not selected:
+            return None, [issue_codes["missing"]], []
+        if len(selected) > 1:
+            return None, [issue_codes["multiple"]], []
+        selected_output = selected[0]
+        media_asset = selected_output.media_asset
+        if media_asset is None:
+            return None, [issue_codes["media_missing"]], []
+        if (
+            media_asset.media_type != MediaType.IMAGE.value
+            or not media_asset.mime_type.lower().startswith("image/")
+        ):
+            return None, [issue_codes["not_image"]], []
+        try:
+            actual_metadata = self.video_generation_service.storage_service.inspect_image_file(
+                media_asset.relative_path
+            )
+        except AppError as exc:
+            if exc.status_code == status.HTTP_404_NOT_FOUND:
+                return None, [issue_codes["file_missing"]], []
+            return None, [issue_codes["not_image"]], []
+        except Exception:
+            return None, [issue_codes["file_missing"]], []
+        warnings = []
+        if (
+            actual_metadata.size_bytes != media_asset.size_bytes
+            or actual_metadata.sha256 != media_asset.sha256
+            or actual_metadata.width != media_asset.width
+            or actual_metadata.height != media_asset.height
+            or actual_metadata.mime_type != media_asset.mime_type
+        ):
+            warnings.append("media_metadata_stale")
+        return (
+            AdoptedVideoFrameInput(
+                role=role,
+                output=selected_output.output,
+                media_asset=media_asset,
+            ),
+            [],
+            warnings,
+        )
+
+    def _preview_details(
+        self,
+        *,
+        project_id: str,
+        shot_id: str,
+        payload: QuickGeneratePreviewRequest,
+        capabilities: list[WorkflowCapabilityResponse],
+        route: WorkflowRouteResponse,
+    ) -> dict[str, object]:
+        selected_capability = next(
+            (
+                capability
+                for capability in capabilities
+                if capability.workflow_id == route.selected_workflow_id
+            ),
+            None,
+        )
+        active_run = self._active_run_for_mode(project_id, shot_id, payload.mode)
+        active_run_response = _active_run_preview(active_run)
+        blockers = _preview_blockers(route, active_run_response)
+        warnings = _preview_warnings(route, payload)
+        resolved_inputs = QuickGenerateResolvedInputs()
+        resolved_parameters = QuickGenerateResolvedParameters()
+        estimated_output = QuickGenerateEstimatedOutput()
+        if payload.mode == QuickGenerateMode.VIDEO:
+            adopted_inputs = self._resolve_adopted_video_inputs(project_id, shot_id)
+            resolved_inputs = QuickGenerateResolvedInputs(
+                start_frame_media_asset_id=(
+                    adopted_inputs.start_frame.media_asset.id
+                    if adopted_inputs.start_frame is not None
+                    else None
+                ),
+                end_frame_media_asset_id=(
+                    adopted_inputs.end_frame.media_asset.id
+                    if adopted_inputs.end_frame is not None
+                    else None
+                ),
+                start_frame_available=adopted_inputs.start_frame is not None,
+                end_frame_available=adopted_inputs.end_frame is not None,
+            )
+            preset = _video_duration_preset(payload.duration_preset)
+            fps = payload.fps if payload.fps is not None else int(preset["fps"])
+            duration_seconds = float(preset["duration_seconds"])
+            frame_count = int(duration_seconds * fps) + 1
+            expected_duration = frame_count / fps
+            resolved_parameters = QuickGenerateResolvedParameters(
+                width=int(preset["width"]),
+                height=int(preset["height"]),
+                frame_count=frame_count,
+                fps=fps,
+                seed=payload.seed,
+                expected_duration=expected_duration,
+            )
+            estimated_output = QuickGenerateEstimatedOutput(
+                media_type="video",
+                width=int(preset["width"]),
+                height=int(preset["height"]),
+                fps=fps,
+                duration_seconds=expected_duration,
+                frame_count=frame_count,
+            )
+        ready = not blockers
+        return {
+            "ready": ready,
+            "can_execute": ready,
+            "blockers": blockers,
+            "warnings": warnings,
+            "capability": selected_capability,
+            "workflow_id": route.selected_workflow_id,
+            "resolved_inputs": resolved_inputs,
+            "resolved_parameters": resolved_parameters,
+            "estimated_output": estimated_output,
+            "active_run": active_run_response,
+        }
 
     def _active_run_for_mode(
         self,
@@ -601,6 +812,77 @@ def _workflow_mode_priority(mode: QuickGenerateMode, workflow_id: str) -> int:
     if "flf2v" in lowered or "first_last" in lowered or "wan22" in lowered:
         return 0
     return 1
+
+
+def _video_duration_preset(value: str | None) -> dict[str, float | int]:
+    return _VIDEO_DURATION_PRESETS[value or "short_test"]
+
+
+def _active_run_preview(active_run) -> QuickGenerateActiveRun | None:
+    if active_run is None:
+        return None
+    if hasattr(active_run, "keyframe_task_id"):
+        return QuickGenerateActiveRun(
+            run_type=QuickGenerateRunType.KEYFRAME,
+            task_id=active_run.keyframe_task_id,
+            run_id=active_run.id,
+            status=active_run.status,
+            workflow_id=active_run.workflow_id,
+        )
+    return QuickGenerateActiveRun(
+        run_type=QuickGenerateRunType.VIDEO,
+        task_id=active_run.video_task_id,
+        run_id=active_run.id,
+        status=active_run.status,
+        workflow_id=active_run.workflow_id,
+    )
+
+
+def _preview_blockers(
+    route: WorkflowRouteResponse,
+    active_run: QuickGenerateActiveRun | None,
+) -> list[str]:
+    blockers: list[str] = []
+    for missing_input in route.missing_inputs:
+        blocker = _MISSING_INPUT_BLOCKERS.get(missing_input, missing_input)
+        if blocker not in blockers:
+            blockers.append(blocker)
+    if route.selected_workflow_id is None:
+        blockers.append("workflow_unavailable")
+    if route.missing_models:
+        blockers.append("missing_model")
+    if route.missing_nodes:
+        blockers.append("missing_node")
+    if route.selected_workflow_id is not None and not route.executable and not blockers:
+        blockers.append("workflow_unavailable")
+    if active_run is not None:
+        blockers.append("active_run_exists")
+    return blockers
+
+
+def _preview_warnings(
+    route: WorkflowRouteResponse,
+    payload: QuickGeneratePreviewRequest,
+) -> list[str]:
+    warnings = list(route.warnings)
+    if payload.mode == QuickGenerateMode.VIDEO and "low_resolution_preset" not in warnings:
+        warnings.append("low_resolution_preset")
+    if not _normalize_text(payload.negative_prompt) and "no_negative_prompt" not in warnings:
+        warnings.append("no_negative_prompt")
+    return sorted(set(warnings))
+
+
+_MISSING_INPUT_BLOCKERS = {
+    "prompt": "invalid_prompt",
+    "adopted_first_frame": "missing_start_frame",
+    "adopted_end_frame": "missing_end_frame",
+    "adopted_first_frame_file_missing": "start_frame_file_missing",
+    "adopted_end_frame_file_missing": "end_frame_file_missing",
+    "adopted_first_frame_not_image": "invalid_start_media_type",
+    "adopted_end_frame_not_image": "invalid_end_media_type",
+    "multiple_adopted_first_frame": "ambiguous_adopted_start_frame",
+    "multiple_adopted_end_frame": "ambiguous_adopted_end_frame",
+}
 
 
 def utc_now() -> datetime:

@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import httpx
@@ -141,7 +141,7 @@ class ComfyUIVideoGenerationProvider:
                     VideoGenerationErrorCode.COMFYUI_EXECUTION_FAILED,
                     "ComfyUI execution failed.",
                 )
-            if self._history_has_outputs(history_item):
+            if self._history_completed(history_item) and self._history_has_outputs(history_item):
                 return ProviderJobStatus("completed")
         queue = await self._get_queue()
         if self._queue_contains(queue.get("queue_running"), provider_job_id):
@@ -264,6 +264,16 @@ class ComfyUIVideoGenerationProvider:
         return False
 
     @staticmethod
+    def _history_completed(history_item: Mapping[str, Any]) -> bool:
+        status = history_item.get("status")
+        if not isinstance(status, dict):
+            return True
+        status_str = status.get("status_str")
+        if status_str in {"success", "completed"}:
+            return True
+        return status.get("completed") is True
+
+    @staticmethod
     def _history_has_outputs(history_item: Mapping[str, Any]) -> bool:
         outputs = history_item.get("outputs")
         return isinstance(outputs, dict) and any(
@@ -305,11 +315,19 @@ class ComfyUIVideoGenerationProvider:
                         continue
                     subfolder = file_item.get("subfolder")
                     output_type = file_item.get("type")
+                    normalized_subfolder = subfolder if isinstance(subfolder, str) else ""
+                    normalized_type = output_type if isinstance(output_type, str) else "output"
+                    if not _safe_comfyui_filename(filename):
+                        continue
+                    if not _safe_comfyui_subfolder(normalized_subfolder):
+                        continue
+                    if normalized_type not in {"output", "temp"}:
+                        continue
                     refs.append(
                         {
                             "filename": filename,
-                            "subfolder": subfolder if isinstance(subfolder, str) else "",
-                            "type": output_type if isinstance(output_type, str) else "output",
+                            "subfolder": normalized_subfolder,
+                            "type": normalized_type,
                         }
                     )
         return refs
@@ -329,3 +347,25 @@ class ComfyUIVideoGenerationProvider:
         exc: Exception,
     ) -> GenerationProviderRuntimeError:
         return GenerationProviderRuntimeError(code, "ComfyUI communication failed.")
+
+
+def _safe_comfyui_filename(value: str) -> bool:
+    if "\\" in value or "/" in value:
+        return False
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if posix.is_absolute() or windows.is_absolute() or windows.drive:
+        return False
+    return value not in {"", ".", ".."} and ".." not in posix.parts
+
+
+def _safe_comfyui_subfolder(value: str) -> bool:
+    if not value:
+        return True
+    if "\\" in value:
+        return False
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if posix.is_absolute() or windows.is_absolute() or windows.drive:
+        return False
+    return ".." not in posix.parts

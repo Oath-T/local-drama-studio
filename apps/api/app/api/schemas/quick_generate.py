@@ -1,4 +1,6 @@
+from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -40,6 +42,9 @@ class WorkflowCapabilityResponse(BaseModel):
     quality_tier: WorkflowQualityTier
     speed_tier: WorkflowSpeedTier
     visual_only: bool = False
+    available: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    checked_at: datetime | None = None
 
 
 class WorkflowRouteResponse(BaseModel):
@@ -54,15 +59,69 @@ class WorkflowRouteResponse(BaseModel):
     fallback: str | None = None
 
 
+class QuickGenerateResolvedInputs(BaseModel):
+    start_frame_media_asset_id: str | None = None
+    end_frame_media_asset_id: str | None = None
+    start_frame_available: bool = False
+    end_frame_available: bool = False
+
+
+class QuickGenerateResolvedParameters(BaseModel):
+    width: int | None = None
+    height: int | None = None
+    frame_count: int | None = None
+    fps: int | None = None
+    seed: int | None = None
+    expected_duration: float | None = None
+
+
+class QuickGenerateEstimatedOutput(BaseModel):
+    media_type: str | None = None
+    width: int | None = None
+    height: int | None = None
+    fps: int | None = None
+    duration_seconds: float | None = None
+    frame_count: int | None = None
+
+
+class QuickGenerateActiveRun(BaseModel):
+    run_type: QuickGenerateRunType
+    task_id: str
+    run_id: str
+    status: str
+    workflow_id: str
+
+
 class QuickGeneratePreviewRequest(BaseModel):
     mode: QuickGenerateMode
     prompt: str | None = Field(default=None, max_length=8000)
     negative_prompt: str | None = Field(default=None, max_length=4000)
     workflow_id: str | None = Field(default=None, max_length=120)
+    duration_preset: Literal["short_test", "standard_short"] | None = None
+    fps: int | None = Field(default=None, ge=1, le=60)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
 
 
 class QuickGeneratePreviewResponse(BaseModel):
     mode: QuickGenerateMode
+    submitted_prompt: str | None = None
+    submitted_negative_prompt: str | None = None
+    ready: bool = False
+    can_execute: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    capability: WorkflowCapabilityResponse | None = None
+    workflow_id: str | None = None
+    resolved_inputs: QuickGenerateResolvedInputs = Field(
+        default_factory=QuickGenerateResolvedInputs
+    )
+    resolved_parameters: QuickGenerateResolvedParameters = Field(
+        default_factory=QuickGenerateResolvedParameters
+    )
+    estimated_output: QuickGenerateEstimatedOutput = Field(
+        default_factory=QuickGenerateEstimatedOutput
+    )
+    active_run: QuickGenerateActiveRun | None = None
     route: WorkflowRouteResponse
     capabilities: list[WorkflowCapabilityResponse] = Field(default_factory=list)
 

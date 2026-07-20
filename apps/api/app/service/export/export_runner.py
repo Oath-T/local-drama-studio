@@ -10,7 +10,7 @@ from app.domain.project_export import ProjectExportStatus, utc_now
 from app.infrastructure.database import get_session_factory
 from app.infrastructure.models.character import MediaAssetRecord
 from app.repository.project_export_repository import ProjectExportRepository
-from app.service.export.ffmpeg_service import FfmpegService
+from app.service.export.ffmpeg_service import FfmpegService, VideoProbe
 from app.service.media_storage_service import MediaStorageService
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,8 @@ class ProjectExportRunner:
                     source_path = self.storage_service.resolve_relative_path(
                         media_asset.relative_path
                     )
-                    self.ffmpeg_service.probe(source_path)
+                    source_probe = self.ffmpeg_service.probe(source_path)
+                    self._validate_source_probe(source_probe)
                     segment_path = segment_dir / f"{index:04d}.mp4"
                     repository.update_export(
                         record,
@@ -102,6 +103,13 @@ class ProjectExportRunner:
                 )
                 concat_file = segment_dir / "concat.txt"
                 self.ffmpeg_service.concat(segment_paths, concat_file, final_path)
+                final_probe = self.ffmpeg_service.probe(final_path)
+                self._validate_final_probe(
+                    final_probe,
+                    width=int(settings["width"]),
+                    height=int(settings["height"]),
+                    fps=int(settings["fps"]),
+                )
 
                 repository.update_export(
                     record,
@@ -127,8 +135,8 @@ class ProjectExportRunner:
                     mime_type=stored.mime_type,
                     extension=stored.extension,
                     size_bytes=stored.size_bytes,
-                    width=record.target_width,
-                    height=record.target_height,
+                    width=final_probe.width,
+                    height=final_probe.height,
                     sha256=stored.sha256,
                     created_at=utc_now(),
                 )
@@ -161,6 +169,29 @@ class ProjectExportRunner:
                         "updated_at": failed_at,
                     },
                 )
+
+    def _validate_source_probe(self, probe: VideoProbe) -> None:
+        if probe.codec_type not in {None, "video"}:
+            raise ValueError("invalid video stream")
+        if probe.width <= 0 or probe.height <= 0:
+            raise ValueError("invalid video dimensions")
+        if probe.fps <= 0:
+            raise ValueError("invalid video fps")
+        if probe.duration_seconds <= 0:
+            raise ValueError("invalid video duration")
+
+    def _validate_final_probe(self, probe: VideoProbe, width: int, height: int, fps: int) -> None:
+        self._validate_source_probe(probe)
+        if probe.width != width or probe.height != height:
+            raise ValueError("final video dimensions do not match export settings")
+        if probe.fps != fps:
+            raise ValueError("final video fps does not match export settings")
+        if probe.codec != "h264":
+            raise ValueError("final video is not H.264")
+        if probe.pixel_format != "yuv420p":
+            raise ValueError("final video pixel format is not yuv420p")
+        if probe.audio_stream_count != 0:
+            raise ValueError("final video must not contain audio in v1")
 
 
 def run_project_export(export_id: str) -> None:

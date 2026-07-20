@@ -140,17 +140,22 @@ class VideoRunInputSnapshot(BaseModel):
 
 class VideoRunSnapshot(BaseModel):
     schema_version: Literal[1, 2] = 2
+    project_id: str | None = None
     video_task_id: str
     shot_id: str
+    request_id: str | None = None
     workflow_id: str
     workflow_version: str
     workflow_mode: VideoWorkflowMode | None = None
     input_media_asset_id: str | None = None
     inputs: list[VideoRunInputSnapshot] = Field(default_factory=list)
+    start_frame_media_asset_id: str | None = None
+    end_frame_media_asset_id: str | None = None
     prompt: str
     negative_prompt: str | None
     duration_seconds: float
     fps: int
+    frame_count: int | None = None
     width: int
     height: int
     seed: int

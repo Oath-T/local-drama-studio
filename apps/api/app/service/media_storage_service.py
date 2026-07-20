@@ -56,6 +56,16 @@ class StoredVideo:
     sha256: str
 
 
+@dataclass(frozen=True)
+class ImageFileMetadata:
+    mime_type: str
+    extension: str
+    size_bytes: int
+    width: int
+    height: int
+    sha256: str
+
+
 class MediaStorageService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -115,6 +125,21 @@ class MediaStorageService:
     def project_export_segments_dir(self, project_id: str, export_id: str) -> Path:
         relative_path = Path("projects") / project_id / "exports" / export_id / "segments"
         return self.resolve_relative_path(relative_path.as_posix(), must_exist=False)
+
+    def generated_video_poster_relative_path(self, project_id: str, video_output_id: str) -> str:
+        return (
+            Path("projects")
+            / project_id
+            / "media"
+            / "generated-video-posters"
+            / f"{video_output_id}.png"
+        ).as_posix()
+
+    def generated_video_poster_path(self, project_id: str, video_output_id: str) -> Path:
+        return self.resolve_relative_path(
+            self.generated_video_poster_relative_path(project_id, video_output_id),
+            must_exist=False,
+        )
 
     def register_project_export_video(
         self,
@@ -378,6 +403,35 @@ class MediaStorageService:
         if must_exist and not target.exists():
             raise_media_error(CharacterErrorCode.FILE_NOT_FOUND, status.HTTP_404_NOT_FOUND)
         return target
+
+    def inspect_image_file(self, relative_path: str) -> ImageFileMetadata:
+        path = self.resolve_relative_path(relative_path, must_exist=True)
+        try:
+            content = path.read_bytes()
+            image = Image.open(BytesIO(content))
+            image.verify()
+            image = Image.open(BytesIO(content))
+            image_format = image.format
+            image = ImageOps.exif_transpose(image)
+        except (OSError, UnidentifiedImageError):
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+        mime_type = Image.MIME.get(image_format or "")
+        if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+        extension = (image_format or "").lower()
+        if extension == "jpeg":
+            extension = "jpg"
+        if extension not in ALLOWED_IMAGE_EXTENSIONS:
+            raise_media_error(CharacterErrorCode.IMAGE_INVALID, HTTP_422)
+        width, height = image.size
+        return ImageFileMetadata(
+            mime_type=mime_type,
+            extension=extension,
+            size_bytes=len(content),
+            width=width,
+            height=height,
+            sha256=sha256(content).hexdigest(),
+        )
 
     def _relative_to_storage(self, path: Path) -> Path:
         root = self.settings.resolved_storage_dir.resolve()

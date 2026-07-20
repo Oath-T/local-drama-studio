@@ -76,6 +76,7 @@ class ProjectTimelineRepository:
                 .where(
                     VideoGenerationTaskRecord.project_id == project_id,
                     VideoGenerationOutputRecord.project_id == project_id,
+                    VideoGenerationRunRecord.status == "completed",
                     VideoGenerationOutputRecord.is_selected.is_(True),
                 )
                 .order_by(

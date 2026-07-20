@@ -22,14 +22,21 @@ def test_ffprobe_parses_video_metadata_and_uses_shell_false(
                 {
                     "streams": [
                         {
+                            "codec_type": "video",
                             "width": 640,
                             "height": 360,
                             "r_frame_rate": "30000/1001",
+                            "avg_frame_rate": "30000/1001",
+                            "nb_frames": "75",
                             "codec_name": "h264",
                             "pix_fmt": "yuv420p",
                         }
                     ],
-                    "format": {"duration": "2.5"},
+                    "format": {
+                        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+                        "duration": "2.5",
+                        "size": "12345",
+                    },
                 }
             ),
             stderr="",
@@ -43,6 +50,14 @@ def test_ffprobe_parses_video_metadata_and_uses_shell_false(
     assert probe.height == 360
     assert probe.fps == 30
     assert probe.duration_seconds == 2.5
+    assert probe.codec == "h264"
+    assert probe.pixel_format == "yuv420p"
+    assert probe.format_name == "mov,mp4,m4a,3gp,3g2,mj2"
+    assert probe.size_bytes == 12345
+    assert probe.codec_type == "video"
+    assert probe.average_frame_rate == "30000/1001"
+    assert probe.frame_count == 75
+    assert probe.audio_stream_count == 0
     assert calls[0]["shell"] is False
     assert isinstance(calls[0]["args"], list)
 

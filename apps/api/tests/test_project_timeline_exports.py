@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -20,6 +21,18 @@ from app.infrastructure.models.video_generation import (
 from app.service.export.export_runner import ProjectExportRunner
 from app.service.export.ffmpeg_service import VideoProbe
 from app.service.project_export_service import ProjectExportService
+
+
+@pytest.fixture(autouse=True)
+def fake_timeline_ffmpeg(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "app.service.project_timeline_service.FfmpegService",
+        lambda: _AvailableFfmpeg(tmp_path),
+    )
+    monkeypatch.setattr(
+        "app.service.project_export_service.FfmpegService",
+        lambda: _AvailableFfmpeg(tmp_path),
+    )
 
 
 def test_project_timeline_uses_only_selected_videos_in_shot_order(
@@ -44,6 +57,67 @@ def test_project_timeline_uses_only_selected_videos_in_shot_order(
     assert str(get_settings().resolved_storage_dir) not in json.dumps(payload)
 
 
+def test_project_timeline_requires_completed_selected_video_run(
+    migrated_client: TestClient,
+) -> None:
+    project = _create_project(migrated_client)
+    shot = _create_shot(migrated_client, project["id"], "Not Completed")
+    _create_selected_video_output(project["id"], shot["id"], selected=True, run_status="running")
+
+    response = migrated_client.get(f"/api/projects/{project['id']}/timeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["clips"][0]["status"] == "missing"
+    assert payload["ready_clip_count"] == 0
+    assert any(blocker["code"] == "SHOT_ADOPTED_VIDEO_MISSING" for blocker in payload["blockers"])
+
+
+def test_project_timeline_uses_ffprobe_actual_duration(
+    migrated_client: TestClient,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "app.service.project_timeline_service.FfmpegService",
+        lambda: _AvailableFfmpeg(tmp_path, duration=2.125),
+    )
+    project = _create_project(migrated_client)
+    shot = _create_shot(migrated_client, project["id"], "Actual Duration")
+    _create_selected_video_output(
+        project["id"],
+        shot["id"],
+        selected=True,
+        task_duration=99,
+        duration=2.125,
+    )
+
+    response = migrated_client.get(f"/api/projects/{project['id']}/timeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["estimated_duration_seconds"] == 2.125
+    assert payload["clips"][0]["duration_seconds"] == 2.125
+
+
+def test_project_timeline_blocks_missing_adopted_video_file(
+    migrated_client: TestClient,
+) -> None:
+    project = _create_project(migrated_client)
+    shot = _create_shot(migrated_client, project["id"], "Missing File")
+    selected = _create_selected_video_output(project["id"], shot["id"], selected=True)
+    media_path = get_settings().resolved_storage_dir / selected["relative_path"]
+    media_path.unlink()
+
+    response = migrated_client.get(f"/api/projects/{project['id']}/timeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["clips"][0]["status"] == "blocked"
+    assert payload["exportable"] is False
+    assert any(blocker["code"] == "ADOPTED_VIDEO_FILE_MISSING" for blocker in payload["blockers"])
+
+
 def test_project_timeline_cross_project_access_fails(migrated_client: TestClient) -> None:
     _create_project(migrated_client)
     other = _create_project(migrated_client)
@@ -59,8 +133,12 @@ def test_project_timeline_cross_project_access_fails(migrated_client: TestClient
 def test_project_export_create_snapshot_and_missing_ffmpeg_blocker(
     migrated_client: TestClient,
     monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("app.service.export.ffmpeg_service.which", lambda _binary: None)
+    monkeypatch.setattr(
+        "app.service.project_export_service.FfmpegService",
+        lambda: _UnavailableFfmpeg(tmp_path),
+    )
 
     project = _create_project(migrated_client)
     shot = _create_shot(migrated_client, project["id"], "Ready Shot")
@@ -163,7 +241,36 @@ def test_project_export_runner_success_creates_final_media_and_does_not_mutate_s
         assert media is not None
         assert media.media_type == "video"
         assert media.relative_path.startswith(f"projects/{project['id']}/exports/{export.id}/")
+        assert media.width == 720
+        assert media.height == 1280
         assert output.is_selected is True
+
+
+def test_project_export_runner_rejects_non_browser_compatible_final_video(
+    migrated_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    project = _create_project(migrated_client)
+    shot = _create_shot(migrated_client, project["id"], "Bad Final")
+    _create_selected_video_output(project["id"], shot["id"], selected=True)
+    with get_session_factory()() as session:
+        service = ProjectExportService(session, ffmpeg_service=_AvailableFfmpeg(tmp_path))
+        export = service.create_export(uuid4_from_string(project["id"]), _payload("Bad Final"))
+        service.mark_ready(uuid4_from_string(project["id"]), uuid4_from_string(export.id))
+        record = session.get(ProjectExportRecord, export.id)
+        assert record is not None
+        record.status = ProjectExportStatus.QUEUED.value
+        session.commit()
+
+    runner = ProjectExportRunner(ffmpeg_service=_BadFinalFfmpeg(tmp_path))
+    runner.run_export(export.id)
+
+    with get_session_factory()() as session:
+        record = session.get(ProjectExportRecord, export.id)
+        assert record is not None
+        assert record.status == ProjectExportStatus.FAILED.value
+        assert record.output_media_asset_id is None
+        assert record.error_message == "最终导出失败，请检查源视频和 FFmpeg 环境。"
 
 
 def test_project_export_runner_failure_sets_safe_failed_status(
@@ -206,7 +313,9 @@ def _create_selected_video_output(
     shot_id: str,
     selected: bool,
     duration: float = 2.0,
+    task_duration: float | None = None,
     created_at: datetime | None = None,
+    run_status: str = "completed",
 ) -> dict[str, str]:
     now = created_at or datetime.now(UTC)
     task_id = str(uuid4())
@@ -226,7 +335,7 @@ def _create_selected_video_output(
                 name="Video Task",
                 status="ready",
                 prompt="Prompt",
-                duration_seconds=duration,
+                duration_seconds=task_duration if task_duration is not None else duration,
                 fps=16,
                 width=640,
                 height=640,
@@ -244,9 +353,9 @@ def _create_selected_video_output(
                 provider="comfyui",
                 workflow_id="video_wan22_14b_flf2v_v1",
                 workflow_version="1",
-                status="completed",
+                status=run_status,
                 submitted_payload_snapshot="{}",
-                completed_at=now,
+                completed_at=now if run_status == "completed" else None,
                 created_at=now,
                 updated_at=now,
             )
@@ -293,6 +402,7 @@ def _create_selected_video_output(
         "run_id": run_id,
         "output_id": output_id,
         "media_asset_id": media_id,
+        "relative_path": relative_path,
     }
 
 
@@ -315,8 +425,9 @@ def uuid4_from_string(value: str):
 
 
 class _AvailableFfmpeg:
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, duration: float = 2.0) -> None:
         self.tmp_path = tmp_path
+        self.duration = duration
 
     def ffmpeg_available(self) -> bool:
         return True
@@ -326,13 +437,28 @@ class _AvailableFfmpeg:
 
     def probe(self, source_path: Path) -> VideoProbe:
         assert source_path.exists()
+        if source_path.name == "final.mp4":
+            return VideoProbe(
+                width=720,
+                height=1280,
+                fps=24,
+                duration_seconds=self.duration,
+                codec="h264",
+                pixel_format="yuv420p",
+                codec_type="video",
+                audio_stream_count=0,
+                frame_count=48,
+            )
         return VideoProbe(
             width=640,
             height=640,
             fps=16,
-            duration_seconds=2,
+            duration_seconds=self.duration,
             codec="h264",
             pixel_format="yuv420p",
+            codec_type="video",
+            audio_stream_count=0,
+            frame_count=32,
         )
 
     def normalize_clip(
@@ -360,3 +486,29 @@ class _AvailableFfmpeg:
 class _FailingFfmpeg(_AvailableFfmpeg):
     def concat(self, segment_paths: Iterable[Path], concat_file: Path, output_path: Path) -> None:
         raise RuntimeError("F:\\LocalDramaStudio\\private\\ffmpeg failed")
+
+
+class _UnavailableFfmpeg(_AvailableFfmpeg):
+    def ffmpeg_available(self) -> bool:
+        return False
+
+    def ffprobe_available(self) -> bool:
+        return False
+
+
+class _BadFinalFfmpeg(_AvailableFfmpeg):
+    def probe(self, source_path: Path) -> VideoProbe:
+        probe = super().probe(source_path)
+        if source_path.name == "final.mp4":
+            return VideoProbe(
+                width=probe.width,
+                height=probe.height,
+                fps=probe.fps,
+                duration_seconds=probe.duration_seconds,
+                codec="hevc",
+                pixel_format="yuv444p",
+                codec_type="video",
+                audio_stream_count=1,
+                frame_count=probe.frame_count,
+            )
+        return probe

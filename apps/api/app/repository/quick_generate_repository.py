@@ -1,8 +1,11 @@
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.keyframe_generation import ACTIVE_RUN_STATUSES
 from app.domain.video_generation import ACTIVE_VIDEO_RUN_STATUSES
+from app.infrastructure.models.character import MediaAssetRecord
 from app.infrastructure.models.keyframe_generation import (
     KeyframeGenerationOutputRecord,
     KeyframeGenerationRunRecord,
@@ -15,6 +18,14 @@ from app.infrastructure.models.video_generation import (
     VideoGenerationRunRecord,
     VideoGenerationTaskRecord,
 )
+
+
+@dataclass(frozen=True)
+class SelectedKeyframeOutputData:
+    output: KeyframeGenerationOutputRecord
+    run: KeyframeGenerationRunRecord
+    task: KeyframeGenerationTaskRecord
+    media_asset: MediaAssetRecord | None
 
 
 class QuickGenerateRepository:
@@ -180,3 +191,51 @@ class QuickGenerateRepository:
                 KeyframeGenerationOutputRecord.id.desc(),
             )
         ).first()
+
+    def list_selected_keyframe_outputs(
+        self,
+        project_id: str,
+        shot_id: str,
+        purpose: str,
+    ) -> list[SelectedKeyframeOutputData]:
+        rows = self.session.execute(
+            select(
+                KeyframeGenerationOutputRecord,
+                KeyframeGenerationRunRecord,
+                KeyframeGenerationTaskRecord,
+                MediaAssetRecord,
+            )
+            .join(
+                KeyframeGenerationRunRecord,
+                KeyframeGenerationRunRecord.id == KeyframeGenerationOutputRecord.run_id,
+            )
+            .join(
+                KeyframeGenerationTaskRecord,
+                KeyframeGenerationTaskRecord.id == KeyframeGenerationRunRecord.keyframe_task_id,
+            )
+            .outerjoin(
+                MediaAssetRecord,
+                MediaAssetRecord.id == KeyframeGenerationOutputRecord.media_asset_id,
+            )
+            .where(
+                KeyframeGenerationOutputRecord.project_id == project_id,
+                KeyframeGenerationRunRecord.project_id == project_id,
+                KeyframeGenerationTaskRecord.project_id == project_id,
+                KeyframeGenerationTaskRecord.shot_id == shot_id,
+                KeyframeGenerationTaskRecord.purpose == purpose,
+                KeyframeGenerationOutputRecord.is_selected.is_(True),
+            )
+            .order_by(
+                KeyframeGenerationOutputRecord.created_at.desc(),
+                KeyframeGenerationOutputRecord.id.desc(),
+            )
+        ).all()
+        return [
+            SelectedKeyframeOutputData(
+                output=output,
+                run=run,
+                task=task,
+                media_asset=media_asset,
+            )
+            for output, run, task, media_asset in rows
+        ]

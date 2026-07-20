@@ -221,6 +221,33 @@ def test_production_status_uses_only_selected_outputs_and_is_read_only(
     assert table_counts()["keyframe_outputs"] == before["keyframe_outputs"] + 1
 
 
+def test_production_status_uses_adopted_frames_for_video_input_readiness(
+    migrated_client: TestClient,
+) -> None:
+    data = create_ready_shot_fixture(migrated_client)
+    project_id = data["project_id"]
+    shot_id = str(data["shot"]["id"])
+    _create_keyframe_task_with_selected_output(
+        migrated_client, project_id, shot_id, "first_frame", True
+    )
+    _create_keyframe_task_with_selected_output(
+        migrated_client, project_id, shot_id, "end_frame", True
+    )
+    video_task = migrated_client.post(
+        f"/api/projects/{project_id}/shots/{shot_id}/video-tasks",
+        json={},
+    )
+
+    response = migrated_client.get(f"/api/projects/{project_id}/shots/{shot_id}/production-status")
+
+    assert video_task.status_code == 201
+    payload = response.json()
+    assert payload["steps"]["video"]["has_start_frame"] is True
+    assert payload["steps"]["video"]["has_end_frame"] is True
+    assert "video_missing_start_frame" not in payload["blockers"]
+    assert "video_missing_end_frame" not in payload["blockers"]
+
+
 def test_production_status_cross_project_access_fails(migrated_client: TestClient) -> None:
     first = create_ready_shot_fixture(migrated_client)
     second = migrated_client.post("/api/projects", json={"name": "Other"}).json()

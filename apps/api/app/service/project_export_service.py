@@ -84,6 +84,7 @@ class ProjectExportService:
         timeline = ProjectTimelineService(
             self.session,
             self.storage_service,
+            self.ffmpeg_service,
         ).get_timeline(project_id)
         clips = [
             {

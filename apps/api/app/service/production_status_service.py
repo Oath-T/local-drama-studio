@@ -112,7 +112,7 @@ class ProductionStatusService:
             data,
             KeyframeTaskPurpose.END_FRAME.value,
         )
-        video = self._video_step(video_tasks, data)
+        video = self._video_step(video_tasks, data, first_frame, end_frame)
         assets = self._asset_step(data, shot)
         director_prompt = ProductionDirectorPromptStep(
             status="available",
@@ -191,14 +191,22 @@ class ProductionStatusService:
         self,
         tasks: list[VideoGenerationTaskRecord],
         data: ProductionStatusData,
+        first_frame: ProductionFrameStep | None = None,
+        end_frame: ProductionFrameStep | None = None,
     ) -> ProductionVideoStep:
+        adopted_start = first_frame is not None and first_frame.status == "adopted"
+        adopted_end = end_frame is not None and end_frame.status == "adopted"
         if not tasks:
-            return ProductionVideoStep(status="not_created")
+            return ProductionVideoStep(
+                status="not_created",
+                has_start_frame=adopted_start,
+                has_end_frame=adopted_end,
+            )
         selected = self._selected_video_output(tasks, data)
         task = self._task_for_video_output(selected, data) if selected is not None else tasks[0]
         inputs = data.video_inputs_by_task.get(task.id, [])
-        has_start = _has_video_input(inputs, VideoInputRole.START_FRAME.value)
-        has_end = _has_video_input(inputs, VideoInputRole.END_FRAME.value)
+        has_start = _has_video_input(inputs, VideoInputRole.START_FRAME.value) or adopted_start
+        has_end = _has_video_input(inputs, VideoInputRole.END_FRAME.value) or adopted_end
         if selected is not None:
             return ProductionVideoStep(
                 status="adopted",

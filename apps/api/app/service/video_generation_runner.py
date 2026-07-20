@@ -1,6 +1,9 @@
 import asyncio
 import logging
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
@@ -29,6 +32,7 @@ from app.infrastructure.models.video_generation import (
 )
 from app.repository.video_generation_repository import VideoGenerationRepository
 from app.service.canvas_output_sync_service import CanvasOutputSyncService
+from app.service.export.ffmpeg_service import FfmpegService, VideoProbe
 from app.service.media_storage_service import MediaStorageService
 from app.service.video_generation_service import (
     VideoGenerationService,
@@ -38,15 +42,25 @@ from app.service.video_generation_service import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class PreparedVideoInputImage:
+    content: bytes
+    mime_type: str
+    extension: str
+    sha256: str
+
+
 class VideoGenerationRunner:
     def __init__(
         self,
         session_factory: SessionMaker[Session] | None = None,
         settings: Settings | None = None,
+        ffmpeg_service: FfmpegService | None = None,
     ) -> None:
         self.session_factory = session_factory or get_session_factory()
         self.settings = settings or get_settings()
         self.storage_service = MediaStorageService()
+        self.ffmpeg_service = ffmpeg_service or FfmpegService()
         self._semaphore = asyncio.Semaphore(max(1, self.settings.comfyui_max_concurrency))
 
     async def run_task(self, run_id: str) -> None:
@@ -182,12 +196,19 @@ class VideoGenerationRunner:
                     VideoGenerationErrorCode.VIDEO_INPUT_IMAGE_UNAVAILABLE,
                     "Input image is unavailable.",
                 )
-            content, mime_type, extension = self._read_input_image(run, role, media_asset_id)
+            prepared = self._read_input_image(run, role, media_asset_id)
+            filename = self._safe_input_filename(snapshot.shot_id, run.id, role, prepared.extension)
             uploaded[role] = await provider.upload_input_image(
-                filename=self._safe_input_filename(run, role, extension),
-                content=content,
-                mime_type=mime_type,
+                filename=filename,
+                content=prepared.content,
+                mime_type=prepared.mime_type,
             )
+            uploaded_payload_sha256 = sha256(prepared.content).hexdigest()
+            if uploaded_payload_sha256 != prepared.sha256:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.REFERENCE_UPLOAD_FAILED,
+                    f"{role.value} image upload payload changed unexpectedly.",
+                )
         return uploaded
 
     def _read_input_image(
@@ -195,7 +216,7 @@ class VideoGenerationRunner:
         run: VideoGenerationRunRecord,
         role: VideoInputRole,
         media_asset_id: str,
-    ) -> tuple[bytes, str | None, str]:
+    ) -> PreparedVideoInputImage:
         with self.session_factory() as session:
             media_asset = VideoGenerationRepository(session).get_media_asset(
                 run.project_id,
@@ -212,21 +233,35 @@ class VideoGenerationRunner:
                     must_exist=True,
                 )
                 content = path.read_bytes()
+                actual = self.storage_service.inspect_image_file(media_asset.relative_path)
             except Exception as exc:
                 raise GenerationProviderRuntimeError(
                     VideoGenerationErrorCode.REFERENCE_UPLOAD_FAILED,
                     f"{role.value} image could not be prepared.",
                 ) from exc
-            return content, media_asset.mime_type, media_asset.extension
+            content_sha256 = sha256(content).hexdigest()
+            if content_sha256 != actual.sha256:
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.REFERENCE_UPLOAD_FAILED,
+                    f"{role.value} image could not be verified.",
+                )
+            return PreparedVideoInputImage(
+                content=content,
+                mime_type=actual.mime_type,
+                extension=actual.extension,
+                sha256=content_sha256,
+            )
 
     def _safe_input_filename(
         self,
-        run: VideoGenerationRunRecord,
+        shot_id: str,
+        run_id: str,
         role: VideoInputRole,
         extension: str | None,
     ) -> str:
         suffix = f".{extension.lower().lstrip('.')}" if extension else ".png"
-        return f"lds_video_{run.id}_{role.value}{suffix}"
+        role_suffix = "start" if role == VideoInputRole.START_FRAME else "end"
+        return f"lds_video_{shot_id[:8]}_{run_id[:8]}_{role_suffix}{suffix}"
 
     def _save_outputs(self, run_id: str, outputs: list[ProviderOutputFile]) -> None:
         if not outputs:
@@ -260,16 +295,34 @@ class VideoGenerationRunner:
                     output.content,
                     output.mime_type,
                 )
+                stored_path = self.storage_service.resolve_relative_path(
+                    stored.relative_path,
+                    must_exist=True,
+                )
+                try:
+                    probe = self._probe_stored_video(stored_path)
+                    if not _browser_compatible(probe):
+                        stored, probe = self._transcode_stored_video(stored, stored_path, probe)
+                except GenerationProviderRuntimeError:
+                    self.storage_service.delete_relative_file_safely(stored.relative_path)
+                    raise
+                output_id = str(uuid4())
+                poster_relative_path = self._try_create_video_poster(
+                    run.project_id,
+                    output_id,
+                    stored_path,
+                )
                 now = utc_now()
                 media_asset = media_record_from_stored_video(
                     run.project_id,
                     stored,
                     now,
-                    width=snapshot.width,
-                    height=snapshot.height,
+                    width=probe.width,
+                    height=probe.height,
+                    thumbnail_relative_path=poster_relative_path,
                 )
                 output_record = VideoGenerationOutputRecord(
-                    id=str(uuid4()),
+                    id=output_id,
                     project_id=run.project_id,
                     run_id=run.id,
                     media_asset_id=media_asset.id,
@@ -277,10 +330,10 @@ class VideoGenerationRunner:
                     provider_filename=output.filename,
                     provider_subfolder=output.subfolder,
                     provider_type=output.output_type,
-                    width=snapshot.width,
-                    height=snapshot.height,
-                    duration_seconds=snapshot.duration_seconds,
-                    fps=snapshot.fps,
+                    width=probe.width,
+                    height=probe.height,
+                    duration_seconds=probe.duration_seconds,
+                    fps=probe.fps,
                     seed=snapshot.seed,
                     is_selected=False,
                     created_at=now,
@@ -290,6 +343,7 @@ class VideoGenerationRunner:
                     saved_or_existing += 1
                 except SQLAlchemyError as exc:
                     self.storage_service.delete_relative_file_safely(stored.relative_path)
+                    self.storage_service.delete_relative_file_safely(poster_relative_path)
                     raise GenerationProviderRuntimeError(
                         VideoGenerationErrorCode.OUTPUT_SAVE_FAILED,
                         "Generated video could not be saved.",
@@ -301,6 +355,91 @@ class VideoGenerationRunner:
             )
         with self.session_factory() as session:
             CanvasOutputSyncService(session).sync_video_run_outputs(run_id)
+
+    def _probe_stored_video(self, stored_path: Path) -> VideoProbe:
+        try:
+            probe = self.ffmpeg_service.probe(stored_path)
+            _validate_video_probe(probe)
+            return probe
+        except Exception as exc:
+            raise GenerationProviderRuntimeError(
+                VideoGenerationErrorCode.OUTPUT_SAVE_FAILED,
+                "Generated video could not be inspected.",
+            ) from exc
+
+    def _transcode_stored_video(self, stored, stored_path: Path, probe: VideoProbe):
+        temp_path = stored_path.with_name(f"{stored_path.stem}_compat{stored_path.suffix}")
+        try:
+            self.ffmpeg_service.normalize_clip(
+                stored_path,
+                temp_path,
+                probe.width,
+                probe.height,
+                probe.fps,
+                "libx264",
+            )
+            temp_path.replace(stored_path)
+            updated_probe = self._probe_stored_video(stored_path)
+            if not _browser_compatible(updated_probe):
+                raise GenerationProviderRuntimeError(
+                    VideoGenerationErrorCode.OUTPUT_SAVE_FAILED,
+                    "Generated video is not browser compatible after transcoding.",
+                )
+            content = stored_path.read_bytes()
+            return (
+                replace(
+                    stored,
+                    mime_type="video/mp4",
+                    extension="mp4",
+                    size_bytes=len(content),
+                    sha256=sha256(content).hexdigest(),
+                ),
+                updated_probe,
+            )
+        except GenerationProviderRuntimeError:
+            self.storage_service.delete_relative_file_safely(stored.relative_path)
+            raise
+        except Exception as exc:
+            self.storage_service.delete_relative_file_safely(stored.relative_path)
+            raise GenerationProviderRuntimeError(
+                VideoGenerationErrorCode.OUTPUT_SAVE_FAILED,
+                "Generated video could not be converted for browser playback.",
+            ) from exc
+        finally:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    logger.warning("Failed to clean temporary transcoded video file.")
+
+    def _try_create_video_poster(
+        self,
+        project_id: str,
+        output_id: str,
+        video_path: Path,
+    ) -> str | None:
+        relative_path = self.storage_service.generated_video_poster_relative_path(
+            project_id,
+            output_id,
+        )
+        poster_path = self.storage_service.generated_video_poster_path(project_id, output_id)
+        try:
+            self.ffmpeg_service.extract_poster(video_path, poster_path)
+            if not poster_path.exists() or poster_path.stat().st_size <= 0:
+                raise OSError("Poster file was not created.")
+            self.storage_service.inspect_image_file(relative_path)
+            return relative_path
+        except Exception:
+            logger.warning(
+                "Failed to create generated video poster.",
+                extra={"output_id": output_id},
+            )
+            try:
+                if poster_path.exists():
+                    poster_path.unlink()
+            except OSError:
+                logger.warning("Failed to clean incomplete generated video poster.")
+            return None
 
     def _load_run(self, run_id: str) -> VideoGenerationRunRecord:
         with self.session_factory() as session:
@@ -418,6 +557,25 @@ def _snapshot_inputs(snapshot: VideoRunSnapshot) -> dict[VideoInputRole, str]:
     if snapshot.input_media_asset_id:
         return {VideoInputRole.START_FRAME: snapshot.input_media_asset_id}
     return {}
+
+
+def _validate_video_probe(probe: VideoProbe) -> None:
+    if probe.codec_type not in {None, "video"}:
+        raise ValueError("FFprobe did not return a video stream.")
+    if probe.duration_seconds <= 0:
+        raise ValueError("Video duration must be positive.")
+    if probe.size_bytes <= 0:
+        raise ValueError("Video size must be positive.")
+    if probe.width <= 0 or probe.height <= 0:
+        raise ValueError("Video dimensions must be positive.")
+    if probe.frame_count <= 1:
+        raise ValueError("Video frame count must be greater than 1.")
+    if probe.fps <= 0:
+        raise ValueError("Video FPS must be positive.")
+
+
+def _browser_compatible(probe: VideoProbe) -> bool:
+    return probe.codec == "h264" and probe.pixel_format == "yuv420p"
 
 
 def utc_now() -> datetime:

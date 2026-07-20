@@ -51,6 +51,7 @@ from app.infrastructure.models.video_generation import (
     VideoGenerationTaskRecord,
 )
 from app.repository.video_generation_repository import VideoGenerationRepository
+from app.service.export.ffmpeg_service import FfmpegService, VideoProbe
 from app.service.media_storage_service import MediaStorageService, StoredImage, StoredVideo
 from app.service.video_generation_readiness_service import (
     VideoGenerationReadinessService,
@@ -75,12 +76,14 @@ class VideoGenerationService:
         workflow_registry: VideoWorkflowRegistry | None = None,
         readiness_service: VideoGenerationReadinessService | None = None,
         storage_service: MediaStorageService | None = None,
+        ffmpeg_service: FfmpegService | None = None,
     ) -> None:
         self.repository = repository
         self.settings = settings or get_settings()
         self.workflow_registry = workflow_registry or VideoWorkflowRegistry(self.settings)
         self.readiness_service = readiness_service or VideoGenerationReadinessService()
         self.storage_service = storage_service or MediaStorageService()
+        self.ffmpeg_service = ffmpeg_service or FfmpegService()
 
     async def list_workflows(self, project_id: UUID) -> VideoWorkflowListResponse:
         self._ensure_project_exists(project_id)
@@ -355,6 +358,7 @@ class VideoGenerationService:
         project_id: UUID,
         task_id: UUID,
         workflow_id: str,
+        request_id: str | None = None,
     ) -> VideoRunCreateResponse:
         task = self._get_task(project_id, task_id)
         workflow = self.workflow_registry.get_workflow(workflow_id)
@@ -408,7 +412,7 @@ class VideoGenerationService:
                 status.HTTP_400_BAD_REQUEST,
                 details={"missing": missing},
             )
-        snapshot = self._build_run_snapshot(task, workflow)
+        snapshot = self._build_run_snapshot(task, workflow, request_id=request_id)
         now = utc_now()
         run = VideoGenerationRunRecord(
             id=str(uuid4()),
@@ -463,8 +467,9 @@ class VideoGenerationService:
 
     def select_output(self, project_id: UUID, output_id: UUID) -> VideoOutputResponse:
         output = self._get_output(project_id, output_id)
-        self.repository.select_output(output)
         media_asset = self.repository.media_asset_for_output(output)
+        self._ensure_selectable_video_output(output, media_asset)
+        self.repository.select_output(output)
         media_assets = {output.media_asset_id: media_asset} if media_asset else {}
         return self._output_response(output, media_assets)
 
@@ -517,6 +522,8 @@ class VideoGenerationService:
         self,
         task: VideoGenerationTaskRecord,
         workflow: LoadedVideoWorkflow,
+        *,
+        request_id: str | None = None,
     ) -> VideoRunSnapshot:
         input_records = self.repository.list_inputs_for_task(task.id)
         input_assets = self.repository.get_media_assets_by_ids(
@@ -546,19 +553,25 @@ class VideoGenerationService:
                 status.HTTP_400_BAD_REQUEST,
             )
         seed = task.seed if task.seed is not None else SystemRandom().randint(0, MAX_COMFYUI_SEED)
+        media_asset_by_role = {item.role: item.media_asset_id for item in snapshot_inputs}
         return VideoRunSnapshot(
             schema_version=2,
+            project_id=task.project_id,
             video_task_id=task.id,
             shot_id=task.shot_id,
+            request_id=request_id,
             workflow_id=workflow.manifest.workflow_id,
             workflow_version=workflow.manifest.version,
             workflow_mode=workflow.manifest.mode,
             input_media_asset_id=snapshot_inputs[0].media_asset_id,
             inputs=snapshot_inputs,
+            start_frame_media_asset_id=media_asset_by_role.get(VideoInputRole.START_FRAME),
+            end_frame_media_asset_id=media_asset_by_role.get(VideoInputRole.END_FRAME),
             prompt=prompt,
             negative_prompt=_normalize_optional(task.negative_prompt),
             duration_seconds=task.duration_seconds,
             fps=task.fps,
+            frame_count=int(task.duration_seconds * task.fps) + 1,
             width=task.width,
             height=task.height,
             seed=seed,
@@ -846,6 +859,35 @@ class VideoGenerationService:
             )
         return output
 
+    def _ensure_selectable_video_output(
+        self,
+        output: VideoGenerationOutputRecord,
+        media_asset: MediaAssetRecord | None,
+    ) -> None:
+        run = self.repository.get_run_by_id(output.run_id)
+        if run is None or run.status != VideoGenerationRunStatus.COMPLETED.value:
+            raise_video_error(
+                VideoGenerationErrorCode.VIDEO_OUTPUT_NOT_FOUND,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        if media_asset is None or media_asset.media_type != MediaType.VIDEO.value:
+            raise_video_error(
+                VideoGenerationErrorCode.VIDEO_OUTPUT_NOT_FOUND,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        try:
+            path = self.storage_service.resolve_relative_path(
+                media_asset.relative_path,
+                must_exist=True,
+            )
+            probe = self.ffmpeg_service.probe(path)
+            _ensure_valid_video_probe(probe)
+        except Exception:
+            raise_video_error(
+                VideoGenerationErrorCode.VIDEO_OUTPUT_NOT_FOUND,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
     def _effective_inputs(
         self,
         task: VideoGenerationTaskRecord,
@@ -1029,6 +1071,7 @@ def media_record_from_stored_video(
     *,
     width: int,
     height: int,
+    thumbnail_relative_path: str | None = None,
 ) -> MediaAssetRecord:
     return MediaAssetRecord(
         id=str(uuid4()),
@@ -1037,7 +1080,7 @@ def media_record_from_stored_video(
         original_filename=stored.original_filename,
         stored_filename=stored.stored_filename,
         relative_path=stored.relative_path,
-        thumbnail_relative_path=None,
+        thumbnail_relative_path=thumbnail_relative_path,
         mime_type=stored.mime_type,
         extension=stored.extension,
         size_bytes=stored.size_bytes,
@@ -1070,6 +1113,20 @@ def _media_asset_response(media_asset: MediaAssetRecord | None) -> MediaAssetRes
         content_url=f"/api/media/{media_asset.id}/content",
         created_at=ensure_utc(media_asset.created_at),
     )
+
+
+def _ensure_valid_video_probe(probe: VideoProbe) -> None:
+    if probe.codec_type not in {None, "video"}:
+        raise ValueError
+    if (
+        probe.duration_seconds <= 0
+        or probe.size_bytes <= 0
+        or probe.width <= 0
+        or probe.height <= 0
+        or probe.frame_count <= 1
+        or probe.fps <= 0
+    ):
+        raise ValueError
 
 
 def _input_by_role(
